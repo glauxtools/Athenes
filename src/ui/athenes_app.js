@@ -341,6 +341,7 @@ export class AthenesApp {
   }
 
   abrirModalZotero() {
+    const posicaoCitacao = this.editorView?.capturarPosicaoCitacao?.();
     const modal = document.createElement('div');
     modal.className = 'ath-modal-backdrop';
     modal.innerHTML = `
@@ -363,7 +364,7 @@ export class AthenesApp {
     new PainelZotero(corpo, this.documentoAtivo, {
       onInserirCitacao: (ref, formato, opcoes) => {
         fechar();
-        this.editorView.inserirCitacaoNoCursor(ref, formato, opcoes);
+        this.editorView.inserirCitacaoNoCursor(ref, formato, opcoes, posicaoCitacao);
       },
       onInserirCitacaoLonga: (ref, dados) => {
         fechar();

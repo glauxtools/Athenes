@@ -76,9 +76,12 @@ export function sanearHtmlTexto(html) {
       const href = /href\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
       const cls = /class\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
       const dref = /data-ref-id\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
+      const citEstilo = /data-cit-estilo\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
+      const citFormato = /data-cit-formato\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
+      const citPagina = /data-cit-pagina\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
       const alvo = /target\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
       const rel = /rel\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];
-      return `<a${cls ? ` class=${cls}` : ''}${href ? ` href=${href}` : ''}${dref ? ` data-ref-id=${dref}` : ''}${alvo ? ` target=${alvo}` : ''}${rel ? ` rel=${rel}` : ''}>`;
+      return `<a${cls ? ` class=${cls}` : ''}${href ? ` href=${href}` : ''}${dref ? ` data-ref-id=${dref}` : ''}${citEstilo ? ` data-cit-estilo=${citEstilo}` : ''}${citFormato ? ` data-cit-formato=${citFormato}` : ''}${citPagina ? ` data-cit-pagina=${citPagina}` : ''}${alvo ? ` target=${alvo}` : ''}${rel ? ` rel=${rel}` : ''}>`;
     }
     if (t === 'sup' || t === 'sub') {
       const cls = /class\s*=\s*("[^"]*"|'[^']*')/i.exec(attrs)?.[1];

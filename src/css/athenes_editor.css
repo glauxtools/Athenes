@@ -165,7 +165,7 @@
 .rm-cols .rm-chk { padding: 2px 0; }
 .rm-main label.rm-arquivo { width: fit-content !important; align-self: flex-start !important; }
 
-/* Editor com altura fixa: o canvas (prévia) não se move; só as colunas laterais rolam, cada uma sozinha. */
+/* O canvas e as barras laterais rolam dentro da altura da janela. */
 .rm-conteudo:has(> .rm-editor:not([hidden])) { overflow: hidden; height: 100vh; }
 .rm-editor:not([hidden]) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .rm-ed-grade { flex: 1 1 0; min-height: 0; align-items: stretch; height: 100%; overflow: hidden; }
@@ -2918,11 +2918,32 @@ ins.ath-sug-ins:hover, del.ath-sug-del:hover { outline: 1.5px solid var(--ath-su
 .rm-barra-blocos .rm-ic-bt[data-tip]::after { top: calc(100% + 7px); bottom: auto; transform: translateX(-50%) translateY(-3px); }
 .rm-barra-blocos .rm-ic-bt[data-tip]:hover::after, .rm-barra-blocos .rm-ic-bt[data-tip]:focus-visible::after { transform: translateX(-50%) translateY(0); }
 
-/* Citação linkada à referência: herda cor e sem sublinhado (a limpeza de estilos remove o style inline) */
+/* Identificação de citação só na tela de edição. A tipografia da folha continua a do estilo. */
 a.ath-citacao-link { color: inherit; text-decoration: none; cursor: pointer; }
+.rm-editor:not(.ath-modo-revisao) #rmPrevPalco a.ath-citacao-link {
+  background: rgba(245, 158, 11, .22);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  outline: 1px solid rgba(217, 119, 6, .18);
+}
+.rm-editor:not(.ath-modo-revisao) #rmPrevPalco a.ath-citacao-link:hover,
+.rm-editor:not(.ath-modo-revisao) #rmPrevPalco a.ath-citacao-link:focus-visible { background: rgba(245, 158, 11, .36); outline-color: #d97706; }
+.ath-citacao-popover { position: fixed; z-index: 2600; width: min(320px, calc(100vw - 16px)); padding: 14px; border: 1px solid #d9e2ee; border-radius: 14px; background: #fff; box-shadow: 0 14px 38px rgba(21, 39, 65, .22); color: #253650; font: 12px/1.4 var(--glx-font, Nunito, sans-serif); }
+.ath-citacao-popover-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ath-citacao-popover-topo strong { font-size: 14px; }
+.ath-citacao-popover-fechar { border: 0; background: transparent; color: #64748b; font-size: 20px; line-height: 1; cursor: pointer; }
+.ath-citacao-popover-obra { margin: 4px 0 12px; color: #64748b; overflow-wrap: anywhere; }
+.ath-citacao-popover form { display: grid; gap: 9px; }
+.ath-citacao-popover label { display: grid; gap: 3px; font-weight: 700; }
+.ath-citacao-popover select, .ath-citacao-popover input { width: 100%; height: 32px; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font: inherit; }
+.ath-citacao-popover-previa { min-height: 34px; padding: 8px 10px; border-radius: 8px; background: #f7f9fc; color: #334155; }
+.ath-citacao-popover-aplicar { justify-self: end; border: 0; border-radius: 8px; padding: 7px 14px; background: #314f79; color: #fff; font: 700 12px var(--glx-font, Nunito, sans-serif); cursor: pointer; }
+.ath-citacao-popover :focus-visible { outline: 2px solid #314f79; outline-offset: 2px; }
 
 /* Barras laterais recolhíveis e de largura ajustável (athenes_colunas_redim.js) */
 .rm-editor .rm-ed-grade.ath-redim { position: relative; grid-template-columns: var(--ath-col-esq, 310px) minmax(0, 1fr) var(--ath-col-dir, 330px) !important; transition: grid-template-columns .18s ease; }
+.ath-redim-scrim { display: none; position: absolute; inset: 0; } /* não cria uma segunda linha na grade desktop */
 .rm-ed-grade.ath-redim.ath-redim-arrastando { transition: none; user-select: none; cursor: col-resize; }
 .rm-ed-grade.ath-redim-fechada-esq > .rm-col-esq, .rm-ed-grade.ath-redim-fechada-dir > .rm-col-dir { visibility: hidden; overflow: hidden; pointer-events: none; }
 .ath-redim-alca { position: absolute; top: 0; bottom: 0; width: 14px; z-index: 6; display: flex; align-items: center; justify-content: center; cursor: col-resize; touch-action: none; outline: none; }
@@ -3496,6 +3517,8 @@ ol.ath-lista-config > li[data-rotulo]::before { content: attr(data-rotulo) !impo
 
 /* Regra estrita de impressão */
 @media print {
+  a.ath-citacao-link, .rm-editor:not(.ath-modo-revisao) #rmPrevPalco a.ath-citacao-link { background: transparent !important; outline: 0 !important; color: inherit !important; text-decoration: none !important; }
+  .ath-citacao-popover { display: none !important; }
   .ath-badge-semantica-hover,
   .ath-indicador-pincel,
   .ath-popover-semantica {

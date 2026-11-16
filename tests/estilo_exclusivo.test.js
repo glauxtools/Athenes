@@ -36,6 +36,14 @@ test('sanearHtmlTexto: sai negrito/itálico/sublinhado/style/cor, ficam links, s
   assert.equal(sanearHtmlTexto(l), l, 'idempotente');
 });
 
+test('metadados da citação editável sobrevivem ao salvamento sem levar cor à exportação', () => {
+  const html = '<a class="ath-citacao-link" href="#ref-r1" data-ref-id="r1" data-cit-estilo="apa" data-cit-formato="narrativa" data-cit-pagina="15" style="background:orange">Silva (2024, p. 15)</a>';
+  const limpo = sanearHtmlTexto(html);
+  assert.match(limpo, /data-cit-estilo="apa" data-cit-formato="narrativa" data-cit-pagina="15"/);
+  assert.doesNotMatch(limpo, /style=|background:/);
+  assert.equal(sanearHtmlTexto(limpo), limpo);
+});
+
 test('migração: documento antigo perde overrides e formatação inline; sem estiloId usa corpo', () => {
   const doc = criarDocumento({ titulo: 'Antigo' });
   const velho = { id: 'velho', tipo: 'paragrafo', texto: 'Oi <b>mundo</b> <span style="color:red">x</span>', ...LIXO };
