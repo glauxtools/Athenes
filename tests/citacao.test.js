@@ -34,6 +34,7 @@ test('estilos numéricos usam a posição na lista', () => {
 test('citação linkada aponta para a referência e escapa o texto', () => {
   const { html, texto } = montarCitacao({ id: 'a<1>', ano: '2020', autores: [{ sobrenome: 'A&B' }] }, { estilo: 'apa', linkar: true });
   assert.match(html, /<a class="ath-citacao-link" href="#ref-a_1_"/);
+  assert.match(html, /data-cit-estilo="apa" data-cit-formato="parentese" data-cit-pagina=""/);
   assert.match(html, /color:inherit;text-decoration:none/);
   assert.ok(html.includes('A&amp;B') && !html.includes('<1>'));
   assert.equal(texto, '(A&B, 2020)');

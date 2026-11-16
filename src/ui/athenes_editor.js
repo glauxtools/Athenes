@@ -56,7 +56,8 @@ import { svgIcone, svgLogo } from './athenes_icones.js';
 
 import { modosPermitidos, modoInicialDoPapel } from '../core/athenes_compartilhamento.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
-import { montarCitacao, indiceNaLista } from '../core/athenes_citacao.js';
+import { montarCitacao, indiceNaLista, formatarCitacaoTexto } from '../core/athenes_citacao.js';
+import { abrirPopoverCitacao, fecharPopoverCitacao } from './athenes_citacao_popover.js';
 import { mapaMarcadores, marcadorEfetivo, rotuloMarcador } from '../core/athenes_marcadores.js';
 
 import { linhasEstimadas, porLinhaUsadoNoTexto, calibracaoDoTexto, definirCalibracaoTexto, definirAlturaMedida, TIPOS_COM_ALTURA_MEDIDA } from '../core/athenes_fragmentos.js';
@@ -467,6 +468,7 @@ export class EditorView {
     this._visaoRevisao?.destruir();
     this._visaoRevisao = null;
     fecharCardSugestao();
+    fecharPopoverCitacao();
     fecharEditorNota();
     this.container.innerHTML = '';
 
@@ -812,6 +814,29 @@ export class EditorView {
     root.querySelector('#athBtnGuiaAtalhos').addEventListener('click', () => this.atalhos?.abrirAjuda());
 
     // Card de decisão: clique em uma marca de sugestão (ou cursor posicionado sobre ela) abre Aceitar/Rejeitar
+    root.addEventListener('click', ev => {
+      if (modoSomenteLeitura(this.modoTrabalho)) return;
+      const citacao = ev.target.closest?.('a.ath-citacao-link[data-ref-id]');
+      if (!citacao || !root.contains(citacao)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const referencia = (this.doc.referencias || []).find(ref => String(ref.id || ref.chaveZotero) === citacao.dataset.refId);
+      if (!referencia) return;
+      abrirPopoverCitacao({ ancora: citacao, referencia, doc: this.doc, aoAplicar: ({ estilo, formato, pagina }) => {
+        const texto = formatarCitacaoTexto(referencia, { estilo, formato, pagina, indice: indiceNaLista(this.doc, referencia) });
+        citacao.textContent = texto;
+        citacao.dataset.citEstilo = estilo;
+        citacao.dataset.citFormato = formato;
+        citacao.dataset.citPagina = pagina;
+        const editavel = citacao.closest('.ath-texto-editable, .ath-titulo-editable');
+        const bloco = this.buscarBlocoPorId(citacao.closest('.ath-bloco-folha')?.dataset.blocoId);
+        if (!editavel || !bloco) return;
+        bloco.texto = sanearHtmlTexto(removerPalavrasIniciais(removerHifensCondicionais(editavel.innerHTML)));
+        this.notificarMudanca();
+        this.renderizarFolhasPaginas();
+      } });
+    }, true);
+
     const abrirCardDaMarca = (marca) => abrirCardSugestao({
       doc: this.doc,
       sugestaoId: marca.dataset.sugestaoId,
@@ -2485,8 +2510,27 @@ export class EditorView {
   }
 
   /** Insere a citação no cursor. `opcoes`: { estilo, linkar, pagina, textoPronto } (ver athenes_citacao.js). */
-  inserirCitacaoNoCursor(ref, formato = 'parentese', opcoes = {}) {
+  capturarPosicaoCitacao() {
+    const selecao = window.getSelection?.();
+    if (!selecao?.rangeCount) return null;
+    const range = selecao.getRangeAt(0);
+    const no = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+    const editavel = no?.closest?.('.ath-texto-editable, .ath-titulo-editable');
+    if (!editavel || !editavel.contains(range.endContainer) || !this.container.contains(editavel)) return null;
+    const blocoId = editavel.closest('.ath-bloco-folha')?.dataset.blocoId;
+    if (!blocoId) return null;
+    const antes = range.cloneRange();
+    antes.selectNodeContents(editavel);
+    antes.setEnd(range.startContainer, range.startOffset);
+    return { blocoId, inicio: antes.toString().length, comprimento: range.toString().length };
+  }
+
+  inserirCitacaoNoCursor(ref, formato = 'parentese', opcoes = {}, posicao = null) {
     if (!ref) return;
+    if (!posicao?.blocoId && !this.capturarPosicaoCitacao() && typeof this.blocoSelecionado?.texto !== 'string') {
+      alert('Selecione um bloco de texto ou posicione o cursor no relatório antes de inserir a citação.');
+      return;
+    }
 
     // Garante que a referência bibliográfica seja incluída na lista do documento
     if (!this.doc.referencias) this.doc.referencias = [];
@@ -2494,45 +2538,73 @@ export class EditorView {
       this.doc.referencias.push(ref);
     }
 
-    const { html } = montarCitacao(ref, { estilo: 'abnt', ...opcoes, formato, indice: indiceNaLista(this.doc, ref) });
+    // Mesmo sem hyperlink de exportação, a citação continua identificável e editável no editor.
+    const { html: citacaoHtml } = montarCitacao(ref, { estilo: 'abnt', ...opcoes, linkar: true, formato, indice: indiceNaLista(this.doc, ref) });
+    const html = opcoes.linkar === false ? citacaoHtml.replace(/\s+href="#[^"]*"/, '') : citacaoHtml;
     const tagHtml = ` ${html}`;
 
     let inserido = false;
+    if (posicao?.blocoId) {
+      const editavel = Array.from(this.container.querySelectorAll('.ath-bloco-folha')).find(el => el.dataset.blocoId === posicao.blocoId)?.querySelector('.ath-texto-editable, .ath-titulo-editable');
+      const bloco = this.buscarBlocoPorId(posicao.blocoId);
+      if (editavel && bloco) {
+        const localizar = deslocamento => {
+          const walker = document.createTreeWalker(editavel, NodeFilter.SHOW_TEXT);
+          let no; let restante = deslocamento;
+          while ((no = walker.nextNode())) {
+            if (restante <= no.length) return { no, offset: restante };
+            restante -= no.length;
+          }
+          return { no: editavel, offset: editavel.childNodes.length };
+        };
+        const inicio = localizar(posicao.inicio);
+        const fim = localizar(posicao.inicio + (posicao.comprimento || 0));
+        const range = document.createRange();
+        range.setStart(inicio.no, inicio.offset);
+        range.setEnd(fim.no, fim.offset);
+        range.deleteContents();
+        const molde = document.createElement('template');
+        molde.innerHTML = tagHtml;
+        range.insertNode(molde.content.cloneNode(true));
+        bloco.texto = sanearHtmlTexto(removerPalavrasIniciais(removerHifensCondicionais(editavel.innerHTML)));
+        this.blocoSelecionado = bloco;
+        inserido = true;
+      }
+    }
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    if (sel && sel.rangeCount > 0) {
+    if (!inserido && sel && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       const comum = range.commonAncestorContainer;
       const elPai = comum?.nodeType === Node.ELEMENT_NODE ? comum : comum?.parentElement;
       const editable = elPai?.closest('.ath-texto-editable, .ath-titulo-editable, [contenteditable="true"]');
-      if (editable) {
+      if (editable && this.container.contains(editable)) {
         try {
-          if (typeof document !== 'undefined' && document.queryCommandSupported && document.queryCommandSupported('insertHTML')) {
-            document.execCommand('insertHTML', false, tagHtml);
-            inserido = true;
-          } else {
-            range.deleteContents();
-            const molde = document.createElement('template');
-            molde.innerHTML = tagHtml;
-            const node = molde.content.cloneNode(true);
-            const ultimo = node.lastChild;
-            range.insertNode(node);
-            if (ultimo) range.setStartAfter(ultimo);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            inserido = true;
+          range.deleteContents();
+          const molde = document.createElement('template');
+          molde.innerHTML = tagHtml;
+          const node = molde.content.cloneNode(true);
+          const ultimo = node.lastChild;
+          range.insertNode(node);
+          if (ultimo) range.setStartAfter(ultimo);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          const bloco = this.buscarBlocoPorId(editable.closest('.ath-bloco-folha')?.dataset.blocoId);
+          if (bloco) {
+            bloco.texto = sanearHtmlTexto(removerPalavrasIniciais(removerHifensCondicionais(editable.innerHTML)));
+            this.blocoSelecionado = bloco;
           }
-          if (this.blocoSelecionado) {
-            this.blocoSelecionado.texto = editable.innerHTML;
-          }
+          inserido = true;
         } catch (_) {}
       }
     }
 
     if (!inserido && this.blocoSelecionado && this.blocoSelecionado.texto !== undefined) {
       this.blocoSelecionado.texto += tagHtml;
+      inserido = true;
     }
 
+    if (!inserido) return;
     this.notificarMudanca();
     this.renderizarFolhasPaginas();
   }

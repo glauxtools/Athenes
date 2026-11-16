@@ -112,7 +112,9 @@ export function montarCitacao(ref, opcoes = {}) {
   const texto = opcoes.textoPronto || formatarCitacaoTexto(ref, opcoes);
   if (!opcoes.linkar) return { texto, html: escaparHtml(texto) };
   const ancora = ancoraDaReferencia(ref);
-  return { texto, html: `<a class="ath-citacao-link" href="#${ancora}" data-ref-id="${escaparHtml(String(ref?.id || ref?.chaveZotero || ''))}" style="color:inherit;text-decoration:none;">${escaparHtml(texto)}</a>` };
+  const estilo = ESTILOS_CITACAO.some(e => e.id === opcoes.estilo) ? opcoes.estilo : 'abnt';
+  const formato = opcoes.formato === 'narrativa' ? 'narrativa' : 'parentese';
+  return { texto, html: `<a class="ath-citacao-link" href="#${ancora}" data-ref-id="${escaparHtml(String(ref?.id || ref?.chaveZotero || ''))}" data-cit-estilo="${estilo}" data-cit-formato="${formato}" data-cit-pagina="${escaparHtml(String(opcoes.pagina || ''))}" style="color:inherit;text-decoration:none;">${escaparHtml(texto)}</a>` };
 }
 
 /** Posição (1-based) da obra na lista de referências do documento (estilos numéricos). */
