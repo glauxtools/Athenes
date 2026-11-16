@@ -345,7 +345,7 @@ export class AthenesApp {
     const modal = document.createElement('div');
     modal.className = 'ath-modal-backdrop';
     modal.innerHTML = `
-      <div class="ath-modal" style="max-width: min(1100px, 94vw); width: min(1100px, 94vw);">
+      <div class="ath-modal ath-modal-zotero" style="max-width: min(1100px, 94vw); width: min(1100px, 94vw);">
         <div class="ath-modal-head">
           <h2>Biblioteca Zotero & Fichamento de Leitura</h2>
           <button type="button" class="ath-btn ath-btn-icon" id="athModalZoteroFechar">✕</button>

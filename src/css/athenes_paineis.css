@@ -188,6 +188,8 @@ body:has(.ath-modal-backdrop) .ath-barra-contextual {
 .ath-btn-primary, .ath-btn-primary svg { color: #FFFFFF; }
 
 /* Biblioteca Zotero: duas colunas (obras | resumo, fichamento e citação longa) quando há largura; uma só em tela estreita */
+.ath-modal-zotero { height: min(760px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); }
+.ath-modal-zotero > .ath-modal-corpo { min-height: 0; }
 .ath-zotero-painel { container-type: inline-size; }
 .ath-zotero-colunas { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 .ath-zotero-col-esq, .ath-zotero-col-dir { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -203,3 +205,12 @@ body:has(.ath-modal-backdrop) .ath-barra-contextual {
 .ath-zotero-colunas { scrollbar-width: thin; scrollbar-color: #B6C3D3 transparent; padding-right: 6px; } /* barra de rolagem visível quando o conteúdo passa da janela */
 .ath-zotero-col-esq > *, .ath-zotero-col-dir > *, .ath-zotero-lista, .ath-zotero-lista > * { flex-shrink: 0; } /* o conteúdo não se espreme: a coluna rola */
 .ath-zotero-col-esq > .ath-zotero-lista { flex: none; overflow: visible; } /* a rolagem é da coluna, não da lista dentro dela */
+@media (max-height: 520px) {
+  .ath-modal-zotero { height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); }
+  .ath-modal-zotero .ath-modal-head { padding: 7px 16px; }
+  .ath-modal-zotero .ath-zotero-painel { padding: 6px 12px !important; gap: 4px !important; }
+  .ath-modal-zotero .ath-zotero-col-esq, .ath-modal-zotero .ath-zotero-col-dir { gap: 4px; }
+  .ath-modal-zotero .ath-zotero-status-box, .ath-modal-zotero #athZoteroEstilo { padding-top: 3px !important; padding-bottom: 3px !important; }
+  .ath-modal-zotero #athZoteroBusca { height: 28px !important; }
+  .ath-modal-zotero #athZoteroOrdem, .ath-modal-zotero #athZoteroPeriodo { height: 24px !important; }
+}
