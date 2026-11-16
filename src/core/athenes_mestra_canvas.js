@@ -153,6 +153,59 @@ export function redimensionar(ini, alca, dx, dy, { proporcional = false, centro 
   return { x_mm: arred(x), y_mm: arred(y), largura_mm: arred(w), altura_mm: arred(h) };
 }
 
+/** Encaixa a alça arrastada nas guias sem deslocar o lado oposto do objeto. */
+export function redimensionarComSnap(ini, alca, dx, dy, alvos, toleranciaMm = 1.5, opcoes = {}) {
+  const dimensoes = (mx, my) => redimensionar(ini, alca, mx, my, opcoes);
+  const pontoAlca = (geo) => {
+    const w = geo.largura_mm; const h = geo.altura_mm;
+    const lx = alca.includes('e') ? w / 2 : alca.includes('w') ? -w / 2 : 0;
+    const ly = alca.includes('s') ? h / 2 : alca.includes('n') ? -h / 2 : 0;
+    const a = ((ini.rotacao_graus || 0) * Math.PI) / 180;
+    const cx = geo.x_mm + w / 2; const cy = geo.y_mm + h / 2;
+    return { x: cx + lx * Math.cos(a) - ly * Math.sin(a), y: cy + lx * Math.sin(a) + ly * Math.cos(a) };
+  };
+  const bruto = dimensoes(dx, dy);
+  const ponto = pontoAlca(bruto);
+  const passo = 0.1;
+  const px = pontoAlca(dimensoes(dx + passo, dy));
+  const py = pontoAlca(dimensoes(dx, dy + passo));
+  const jx = [(px.x - ponto.x) / passo, (py.x - ponto.x) / passo];
+  const jy = [(px.y - ponto.y) / passo, (py.y - ponto.y) / passo];
+  const proximo = (valor, linhas, derivada) => {
+    if (Math.hypot(...derivada) < 0.01) return null;
+    let melhor = null;
+    for (const linha of linhas) {
+      const d = linha - valor;
+      if (Math.abs(d) <= toleranciaMm && (!melhor || Math.abs(d) < Math.abs(melhor.d))) melhor = { d, linha };
+    }
+    return melhor;
+  };
+  let sx = proximo(ponto.x, alvos.v, jx);
+  let sy = proximo(ponto.y, alvos.h, jy);
+  if (!sx && !sy) return { geometria: bruto, guias: [] };
+  const determinante = jx[0] * jy[1] - jx[1] * jy[0];
+  if (sx && sy && Math.abs(determinante) < 0.01) {
+    if (Math.abs(sx.d) / Math.hypot(...jx) <= Math.abs(sy.d) / Math.hypot(...jy)) sy = null;
+    else sx = null;
+  }
+  let ajusteX = 0; let ajusteY = 0;
+  if (sx && sy) {
+    ajusteX = (sx.d * jy[1] - sy.d * jx[1]) / determinante;
+    ajusteY = (sy.d * jx[0] - sx.d * jy[0]) / determinante;
+  } else {
+    const j = sx ? jx : jy; const d = sx ? sx.d : sy.d;
+    const quadrado = j[0] ** 2 + j[1] ** 2;
+    ajusteX = d * j[0] / quadrado;
+    ajusteY = d * j[1] / quadrado;
+  }
+  const geometria = dimensoes(dx + ajusteX, dy + ajusteY);
+  const final = pontoAlca(geometria);
+  const guias = [];
+  if (sx && Math.abs(final.x - sx.linha) <= 0.02) guias.push({ eixo: 'v', pos_mm: arred(sx.linha) });
+  if (sy && Math.abs(final.y - sy.linha) <= 0.02) guias.push({ eixo: 'h', pos_mm: arred(sy.linha) });
+  return { geometria, guias };
+}
+
 /** Ângulo (graus) para o ponteiro (px,py) em torno do centro do elemento; 0° = alça de rotação no topo. */
 export function anguloPeloPonteiro(el, px, py, { travar = false } = {}) {
   const cx = el.x_mm + el.largura_mm / 2; const cy = el.y_mm + el.altura_mm / 2;

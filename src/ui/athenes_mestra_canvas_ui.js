@@ -7,7 +7,7 @@
  */
 
 import {
-  ANCORAS, normalizarElemento, criarElementoLivre, redimensionar, anguloPeloPonteiro, calcularSnap, alvosDeSnap, criarGuia,
+  ANCORAS, normalizarElemento, criarElementoLivre, redimensionar, redimensionarComSnap, anguloPeloPonteiro, calcularSnap, alvosDeSnap, criarGuia,
   alinharElementos, distribuirElementos, mudarOrdemZ, ordemDeEmpilhamento, converterUnidade, pontoDeAncora, posicionarPorAncora,
   paraReferencia, deReferencia, normalizarMestraCanvas, normalizarGradeGuia, linhasDeGrade, normalizarRegrasMestra, quadroTextoPrimario, caixaEnvolvente
 } from '../core/athenes_mestra_canvas.js';
@@ -471,10 +471,11 @@ export class CanvasMestra {
 
   /** Arraste com requestAnimationFrame (~60 fps) e imã nas guias/margens/centro/outros elementos. */
   rastrear(ev, aoMover, aoSoltar) {
-    let tick = false; let ultimo = ev;
-    const mover = (e) => { ultimo = e; if (tick) return; tick = true; requestAnimationFrame(() => { tick = false; aoMover(ultimo); }); };
+    let quadro = null; let ultimo = ev;
+    const mover = (e) => { ultimo = e; if (quadro !== null) return; quadro = requestAnimationFrame(() => { quadro = null; aoMover(ultimo); }); };
     const soltar = (e) => {
       window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar);
+      if (quadro !== null) cancelAnimationFrame(quadro);
       aoMover(e); aoSoltar?.(e);
     };
     window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar);
@@ -515,16 +516,22 @@ export class CanvasMestra {
     const e = this.primario(); if (!e || e.bloqueado) return;
     const ini = { x_mm: e.x_mm, y_mm: e.y_mm, largura_mm: e.largura_mm, altura_mm: e.altura_mm, rotacao_graus: e.rotacao_graus };
     const p0 = this.paraMm(ev);
+    const outros = this.elementos().filter(item => item.id !== e.id);
+    const alvosSnap = alvosDeSnap({ larguraMm: this.W, alturaMm: this.H, margens: this.margens(), guias: this.r.guias, elementos: outros, grade: this.r.grade_guia?.visivel ? this.r.grade_guia : null });
     this.rastrear(ev, (m) => {
       const p = this.paraMm(m);
+      this.guiasInteligentes = [];
       if (alca === 'rot') {
         e.rotacao_graus = anguloPeloPonteiro(e, p.x, p.y, { travar: m.shiftKey });
       } else {
-        const r = redimensionar(ini, alca, p.x - p0.x, p.y - p0.y, { proporcional: m.shiftKey || e.travar_proporcao, centro: m.altKey });
-        Object.assign(e, r);
+        const opcoes = { proporcional: m.shiftKey || e.travar_proporcao, centro: m.altKey };
+        if (this.snap) {
+          const { geometria, guias } = redimensionarComSnap(ini, alca, p.x - p0.x, p.y - p0.y, alvosSnap, 6 / this.esc, opcoes);
+          Object.assign(e, geometria); this.guiasInteligentes = guias;
+        } else Object.assign(e, redimensionar(ini, alca, p.x - p0.x, p.y - p0.y, opcoes));
       }
       this.desenhar(); this.sincronizarCampos();
-    }, () => this.atualizarTudo());
+    }, () => { this.guiasInteligentes = []; this.atualizarTudo(); });
   }
 
   iniciarArrasteGuia(ev, guia) {

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  converterUnidade, criarElementoLivre, redimensionar, calcularSnap, alvosDeSnap, alinharElementos, distribuirElementos,
+  converterUnidade, criarElementoLivre, redimensionar, redimensionarComSnap, calcularSnap, alvosDeSnap, alinharElementos, distribuirElementos,
   mudarOrdemZ, ordemDeEmpilhamento, resolverMestraDaPagina, normalizarRegrasMestra,
   elementosEfetivosDaPagina, sobrescreverElemento, restaurarElemento, margensEfetivasMm, caixaEnvolvente, travarAngulo,
   anguloPeloPonteiro, posicionarPorAncora, pontoDeAncora, resolverVariaveisTexto, espelharElemento, normalizarMestraCanvas,
@@ -40,6 +40,25 @@ test('redimensionar com rotação 90° leva o arraste ao referencial local', () 
   const r = redimensionar(el({ rotacao_graus: 90 }), 'e', 0, 10);
   assert.equal(r.largura_mm, 50);
   assert.equal(r.altura_mm, 20);
+});
+
+test('redimensionar pela alça encaixa nas linhas da grade sem mover a borda oposta', () => {
+  const alvos = { v: [0, 25, 50, 75], h: [0, 20, 40, 60] };
+  const leste = redimensionarComSnap(el(), 'e', -1.2, 0, alvos, 1.5);
+  assert.equal(leste.geometria.x_mm, 10);
+  assert.equal(leste.geometria.x_mm + leste.geometria.largura_mm, 50);
+  assert.deepEqual(leste.guias, [{ eixo: 'v', pos_mm: 50 }]);
+  const noroeste = redimensionarComSnap(el(), 'nw', -9.1, 9.2, alvos, 1.5);
+  assert.deepEqual([noroeste.geometria.x_mm, noroeste.geometria.y_mm], [0, 20]);
+  assert.deepEqual([noroeste.geometria.x_mm + noroeste.geometria.largura_mm, noroeste.geometria.y_mm + noroeste.geometria.altura_mm], [50, 30]);
+});
+
+test('redimensionar com ímã preserva proporção e rotação', () => {
+  const proporcional = redimensionarComSnap(el(), 'e', 8.9, 0, { v: [60], h: [] }, 1.5, { proporcional: true });
+  assert.deepEqual([proporcional.geometria.largura_mm, proporcional.geometria.altura_mm], [50, 25]);
+  const girado = redimensionarComSnap(el({ rotacao_graus: 90 }), 'e', 0, 9.1, { v: [], h: [50] }, 1.5);
+  assert.equal(girado.geometria.largura_mm, 50);
+  assert.deepEqual(girado.guias, [{ eixo: 'h', pos_mm: 50 }]);
 });
 
 test('caixa envolvente e ângulos', () => {
