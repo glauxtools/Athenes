@@ -112,7 +112,8 @@ function lerSecao(sectPr) {
   return {
     w: num(sz?.a['w:w']), h: num(sz?.a['w:h']), orient: sz?.a['w:orient'],
     mg: mg ? { t: num(mg.a['w:top']), r: num(mg.a['w:right']), b: num(mg.a['w:bottom']), l: num(mg.a['w:left']), cab: num(mg.a['w:header']), rod: num(mg.a['w:footer']) } : null,
-    colunas: num(cols?.a['w:num']) || 1, espacoCols: num(cols?.a['w:space']), refs, tituloDistinto: !!primeiro(sectPr, 'w:titlePg')
+    colunas: num(cols?.a['w:num']) || 1, espacoCols: num(cols?.a['w:space']), refs,
+    tituloDistinto: ligado(primeiro(sectPr, 'w:titlePg'))
   };
 }
 
@@ -121,7 +122,7 @@ function analisarCorpo(xml, est) {
   const corpo = primeiro(raiz, 'w:body') || raiz;
   const paragrafos = [];
   const secoes = [];
-  let secaoIdx = 0, tabelas = 0, quebraPendente = false, notasRef = 0, imagens = 0;
+  let secaoIdx = 0, tabelas = 0, notasRef = 0, imagens = 0;
 
   const processar = (p) => {
     const pPr = primeiro(p, 'w:pPr');
@@ -141,7 +142,8 @@ function analisarCorpo(xml, est) {
         quebra: descendentes(r, 'w:br').some(b => b.a['w:type'] === 'page')
       };
     });
-    imagens += descendentes(p, 'w:drawing').length;
+    const desenhos = desenhosDe(p);
+    imagens += desenhos.length;
     const texto = runs.map(r => r.texto).join('');
     const chars = texto.replace(/\s+/g, ' ').trim().length;
     const quebraDepois = runs.some(r => r.quebra);
@@ -162,15 +164,17 @@ function analisarCorpo(xml, est) {
     const efetivo = mesclar(est.padrao, estilo, direto, dominante);
     paragrafos.push({
       texto, chars, styleId, nomeEstilo: est.mapa.get(styleId)?.nome || styleId || '(sem estilo)', efetivo, runs,
-      secaoIdx, quebraDepois: quebraDepois || quebraPendente, quebraAntes: !!primeiro(pPr, 'w:pageBreakBefore'), fimSecao: !!sectPr
+      desenhos, secaoIdx, quebraDepois, quebraAntes: ligado(primeiro(pPr, 'w:pageBreakBefore')), fimSecao: !!sectPr
     });
-    quebraPendente = false;
     if (sectPr) { secoes[secaoIdx] = { ...lerSecao(sectPr), chars: 0 }; secaoIdx++; }
   };
   const visitar = (no) => {
     for (const f of filhos(no)) {
       if (f.n === 'w:p') processar(f);
-      else if (f.n === 'w:tbl') tabelas++;
+      else if (f.n === 'w:tbl') {
+        tabelas++;
+        paragrafos.push({ tabela: f, secaoIdx, chars: 0 });
+      }
       else if (f.n === 'w:sdt') visitar(primeiro(f, 'w:sdtContent') || f);
     }
   };
@@ -178,7 +182,13 @@ function analisarCorpo(xml, est) {
   const finalSect = lerSecao(primeiro(corpo, 'w:sectPr'));
   if (finalSect) secoes[secaoIdx] = { ...finalSect, chars: 0 };
   for (const p of paragrafos) if (secoes[p.secaoIdx]) secoes[p.secaoIdx].chars += p.chars;
-  return { paragrafos, secoes: secoes.filter(Boolean), tabelas, notasRef, imagens };
+  const herdadas = new Map();
+  for (const secao of secoes) {
+    if (!secao) continue;
+    for (const ref of secao.refs) herdadas.set(`${ref.tipo}:${ref.modo}`, ref);
+    secao.refs = [...herdadas.values()];
+  }
+  return { paragrafos, secoes, tabelas, notasRef, imagens };
 }
 
 // ------------------------------------------------------------------ papéis
@@ -194,6 +204,7 @@ function detectarCapa(ps) {
   if (uteis.length < 4) return new Set();
   const capa = [];
   for (const p of ps) {
+    if (p.tabela) return new Set();
     if (p.chars > 250 || /^(heading|titulo \d|título \d)/i.test(semAcento(p.nomeEstilo)) || p.efetivo.outline !== undefined) { return new Set(); }
     if (p.chars > 0) capa.push(p);
     if (p.quebraDepois || p.fimSecao) return capa.length && capa.length <= 15 ? new Set(capa) : new Set();
@@ -403,22 +414,38 @@ function mestraDeSecao(base, sec, hf, { hifen } = {}) {
   else m.numeracao_pagina = { ativo: false, local: 'rodape', horizontal: 'direita', formato: 'apenas_numero', mascara: '{p}', prefixo: '', sufixo: '', estilo: 'arabico', iniciar_em: 1, continuar: true, ocultar_primeira: false };
   m.elementos_recorrentes = [];
   const larg = sec?.w ? sec.w / TW_MM : 210;
+  const alt = sec?.h ? sec.h / TW_MM : 297;
   for (const img of hf.imagens || []) {
     const margL = m.margens_mm.l, margR = m.margens_mm.r;
-    const largura = Math.min(img.largura_mm, larg);
+    const escala = Math.min(1, larg / img.largura_mm, alt / img.altura_mm);
+    const largura = img.largura_mm * escala, altura = img.altura_mm * escala;
     // x: pela margem e pelo alinhamento do parágrafo, somando o recuo dele (recuo negativo avança para fora da margem)
-    const x = img.largura_mm >= larg - 1 ? 0
+    const xAlinhado = img.largura_mm >= larg - 1 ? 0
       : (img.alinhamento === 'direita' ? larg - margR - largura - (img.ind_dir_mm || 0)
         : (img.alinhamento === 'centro' ? (larg - largura) / 2 + (img.ind_esq_mm || 0) / 2 - (img.ind_dir_mm || 0) / 2 : margL + (img.ind_esq_mm || 0)));
-    m.elementos_recorrentes.push(criarElementoMestra('foto_capa', {
-      titulo: 'Imagem do cabeçalho', x_mm: Math.round(Math.max(0, x) * 10) / 10, y_mm: Math.round((img.y_mm || 0) * 10) / 10, largura_mm: largura, altura_mm: img.altura_mm * (largura / img.largura_mm),
-      url: img.url, sangria: false, camada: 'frente', ajuste: 'contain'
-    }));
-  }
-  // como no Word, um cabeçalho mais alto que a margem empurra o texto para baixo da imagem
-  for (const el of m.elementos_recorrentes) {
-    const base = (el.y_mm || 0) + (el.altura_mm || 0);
-    if (base + 3 > m.margens_mm.t) m.margens_mm.t = Math.ceil(base + 3);
+    const posicionar = (pos, bases, padrao, limite, tamanho) => {
+      if (!pos) return padrao;
+      const [ini, fim] = bases[pos.ref] || [padrao, padrao + tamanho];
+      const alvo = pos.alin === 'center' ? (ini + fim - tamanho) / 2
+        : ['right', 'bottom', 'outside'].includes(pos.alin) ? fim - tamanho : ini + pos.offset;
+      return alvo >= 0 && alvo + tamanho <= limite + 0.5 ? alvo : padrao;
+    };
+    const x = posicionar(img.h, { page: [0, larg], margin: [margL, larg - margR], column: [margL, larg - margR] }, xAlinhado, larg, largura);
+    const y = posicionar(img.v, {
+      page: [0, alt], margin: [m.margens_mm.t, alt - m.margens_mm.b],
+      paragraph: [img.y_mm, img.y_mm + altura], line: [img.y_mm, img.y_mm + altura]
+    }, img.y_mm, alt, altura);
+    const el = criarElementoMestra('foto_capa', {
+      titulo: img.tipo === 'rod' ? 'Imagem do rodapé' : 'Imagem do cabeçalho',
+      x_mm: Math.max(0, Math.min(larg - largura, x)), y_mm: Math.max(0, Math.min(alt - altura, y)),
+      largura_mm: largura, altura_mm: altura, url: img.url, sangria: false,
+      camada: img.atras ? 'fundo' : 'frente', ajuste: 'contain'
+    });
+    m.elementos_recorrentes.push(el);
+    if (!img.ancorada) {
+      if (img.tipo === 'rod') m.margens_mm.b = Math.max(m.margens_mm.b, Math.ceil(alt - el.y_mm + 3));
+      else m.margens_mm.t = Math.max(m.margens_mm.t, Math.ceil(el.y_mm + altura + 3));
+    }
   }
   void hifen;
   return m;
@@ -476,56 +503,114 @@ function areaDeParte(arvore) {
   return { zonas, usaPagina, zonaPagina, estilo: estilo || {} };
 }
 
-function bytesParaDataUrl(bytes, nome) {
-  const mime = /\.png$/i.test(nome) ? 'image/png' : /\.gif$/i.test(nome) ? 'image/gif' : /\.webp$/i.test(nome) ? 'image/webp' : 'image/jpeg';
+const TIPOS_IMAGEM = { png: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', bmp: 'bmp' };
+
+function bytesParaDataUrl(bytes, mime) {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return `data:${mime};base64,${btoa(bin)}`;
+  return `data:image/${mime};base64,${btoa(bin)}`;
 }
 
-async function lerCabecalhoRodape(zip, sec, modoRef = 'default', est = null) {
-  const r = { cab: null, rod: null, imagens: [] };
-  if (!sec?.refs?.length || !zip.existe('word/_rels/document.xml.rels')) return r;
-  const rels = new Map();
-  for (const x of descendentes(parseXml(await zip.texto('word/_rels/document.xml.rels')), 'Relationship', [])) rels.set(x.a.Id, x.a.Target);
-  for (const ref of sec.refs.filter(x => x.modo === modoRef)) {
-    const alvo = rels.get(ref.rid);
-    const caminho = alvo && `word/${alvo.replace(/^\/?(word\/)?/, '')}`;
-    if (!caminho || !zip.existe(caminho)) continue;
-    const arvore = parseXml(await zip.texto(caminho));
-    const area = areaDeParte(arvore);
-    if (ref.tipo === 'cab') r.cab = area;
-    if (ref.tipo === 'rod') r.rod = area;
-    // imagens do cabeçalho (logos, faixa da capa): tamanho em mm e alinhamento do parágrafo
-    const relsImg = `word/_rels/${caminho.split('/').pop()}.rels`;
-    if (ref.tipo === 'cab' && zip.existe(relsImg)) {
-      const alvos = new Map(descendentes(parseXml(await zip.texto(relsImg)), 'Relationship', []).map(x => [x.a.Id, x.a.Target]));
-      // posição como no Word: o cabeçalho começa na distância da borda e cada parágrafo (inclusive os vazios acima da imagem) ocupa sua altura
-      let yMm = mm(sec?.mg?.cab || 0);
-      const PT_MM = 25.4 / 72;
-      for (const par of descendentes(arvore, 'w:p')) {
-        const pPr = primeiro(par, 'w:pPr');
-        const ef = mesclar(est?.padrao, est?.resolver(attr(primeiro(pPr, 'w:pStyle'), 'w:val') || est?.padraoId), lerPPr(pPr));
-        const tamMarca = lerRPr(primeiro(pPr, 'w:rPr')).tam ?? ef.tam ?? 11;
-        const antes = (ef.antes || 0) / 20, depois = (ef.depois || 0) / 20;
-        const desenhos = descendentes(par, 'w:drawing');
-        let alturaLinha = tamMarca * 1.22; // altura de uma linha de texto (Calibri/Aptos ≈ 1,2 do corpo)
-        const alinhamento = { center: 'centro', right: 'direita', end: 'direita' }[ef.jc] || 'esquerda';
-        for (const d of desenhos) {
-          const emb = descendentes(d, 'a:blip')[0]?.a['r:embed'];
-          const ext = descendentes(d, 'wp:extent')[0];
-          const alvoImg = alvos.get(emb);
-          const arq = alvoImg && `word/${alvoImg.replace(/^\/?(word\/)?/, '')}`;
-          if (!arq || !ext || !zip.existe(arq)) continue;
-          const alturaMm = Math.round(Number(ext.a.cy) / 360) / 100;
-          r.imagens.push({
-            url: bytesParaDataUrl(await zip.ler(arq), arq), largura_mm: Math.round(Number(ext.a.cx) / 360) / 100, altura_mm: alturaMm, alinhamento,
-            ancorada: !!descendentes(d, 'wp:anchor').length, y_mm: yMm + antes * PT_MM, ind_esq_mm: mm(ef.esq || 0), ind_dir_mm: mm(ef.dir || 0)
-          });
-          alturaLinha = Math.max(alturaLinha, alturaMm / PT_MM);
-        }
-        yMm += (antes + alturaLinha + depois) * PT_MM;
+function desenhosDe(no) {
+  return filhos(no).flatMap(f => {
+    if (f.n === 'w:drawing' || f.n === 'w:pict') return [f];
+    if (f.n === 'mc:AlternateContent') {
+      const desenhos = desenhosDe(primeiro(f, 'mc:Choice'));
+      return desenhos.length ? desenhos : desenhosDe(primeiro(f, 'mc:Fallback'));
+    }
+    return desenhosDe(f);
+  });
+}
+
+function leitorDeMidias(zip, prepararImagem) {
+  const relacoes = new Map(), cache = new Map();
+  const relacoesDe = (parte) => {
+    if (!relacoes.has(parte)) {
+      const i = parte.lastIndexOf('/') + 1;
+      const caminho = `${parte.slice(0, i)}_rels/${parte.slice(i)}.rels`;
+      relacoes.set(parte, zip.texto(caminho).then(xml => new Map((xml ? descendentes(parseXml(xml), 'Relationship') : [])
+        .filter(x => x.a.TargetMode !== 'External').map(x => [x.a.Id, x.a.Target]))));
+    }
+    return relacoes.get(parte);
+  };
+  const alvoDe = async (parte, id) => {
+    const alvo = (await relacoesDe(parte)).get(id);
+    if (!alvo || /[:\\?#]/.test(alvo)) return null;
+    const pilha = alvo.startsWith('/') ? [] : parte.split('/').slice(0, -1);
+    for (const pedaco of alvo.split('/')) {
+      if (!pedaco || pedaco === '.') continue;
+      if (pedaco === '..') { if (!pilha.length) return null; pilha.pop(); }
+      else pilha.push(pedaco);
+    }
+    const caminho = pilha.join('/');
+    return zip.existe(caminho) ? caminho : null;
+  };
+  return {
+    alvoDe,
+    async carregar(d, parte) {
+      const ancora = primeiro(d, 'wp:anchor');
+      const ext = primeiro(ancora || primeiro(d, 'wp:inline'), 'wp:extent');
+      const vml = descendentes(d, 'v:imagedata')[0];
+      const id = attr(descendentes(d, 'a:blip')[0], 'r:embed') || attr(vml, 'r:id');
+      if (!id) return null;
+      const estiloVml = attr(descendentes(d, 'v:shape')[0], 'style') || '';
+      const medidaVml = (chave) => {
+        const m = new RegExp(`(?:^|;)\\s*${chave}\\s*:\\s*([\\d.]+)(pt|mm|cm|in|px)`, 'i').exec(estiloVml);
+        return m ? Number(m[1]) * { pt: 25.4 / 72, mm: 1, cm: 10, in: 25.4, px: 25.4 / 96 }[m[2].toLowerCase()] : 0;
+      };
+      const largura_mm = ext ? Number(ext.a.cx) / 36000 : medidaVml('width');
+      const altura_mm = ext ? Number(ext.a.cy) / 36000 : medidaVml('height');
+      if (![largura_mm, altura_mm].every(n => Number.isFinite(n) && n > 0)) return null;
+      const caminho = await alvoDe(parte, id);
+      const mime = caminho && TIPOS_IMAGEM[caminho.split('.').at(-1).toLowerCase()];
+      if (!mime || typeof mime !== 'string') return null;
+      if (!cache.has(caminho)) {
+        cache.set(caminho, zip.ler(caminho).then(async bytes => {
+          const url = bytesParaDataUrl(bytes, mime);
+          return prepararImagem ? await prepararImagem(url) : url;
+        }));
       }
+      const pos = (eixo) => {
+        const p = primeiro(ancora, `wp:position${eixo}`);
+        return p && { ref: p.a.relativeFrom, offset: Number(textoDe(primeiro(p, 'wp:posOffset'))) / 36000 || 0, alin: textoDe(primeiro(p, 'wp:align')) };
+      };
+      return { largura_mm, altura_mm, url: await cache.get(caminho), ancorada: !!ancora,
+        atras: ancora?.a.behindDoc === '1', h: pos('H'), v: pos('V') };
+    }
+  };
+}
+
+async function lerCabecalhoRodape(zip, midias, sec, modoRef, est) {
+  const r = { cab: null, rod: null, imagens: [] };
+  for (const ref of (sec?.refs || []).filter(x => x.modo === modoRef)) {
+    const caminho = await midias.alvoDe('word/document.xml', ref.rid);
+    if (!caminho) continue;
+    const arvore = parseXml(await zip.texto(caminho));
+    r[ref.tipo] = areaDeParte(arvore);
+    const PT_MM = 25.4 / 72;
+    const imagens = [];
+    let y = 0;
+    for (const par of descendentes(arvore, 'w:p')) {
+      const pPr = primeiro(par, 'w:pPr');
+      const ef = mesclar(est.padrao, est.resolver(attr(primeiro(pPr, 'w:pStyle'), 'w:val') || est.padraoId), lerPPr(pPr));
+      const tamMarca = lerRPr(primeiro(pPr, 'w:rPr')).tam ?? ef.tam ?? 11;
+      let alturaLinha = tamMarca * 1.22 * PT_MM;
+      y += (ef.antes || 0) / 20 * PT_MM;
+      for (const d of desenhosDe(par)) {
+        const img = await midias.carregar(d, caminho);
+        if (!img) continue;
+        imagens.push({ ...img, tipo: ref.tipo, y_mm: y,
+          alinhamento: { center: 'centro', right: 'direita', end: 'direita' }[ef.jc] || 'esquerda',
+          ind_esq_mm: mm(ef.esq || 0), ind_dir_mm: mm(ef.dir || 0) });
+        if (!img.ancorada) alturaLinha = Math.max(alturaLinha, img.altura_mm);
+      }
+      y += alturaLinha + (ef.depois || 0) / 20 * PT_MM;
+    }
+    const borda = mm(sec?.mg?.[ref.tipo] || 0);
+    const alturaPagina = sec?.h ? sec.h / TW_MM : 297;
+    for (const img of imagens) {
+      img.y_mm += ref.tipo === 'cab' ? borda : alturaPagina - borda - (img.ancorada ? Math.max(img.altura_mm, y) : y);
+      r.imagens.push(img);
     }
   }
   return r;
@@ -563,12 +648,33 @@ function htmlDoParagrafo(p, idEnfase = () => null) {
 
 const PAGINA_QUEBRA = () => criarNovoBloco('quebra_pagina', {});
 
+function blocoDaTabela(tabela) {
+  const grade = filhos(primeiro(tabela, 'w:tblGrid'), 'w:gridCol').map(c => num(c.a['w:w']) || 1);
+  const linhasWord = filhos(tabela, 'w:tr');
+  const linhas = linhasWord.map(linha => filhos(linha, 'w:tc').flatMap(celula => {
+    const conteudo = descendentes(celula, 'w:p').map(textoComCampos).join('\n');
+    const span = num(attr(primeiro(primeiro(celula, 'w:tcPr'), 'w:gridSpan'), 'w:val')) || 1;
+    return [conteudo, ...Array(Math.min(100, Math.max(0, Math.trunc(span) - 1))).fill('')];
+  }));
+  const colunasQtd = linhas.reduce((n, l) => Math.max(n, l.length), grade.length);
+  if (!colunasQtd || !linhas.length) return null;
+  const completar = (l, valor) => Array.from({ length: colunasQtd }, (_, i) => l[i] ?? valor);
+  const comCabecalho = ligado(primeiro(primeiro(linhasWord[0], 'w:trPr'), 'w:tblHeader'));
+  const colunas = completar(comCabecalho ? linhas.shift() : [], '');
+  const bloco = criarNovoBloco('tabela', {
+    colunas, linhas: linhas.map(l => completar(l, '')), com_cabecalho: comCabecalho, larguras_relativas: completar(grade, 1)
+  });
+  bloco.titulo = '';
+  bloco.fonte = '';
+  return bloco;
+}
+
 /** Blocos com o conteúdo do arquivo: capa numa seção própria, páginas separadas por quebras, cada parágrafo no seu estilo. */
-function montarConteudo(paragrafos, papeis, cons, temCapa) {
+async function montarConteudo(paragrafos, secoes, papeis, cons, temCapa, secCapa, midias) {
   const estilosPorId = new Map(cons.estilos.map(e => [e.id, e]));
-  const capa = [], corpo = [];
-  let alvo = temCapa ? capa : corpo;
-  let noInicio = true;
+  const capa = [], grupos = new Map();
+  let naCapa = temCapa;
+  let imagensImportadas = 0;
   const derivados = new Map();
   const estiloDerivado = (base, ajustes, rotulo = 'variação') => {
     if (!Object.keys(ajustes).length) return base.id;
@@ -582,14 +688,41 @@ function montarConteudo(paragrafos, papeis, cons, temCapa) {
     return derivados.get(chave);
   };
   for (const p of paragrafos) {
-    const id = cons.mapaParagrafo.get(p);
-    const ehCapa = temCapa && alvo === capa;
-    if (p.chars === 0 || !id) {
-      if (p.quebraAntes && !ehCapa && corpo.length) corpo.push(PAGINA_QUEBRA());
-      if (p.quebraDepois) { if (ehCapa) alvo = corpo; else if (corpo.length) corpo.push(PAGINA_QUEBRA()); }
+    if (secCapa && p.secaoIdx > 0) naCapa = false;
+    const ehCapa = naCapa;
+    if (!ehCapa && !grupos.has(p.secaoIdx)) grupos.set(p.secaoIdx, []);
+    const alvo = ehCapa ? capa : grupos.get(p.secaoIdx);
+    if (p.tabela) {
+      const tabela = blocoDaTabela(p.tabela);
+      if (tabela) alvo.push(tabela);
       continue;
     }
-    noInicio = false;
+    if (p.quebraAntes && !ehCapa && alvo.length && alvo.at(-1).tipo !== 'quebra_pagina') alvo.push(PAGINA_QUEBRA());
+    const id = cons.mapaParagrafo.get(p);
+    if (p.chars && id) {
+      alvo.push(blocoDeTexto(p, id));
+    }
+    const sec = secoes[p.secaoIdx];
+    const larguraUtilMm = sec?.w ? mm(sec.w - (sec.mg?.l || 0) - (sec.mg?.r || 0)) : 160;
+    for (const desenho of p.desenhos) {
+      const img = await midias.carregar(desenho, 'word/document.xml');
+      if (!img) continue;
+      const largura_pct = Math.min(100, 100 * img.largura_mm / Math.max(1, larguraUtilMm));
+      alvo.push(criarNovoBloco('figura', {
+        src: img.url, itens: [{ id: gerarId('fig_item'), url: img.url, legenda_sub: '' }],
+        mostrar_titulo: false, mostrar_legenda: false, mostrar_fonte: false,
+        largura_modo: largura_pct < 100 ? 'pct' : 'corpo', largura_pct,
+        alinhamento_bloco: { center: 'centro', right: 'direita', end: 'direita' }[p.efetivo.jc] || 'esquerda'
+      }));
+      imagensImportadas++;
+    }
+    if (p.quebraDepois && !ehCapa && alvo.length && alvo.at(-1).tipo !== 'quebra_pagina') alvo.push(PAGINA_QUEBRA());
+    if (p.quebraDepois && ehCapa && !secCapa) naCapa = false;
+  }
+  for (const blocos of grupos.values()) if (blocos.at(-1)?.tipo === 'quebra_pagina') blocos.pop();
+  return { capa, grupos, imagensImportadas };
+
+  function blocoDeTexto(p, id) {
     const est = estilosPorId.get(id);
     const e = p.efetivo;
     const enfase = (f) => estiloDerivado(est, { ...(f.b ? { peso: 700 } : {}), ...(f.i ? { italico: true } : {}), ...(f.u ? { sublinhado: true } : {}) }, 'ênfase');
@@ -614,17 +747,14 @@ function montarConteudo(paragrafos, papeis, cons, temCapa) {
       ? criarNovoBloco('titulo', { ...dados, nivel: Number(id.slice(6)) || 1 })
       : criarNovoBloco('paragrafo', dados);
     bloco.texto = dados.texto;
-    alvo.push(bloco);
-    if (p.quebraDepois) { if (alvo === capa) alvo = corpo; else corpo.push(PAGINA_QUEBRA()); }
+    return bloco;
   }
-  void noInicio;
-  return { capa, corpo };
 }
 
 const placeholders = { 1: 'Título de nível 1', 2: 'Título de nível 2', 3: 'Título de nível 3', 4: 'Título de nível 4', 5: 'Título de nível 5', 6: 'Título de nível 6' };
 
 /** Importa o .docx (Uint8Array/ArrayBuffer) e devolve { template, relatorio }. */
-export async function importarTemplateDocx(dados, { nome = '', incluirConteudo = false } = {}) {
+export async function importarTemplateDocx(dados, { nome = '', incluirConteudo = false, prepararImagem } = {}) {
   const zip = abrirZip(dados);
   if (!zip.existe('word/document.xml')) throw new Error('Arquivo inválido: não contém word/document.xml (não é um .docx).');
   const est = zip.existe('word/styles.xml') ? lerEstilos(await zip.texto('word/styles.xml')) : { mapa: new Map(), padrao: {}, padraoId: null, resolver: () => ({}) };
@@ -638,17 +768,21 @@ export async function importarTemplateDocx(dados, { nome = '', incluirConteudo =
   const cons = consolidarEstilos(paragrafos, papeis, tamCorpo, { autoHifen });
 
   // páginas: a seção com mais texto é a do corpo; a capa só tem mestra própria quando existe e difere
-  const secCorpo = [...secoes].sort((a, b) => b.chars - a.chars)[0] || null;
+  const secCorpo = secoes.filter(Boolean).sort((a, b) => b.chars - a.chars)[0] || null;
   const temCapa = cons.estilos.some(e => e.id === 'capa');
   const secCapa = temCapa && secoes[0] && secoes[0] !== secCorpo ? secoes[0] : null;
   const base = criarModelosPaginaPadrao('abnt');
-  const hfCorpo = await lerCabecalhoRodape(zip, secCorpo, 'default', est);
-  const mestraCorpo = { ...mestraDeSecao(base.find(m => m.id === 'corpo'), secCorpo, hfCorpo), id: 'corpo', nome: 'Corpo do Texto' };
+  const midias = leitorDeMidias(zip, prepararImagem);
+  const corpoBase = base.find(m => m.id === 'corpo');
+  const montarMestra = async (baseMestra, secao, modo) =>
+    mestraDeSecao(baseMestra, secao, await lerCabecalhoRodape(zip, midias, secao, modo, est));
+  const mestraCorpo = await montarMestra(corpoBase, secCorpo, 'default');
   const mestras = [];
   if (temCapa) {
     const capaBase = base.find(m => m.id === 'capa');
-    const hfCapa = secCorpo?.tituloDistinto ? await lerCabecalhoRodape(zip, secCorpo, 'first', est) : { cab: null, rod: null, imagens: [] };
-    mestras.push({ ...mestraDeSecao(capaBase, secCapa || secCorpo, hfCapa), id: 'capa', nome: 'Capa', grade: { colunas: 1, gap_mm: 0 }, posicionamento_livre: true, modo_aplicacao: capaBase.modo_aplicacao });
+    const secao = secCapa || secCorpo;
+    const modo = secao?.tituloDistinto ? 'first' : (secCapa ? 'default' : null);
+    mestras.push(await montarMestra(capaBase, secao, modo));
   }
   mestras.push(mestraCorpo);
 
@@ -660,10 +794,24 @@ export async function importarTemplateDocx(dados, { nome = '', incluirConteudo =
   if (ids.has('citacao_direta')) blocosCorpo.push(criarNovoBloco('citacao', { texto: 'Citação longa de exemplo.', autor: 'AUTOR', ano: '2025' }));
   if (ids.has('legenda')) blocosCorpo.push(criarNovoBloco('paragrafo', { texto: 'Figura 1 — Legenda de exemplo', estiloId: 'legenda' }), criarNovoBloco('paragrafo', { texto: 'Fonte: elaborado pelo autor (2025).', estiloId: 'fonte_citada' }));
   const secoesTpl = [];
+  let imagensImportadas = 0;
   if (incluirConteudo) {
-    const { capa, corpo } = montarConteudo(paragrafos, papeis, cons, temCapa);
+    const { capa, grupos, imagensImportadas: total } = await montarConteudo(paragrafos, secoes, papeis, cons, temCapa, secCapa, midias);
+    imagensImportadas = total;
     if (temCapa && capa.length) secoesTpl.push({ nome: 'Capa', mestraId: 'capa', blocos: capa });
-    secoesTpl.push({ nome: 'Corpo do Texto', mestraId: 'corpo', blocos: corpo.length ? corpo : blocosCorpo });
+    for (const [idx, blocos] of grupos) {
+      if (!blocos.length) continue;
+      const secao = secoes[idx];
+      let mestra = mestraCorpo;
+      if (secao && secao !== secCorpo) {
+        mestra = await montarMestra(corpoBase, secao, 'default');
+        mestra.id = `word-secao-${idx + 1}`;
+        mestra.nome = `Seção ${idx + 1} do Word`;
+        mestras.push(mestra);
+      }
+      secoesTpl.push({ nome: mestra.nome, mestraId: mestra.id, blocos });
+    }
+    if (!secoesTpl.length) secoesTpl.push({ nome: 'Corpo do Texto', mestraId: 'corpo', blocos: blocosCorpo });
   } else {
     if (temCapa) secoesTpl.push({ nome: 'Capa', mestraId: 'capa', blocos: [criarNovoBloco('paragrafo', { texto: 'Título do documento', estiloId: 'capa' })] });
     secoesTpl.push({ nome: 'Corpo do Texto', mestraId: 'corpo', blocos: blocosCorpo });
@@ -672,8 +820,10 @@ export async function importarTemplateDocx(dados, { nome = '', incluirConteudo =
   const titulo = String(nome || '').replace(/\.docx$/i, '').trim() || 'Template importado do Word';
   const avisos = [];
   for (const [de, para] of cons.fontesSubstituidas) avisos.push(`Fonte "${de}" não está no Athenes: usada "${para}" no lugar (importe a fonte em Fontes para fidelidade total).`);
-  if (tabelas) avisos.push(`${tabelas} tabela(s) ignorada(s): o template guarda só o estilo dos parágrafos, não o conteúdo.`);
-  if (imgsCorpo) avisos.push(`${imgsCorpo} imagem(ns) no corpo do texto não foram importadas (só as imagens do cabeçalho).`);
+  if (tabelas) avisos.push(incluirConteudo
+    ? 'As tabelas foram convertidas em blocos editáveis. Mesclagem de células e estilos do Word podem mudar.'
+    : `${tabelas} tabela(s) omitida(s) no modo de importação só do layout.`);
+  if (imgsCorpo > imagensImportadas) avisos.push(`${imgsCorpo - imagensImportadas} imagem(ns) do corpo omitida(s) pelo modo de importação ou por formato não suportado.`);
   if (notasRef && incluirConteudo) avisos.push(`${notasRef} nota(s) de rodapé do arquivo não foram importadas.`);
   if (!zip.existe('word/styles.xml')) avisos.push('O arquivo não tem styles.xml: os estilos foram deduzidos só da formatação direta.');
   const original = new Set(comTexto.map(p => p.styleId)).size;

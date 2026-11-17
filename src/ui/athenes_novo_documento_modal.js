@@ -12,7 +12,7 @@ import {
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { importarTemplateDocx } from '../core/athenes_docx_importador.js';
 import { ehPacoteDeTema, templateDeTema } from '../core/athenes_template_de_tema.js';
-import { comprimirImagensDoPacote } from './athenes_imagem_util.js';
+import { comprimirDataUrl, comprimirImagensDoPacote } from './athenes_imagem_util.js';
 import { svgIcone } from './athenes_icones.js';
 import { mostrarAviso } from './athenes_aviso.js';
 
@@ -51,6 +51,12 @@ function garantirCss() {
 }
 
 const BRANCO = { id: '__branco__', titulo: 'Documento em branco', descricao: 'Uma página, estilos essenciais (Título e Parágrafo). Sem seções nem sobras.', categoria: 'user_custom', config: { mestras: [{ id: 'corpo', formato: 'a4', orientacao: 'retrato', margens_mm: { t: 25, r: 25, b: 25, l: 25 }, grade: { colunas: 1, gap_mm: 0 } }] }, secoes: [{ mestraId: 'corpo', blocos: [] }] };
+
+function importarDocxNoNavegador(dados, nome, incluirConteudo) {
+  return importarTemplateDocx(dados, {
+    nome, incluirConteudo, prepararImagem: url => comprimirDataUrl(url).catch(() => url)
+  });
+}
 
 /**
  * opcoes: { pastas: [{id,nome}], pastaAlvoId, onCriar({ doc, pastaId }), storage? }
@@ -151,7 +157,7 @@ export function abrirNovoDocumentoModal(opcoes) {
     if (!arq) return;
     try {
       estado.importado = /\.docx$/i.test(arq.name)
-        ? await (async () => { const r = await importarTemplateDocx(await arq.arrayBuffer(), { nome: arq.name, incluirConteudo: true }); await comprimirImagensDoPacote({ mestras: r.template.config.mestras }); return r.template; })()
+        ? (await importarDocxNoNavegador(await arq.arrayBuffer(), arq.name, true)).template
         : await (async () => {
           const obj = JSON.parse(await arq.text());
           if (!ehPacoteDeTema(obj)) return templateDeArquivoJson(obj, arq.name);
@@ -257,11 +263,7 @@ export async function abrirImportadorDocxModal(arquivo, opcoes = {}) {
   garantirCss();
   const { storage, onSalvo, onCriarDocumento } = opcoes;
   const dados = await arquivo.arrayBuffer();
-  const importar = async (incluirConteudo) => {
-    const r = await importarTemplateDocx(dados, { nome: arquivo.name, incluirConteudo });
-    await comprimirImagensDoPacote({ mestras: r.template.config.mestras }); // logos e faixas da capa: sem lotar o armazenamento
-    return r;
-  };
+  const importar = (incluirConteudo) => importarDocxNoNavegador(dados, arquivo.name, incluirConteudo);
   let r;
   try { r = await importar(true); } catch (err) {
     mostrarAviso(`Não foi possível importar "${arquivo.name}": ${err.message}`);
