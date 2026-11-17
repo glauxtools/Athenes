@@ -45,6 +45,19 @@
 .ath-traducao-acoes { display:flex; gap:7px; flex-wrap:wrap; padding:9px 13px 12px; border-top:1px solid #E4EAF2; }
 .ath-traducao-acoes button { display:inline-flex; align-items:center; gap:5px; border:1px solid #D7E1EC; border-radius:8px; background:#F7FAFD; color:#314F79; padding:6px 8px; font:800 10.5px var(--glx-font, Nunito, sans-serif); cursor:pointer; }
 .ath-traducao-acoes button:disabled { opacity:.5; cursor:default; }
+.ath-traducao-balao .ath-traducao-cabecalho { cursor:grab; touch-action:none; user-select:none; }
+.ath-traducao-balao .ath-traducao-cabecalho:active { cursor:grabbing; }
+.ath-traducao-balao .ath-traducao-cabecalho span { min-width:0; }
+.ath-traducao-controles-fonte { display:flex; flex:none; align-items:center; gap:4px; }
+.ath-traducao-controles-fonte button { touch-action:manipulation; }
+.ath-traducao-controles-fonte [data-fonte] {
+  min-width:28px; height:28px; padding:0 4px; border:1px solid #D7E1EC; border-radius:6px;
+  background:#fff; color:#314F79; font:800 12px var(--glx-font, Nunito, sans-serif); cursor:pointer;
+}
+.ath-traducao-controles-fonte [data-fonte]:hover:not(:disabled) { background:#E9F0F8; }
+.ath-traducao-controles-fonte [data-fonte]:disabled { opacity:.45; cursor:default; }
+.ath-traducao-balao .ath-traducao-original { font-size:calc(11px + var(--ath-traducao-ajuste-fonte, 0px)); }
+.ath-traducao-balao .ath-traducao-resultado { font-size:calc(13px + var(--ath-traducao-ajuste-fonte, 0px)); }
 .ath-traducao-acao-flutuante { position:fixed; z-index:2300; display:flex; align-items:center; gap:5px; border:1px solid #C9D8E9; border-radius:999px; padding:7px 10px; background:#fff; color:#314F79; box-shadow:0 7px 19px rgba(15,23,42,.16); font:800 11px var(--glx-font, Nunito, sans-serif); cursor:pointer; }
 .ath-pdf-traducao-pagina { position:absolute; inset:0; z-index:25; display:flex; flex-direction:column; background:#fff; color:#273A52; box-sizing:border-box; overflow:auto; padding:36px 44px; }
 .ath-pdf-traducao-topo { display:flex; justify-content:space-between; align-items:center; gap:15px; padding-bottom:13px; border-bottom:1px solid #DDE6F0; }

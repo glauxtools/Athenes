@@ -5,8 +5,10 @@ import { svgIcone } from './athenes_icones.js';
 
 let balaoAtual = null;
 
-function instalarRedimensionamento(balao, ret, signal) {
+function instalarAjustesDoPainel(balao, ret, signal) {
   const alca = balao.querySelector('.ath-traducao-redimensionar');
+  const cabecalho = balao.querySelector('.ath-traducao-cabecalho');
+  const titulo = cabecalho.querySelector('span');
   const margem = 12;
   const limitar = (v, min, max) => Math.max(min, Math.min(max, v));
   const posicionar = (x, y, w, h) => {
@@ -16,13 +18,17 @@ function instalarRedimensionamento(balao, ret, signal) {
   const inicial = balao.getBoundingClientRect();
   const alturaPrevista = Math.max(inicial.height, Math.min(420, innerHeight - 2 * margem));
   posicionar(ret.left, ret.bottom + 9, inicial.width, alturaPrevista);
-  const posicao = balao.getBoundingClientRect();
-  const ladoX = posicao.left + posicao.width / 2 > innerWidth / 2 ? -1 : 1;
-  const ladoY = posicao.top + alturaPrevista / 2 > innerHeight / 2 ? -1 : 1;
-  alca.classList.toggle('ath-traducao-alca-esquerda', ladoX < 0);
-  alca.classList.toggle('ath-traducao-alca-topo', ladoY < 0);
-  balao.classList.toggle('ath-traducao-reserva-topo', ladoY < 0);
-  balao.classList.toggle('ath-traducao-reserva-esquerda', ladoX < 0);
+  let ladoX, ladoY;
+  const atualizarCanto = (altura) => {
+    const posicao = balao.getBoundingClientRect();
+    ladoX = posicao.left + posicao.width / 2 > innerWidth / 2 ? -1 : 1;
+    ladoY = posicao.top + (altura ?? posicao.height) / 2 > innerHeight / 2 ? -1 : 1;
+    alca.classList.toggle('ath-traducao-alca-esquerda', ladoX < 0);
+    alca.classList.toggle('ath-traducao-alca-topo', ladoY < 0);
+    balao.classList.toggle('ath-traducao-reserva-topo', ladoY < 0);
+    balao.classList.toggle('ath-traducao-reserva-esquerda', ladoX < 0);
+  };
+  atualizarCanto(alturaPrevista);
 
   const dimensionar = (base, largura, altura) => {
     const maxW = Math.max(1, innerWidth - 2 * margem);
@@ -34,31 +40,63 @@ function instalarRedimensionamento(balao, ret, signal) {
     balao.style.height = `${h}px`;
     posicionar(ladoX < 0 ? base.right - w : base.left, ladoY < 0 ? base.bottom - h : base.top, w, h);
   };
-  let arrasto = null;
-  alca.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || arrasto) return;
-    arrasto = { id: e.pointerId, x: e.clientX, y: e.clientY, base: balao.getBoundingClientRect() };
-    alca.setPointerCapture(e.pointerId);
-    alca.focus({ preventScroll: true });
-    e.preventDefault();
-  });
-  alca.addEventListener('pointermove', e => {
-    if (arrasto?.id !== e.pointerId) return;
-    const { base, x, y } = arrasto;
-    dimensionar(base, base.width + (e.clientX - x) * ladoX, base.height + (e.clientY - y) * ladoY);
-  });
-  alca.addEventListener('lostpointercapture', () => { arrasto = null; });
-  alca.addEventListener('keydown', e => {
-    const direcao = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (!direcao) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const base = balao.getBoundingClientRect();
-    dimensionar(base, base.width + direcao[0] * ladoX * 24, base.height + direcao[1] * ladoY * 24);
-  });
+  const mover = (base, dx, dy) => posicionar(base.left + dx, base.top + dy, base.width, base.height);
+  const redimensionar = (base, dx, dy) => dimensionar(base, base.width + dx * ladoX, base.height + dy * ladoY);
+  let ponteiroAtivo = null;
+  const ligarArrasto = (area, foco, aplicar, aoSoltar) => {
+    let arrasto = null;
+    const iniciouEmBotao = e => area !== alca && e.target.closest('button');
+    // Evita que o Chromium trate o arraste como rolagem e descarte o próximo toque.
+    area.addEventListener('touchstart', e => {
+      if (!iniciouEmBotao(e)) e.preventDefault();
+    }, { passive: false });
+    area.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || ponteiroAtivo !== null || iniciouEmBotao(e)) return;
+      ponteiroAtivo = e.pointerId;
+      arrasto = { x: e.clientX, y: e.clientY, base: balao.getBoundingClientRect() };
+      area.setPointerCapture(e.pointerId);
+      foco.focus({ preventScroll: true });
+      e.preventDefault();
+    });
+    area.addEventListener('pointermove', e => {
+      if (!arrasto || ponteiroAtivo !== e.pointerId) return;
+      aplicar(arrasto.base, e.clientX - arrasto.x, e.clientY - arrasto.y);
+    });
+    area.addEventListener('lostpointercapture', e => {
+      if (!arrasto || ponteiroAtivo !== e.pointerId) return;
+      arrasto = null;
+      ponteiroAtivo = null;
+      aoSoltar?.();
+    });
+    foco.addEventListener('keydown', e => {
+      const direcao = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!direcao) return;
+      e.preventDefault();
+      e.stopPropagation();
+      aplicar(balao.getBoundingClientRect(), direcao[0] * 24, direcao[1] * 24);
+      aoSoltar?.();
+    });
+  };
+  ligarArrasto(alca, alca, redimensionar);
+  ligarArrasto(cabecalho, titulo, mover, atualizarCanto);
+
+  const menor = cabecalho.querySelector('[data-fonte="menor"]');
+  const maior = cabecalho.querySelector('[data-fonte="maior"]');
+  let ajuste = 0;
+  const ajustarFonte = (passo) => {
+    ajuste = limitar(ajuste + passo, -2, 11);
+    balao.style.setProperty('--ath-traducao-ajuste-fonte', `${ajuste}px`);
+    menor.disabled = ajuste === -2;
+    maior.disabled = ajuste === 11;
+    if (document.activeElement === menor && menor.disabled) maior.focus();
+    if (document.activeElement === maior && maior.disabled) menor.focus();
+  };
+  menor.addEventListener('click', () => ajustarFonte(-1));
+  maior.addEventListener('click', () => ajustarFonte(1));
   window.addEventListener('resize', () => {
     const base = balao.getBoundingClientRect();
     posicionar(base.left, base.top, base.width, base.height);
+    if (ponteiroAtivo === null) atualizarCanto();
   }, { signal });
   const observador = new ResizeObserver(() => {
     const base = balao.getBoundingClientRect();
@@ -90,7 +128,14 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
   balao.className = 'ath-traducao-balao';
   balao.setAttribute('role', 'status');
   balao.innerHTML = `
-    <div class="ath-traducao-cabecalho"><span>${svgIcone('globo', 15)} Tradução · ${IDIOMAS_TRADUCAO[destino]}</span><button type="button" class="ath-traducao-fechar" aria-label="Fechar tradução">${svgIcone('fechar', 15)}</button></div>
+    <div class="ath-traducao-cabecalho">
+      <span tabindex="0" title="Arraste pelo título ou use as setas do teclado para mover o painel">${svgIcone('globo', 15)} Tradução · ${IDIOMAS_TRADUCAO[destino]}</span>
+      <div class="ath-traducao-controles-fonte">
+        <button type="button" data-fonte="menor" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
+        <button type="button" data-fonte="maior" aria-label="Aumentar fonte" title="Aumentar fonte">A+</button>
+        <button type="button" class="ath-traducao-fechar" aria-label="Fechar tradução">${svgIcone('fechar', 15)}</button>
+      </div>
+    </div>
     <p class="ath-traducao-original"></p>
     <p class="ath-traducao-motor" aria-live="polite"></p>
     <div class="ath-traducao-resultado" aria-live="polite">Traduzindo…</div>
@@ -99,7 +144,7 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
   balao.querySelector('.ath-traducao-original').textContent = texto;
   const ret = ancora?.getBoundingClientRect?.() || ancora || { left: 16, bottom: 70 };
   document.body.append(balao);
-  instalarRedimensionamento(balao, ret, controlador.signal);
+  instalarAjustesDoPainel(balao, ret, controlador.signal);
   let traduzido = '';
   const fechar = () => { controlador.abort(); balao.remove(); if (balaoAtual?.elemento === balao) balaoAtual = null; };
   const painel = { fechar, elemento: balao };
