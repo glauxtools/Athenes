@@ -8,6 +8,8 @@ import { extrairItensSumario, nivelDe } from './athenes_sumario.js';
 import { TIPOS_BLOCO_TEXTO, sanearHtmlTexto, ajusteDeFragmento } from './athenes_estilo_exclusivo.js';
 import { parametrosTextoPt, linhasEstimadas, lacunasInternasPt, alturaTabelaPt, dividirParaPagina, podeDividir, alturaMedidaDoBloco } from './athenes_fragmentos.js';
 import { normalizarColunasTexto } from './athenes_colunas_texto.js';
+import { criarFluxoDeColunas, fluxoColunasAtivo, intervaloDoBloco, larguraDoBlocoNoFluxo } from './athenes_fluxo_colunas.js';
+import { dimensoesPapelMm } from './athenes_grid.js';
 import { garantirEstilosDeTitulos } from './athenes_estilos.js';
 import { aplicarRegrasMestraNasPaginas, vincularOverridesAsPaginas } from './athenes_mestra_canvas.js';
 import { criarEstilosPadrao, PERFIS_FORMATACAO } from './athenes_estilos.js';
@@ -538,7 +540,10 @@ export function estimarAlturaBlocoPt(bloco, ctx = null) {
   if (!bloco) return 20;
   const medida = alturaMedidaDoBloco(bloco); // a altura medida na folha vale mais que a estimativa
   if (medida) return medida;
-  if (ctx?.larguraPt && (bloco.tipo === 'tabela' || bloco.tipo === 'quadro')) return alturaTabelaPt(bloco, ctx.larguraPt);
+  if (ctx?.larguraPt && (bloco.tipo === 'tabela' || bloco.tipo === 'quadro')) {
+    const largura = ctx.fluxoColunas ? larguraDoBlocoNoFluxo(bloco, ctx.larguraPt, ctx.gapGradePt) : ctx.larguraPt;
+    return alturaTabelaPt(bloco, largura);
+  }
   if (ctx?.estilos && (bloco.tipo === 'paragrafo' || bloco.tipo === 'titulo' || bloco.tipo === 'citacao')) {
     const h = alturaTextoPorEstilo(bloco, ctx);
     if (h !== null) return h;
@@ -688,11 +693,16 @@ export function repaginarDocumento(doc) {
     const paisagem = mestra.orientacao === 'paisagem';
     const geo = geometriaCorpoMm(mestra);
     const alturaUtilPt = geo.alturaCorpoMm * PT_POR_MM;
-    const larguraPt = ((paisagem ? 297 : 210) - geo.margemEsq - geo.margemDir) * PT_POR_MM;
+    const encaixar = fluxoColunasAtivo(doc, mestra);
+    const larguraFolha = encaixar
+      ? dimensoesPapelMm(mestra.formato, mestra.orientacao, mestra.dimensoes_personalizadas).largura_mm
+      : (paisagem ? 297 : 210);
+    const larguraPt = (larguraFolha - geo.margemEsq - geo.margemDir) * PT_POR_MM;
     const estilosPorId = Object.fromEntries((doc.estilos || []).map(e => [e.id, e]));
 
     let blocosPag = [];
     let alturaAcumuladaPt = 0;
+    let fluxo = encaixar ? criarFluxoDeColunas() : null;
     let notasPag = [];           // segmentos de nota da página em montagem (inclui continuações da anterior)
     let numNaSecao = 1;
 
@@ -718,13 +728,14 @@ export function repaginarDocumento(doc) {
       });
       blocosPag = [];
       alturaAcumuladaPt = 0;
+      if (encaixar) fluxo = criarFluxoDeColunas();
       notasPag = resto; // o que não coube continua no topo da página seguinte
     };
 
     const eFixa = mestra.modo_aplicacao === MODOS_APLICACAO_MESTRA.FIXA;
     // fila de trabalho: um parágrafo/tabela que não cabe vira fragmento e o restante volta para a fila
     const fila = [...blocosDaSecao];
-    const ctxAltura = { estilos: estilosPorId, larguraPt };
+    const ctxAltura = { estilos: estilosPorId, larguraPt, fluxoColunas: encaixar, gapGradePt: 9 };
 
     for (let bIdx = 0; bIdx < fila.length; bIdx++) {
       const b = fila[bIdx];
@@ -744,29 +755,33 @@ export function repaginarDocumento(doc) {
       // PÁGINA PROGRESSIVA: flui blocos automaticamente
       // Blocos da mesma linha (grupo) ficam juntos: só o primeiro decide a quebra
       const anterior = bIdx > 0 ? fila[bIdx - 1] : null;
-      if (b.grupo && anterior && anterior.grupo === b.grupo && blocosPag[blocosPag.length - 1] === anterior) {
+      if (!fluxo && b.grupo && anterior && anterior.grupo === b.grupo && blocosPag[blocosPag.length - 1] === anterior) {
         blocosPag.push(b);
         continue;
       }
-      const altPt = alturaDaLinha(fila, bIdx, ctxAltura);
-      const novas = idsDaLinha(fila, bIdx).filter(id => !notasPag.some(x => x.id === id)).map(segmentoDe);
+      const altPt = fluxo ? estimarAlturaBlocoPt(b, ctxAltura) : alturaDaLinha(fila, bIdx, ctxAltura);
+      const notasDoBloco = fluxo ? idsNotasDoBloco(b).filter(id => registroNotas.has(id)) : idsDaLinha(fila, bIdx);
+      const novas = notasDoBloco.filter(id => !notasPag.some(x => x.id === id)).map(segmentoDe);
       const alturaNovasPt = novas.reduce((t, x) => t + alturaSegmentoPt(x.html, cfgNotas, larguraPt), 0)
         + (notasPag.length === 0 && novas.length ? alturaSeparadorPt(cfgNotas) : 0);
       // espaço antes é ignorado no topo da página (como no Word); entre parágrafos vale o maior dos dois espaços
-      const antesTopo = margensTextoPt(b, estilosPorId)?.antes || 0;
-      const altEf = altPt - (blocosPag.length ? colapsoEntreBlocosPt(blocosPag[blocosPag.length - 1], b, estilosPorId) : antesTopo);
+      const antesTopo = fluxo ? 0 : margensTextoPt(b, estilosPorId)?.antes || 0;
+      const previsto = fluxo?.posicionar(b, altPt, true);
+      const altEf = previsto ? previsto.alturaTotal - alturaAcumuladaPt
+        : altPt - (blocosPag.length ? colapsoEntreBlocosPt(blocosPag[blocosPag.length - 1], b, estilosPorId) : antesTopo);
       const totalPt = alturaAcumuladaPt + altEf + alturaNotasPag() + alturaNovasPt;
 
       // não cabe: divide o parágrafo/tabela entre esta página e a seguinte (cabeçalho da tabela se repete)
-      if (totalPt > alturaUtilPt && podeDividir(b)) {
-        const livrePt = alturaUtilPt - alturaAcumuladaPt - alturaNotasPag();
-        const dv = dividirParaPagina(b, livrePt, ctxAltura, blocosPag.length === 0);
+      if (totalPt > alturaUtilPt && podeDividir(b, encaixar)) {
+        const topo = previsto ? previsto.fimDoBloco - altPt : alturaAcumuladaPt;
+        const livrePt = alturaUtilPt - topo - alturaNotasPag();
+        const dv = dividirParaPagina(b, livrePt, ctxAltura, !encaixar && blocosPag.length === 0);
         if (dv) {
           const novasPrimeiro = idsNotasDoBloco(dv.primeiro).filter(id => registroNotas.has(id) && !notasPag.some(x => x.id === id)).map(segmentoDe);
           const alturaPrimeiro = estimarAlturaBlocoPt(dv.primeiro, ctxAltura)
-            - (blocosPag.length ? colapsoEntreBlocosPt(blocosPag[blocosPag.length - 1], dv.primeiro, estilosPorId) : antesTopo);
+            - (!fluxo && blocosPag.length ? colapsoEntreBlocosPt(blocosPag[blocosPag.length - 1], dv.primeiro, estilosPorId) : antesTopo);
           blocosPag.push(dv.primeiro);
-          alturaAcumuladaPt += alturaPrimeiro;
+          alturaAcumuladaPt = fluxo?.posicionar(dv.primeiro, alturaPrimeiro).alturaTotal ?? alturaAcumuladaPt + alturaPrimeiro;
           notasPag.push(...novasPrimeiro);
           fecharPagina();
           fila.splice(bIdx + 1, 0, dv.resto);
@@ -776,10 +791,11 @@ export function repaginarDocumento(doc) {
 
       // manterComProximo: título não fica no fim da folha sem espaço para o próximo bloco
       const exigeNovaPagina = blocosPag.length > 0
-        && ((b.manterComProximo && totalPt + 60 > alturaUtilPt) || totalPt > alturaUtilPt);
+        && ((b.manterComProximo && (previsto ? previsto.fimDoBloco + alturaNotasPag() + alturaNovasPt : totalPt) + 60 > alturaUtilPt)
+          || totalPt > alturaUtilPt);
 
       if (exigeNovaPagina) {
-        if (podeDividir(b) && altPt > alturaUtilPt) { // maior que uma página inteira: fecha esta e divide na página nova
+        if (podeDividir(b, encaixar) && altPt > alturaUtilPt) { // maior que uma página inteira: fecha esta e divide na página nova
           fecharPagina();
           bIdx--;
           continue;
@@ -787,9 +803,11 @@ export function repaginarDocumento(doc) {
         fecharPagina();
         blocosPag = [b];
         alturaAcumuladaPt = altPt - antesTopo;
-        notasPag = [...notasPag, ...novas];
+        fluxo?.posicionar(b, altPt);
+        notasPag.push(...notasDoBloco.filter(id => !notasPag.some(x => x.id === id)).map(segmentoDe));
       } else {
         blocosPag.push(b);
+        fluxo?.posicionar(b, altPt);
         alturaAcumuladaPt += altEf;
         notasPag.push(...novas);
       }
@@ -1249,6 +1267,37 @@ export function colocarBloco(doc, blocoId, alvoId, zona = 'depois', aDireita = t
   if (!origem || !alvoLoc) return false;
 
   const bloco = origem.bloco;
+  if (zona === 'encaixar' || zona === 'sequencia') {
+    const { inicio, fim } = intervaloDoBloco(alvoLoc.bloco);
+    const mestra = doc.mestras?.find(m => m.id === alvoLoc.sec.mestraId) || doc.mestras?.[0];
+    if (zona === 'encaixar' && (fim - inicio === 12 || alvoLoc.bloco.tipo === 'quebra_pagina'
+      || bloco.tipo === 'quebra_pagina' || !fluxoColunasAtivo({ fluxo_colunas: true }, mestra))) return false;
+    origem.sec.blocos.splice(origem.idx, 1);
+    // Mantém as larguras dos vizinhos. Um empilhamento não é um grupo de blocos na mesma linha.
+    bloco.grupo = null;
+    if (zona === 'encaixar') {
+      bloco.col = inicio;
+      bloco.span = fim - inicio;
+      doc.fluxo_colunas = true;
+    }
+    const secao = alvoLoc.sec;
+    secao.blocos.splice(secao.blocos.indexOf(alvoLoc.bloco) + 1, 0, bloco);
+    for (const sec of new Set([origem.sec, secao])) {
+      const vistos = new Set();
+      for (const linha of calcularLinhas(sec.blocos)) {
+        const gid = linha[0].grupo;
+        if (!gid) continue;
+        if (linha.length === 1) linha[0].grupo = null;
+        else if (vistos.has(gid)) {
+          const novoId = gerarId('grp');
+          for (const membro of linha) membro.grupo = novoId;
+        }
+        vistos.add(gid);
+      }
+    }
+    repaginarDocumento(doc);
+    return true;
+  }
   const grupoAntigo = bloco.grupo;
   origem.sec.blocos.splice(origem.idx, 1);
   bloco.grupo = null;

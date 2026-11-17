@@ -73,6 +73,7 @@ export function exportarPacoteEstilo(documento, opcoes = {}) {
       tipoDoc: documento.tipoDoc || 'artigo',
       espacoDepoisBlocoPadraoPt: 8,
       espacoParagrafoPadraoPt: 6,
+      ...(typeof documento.fluxo_colunas === 'boolean' ? { fluxo_colunas: documento.fluxo_colunas } : {}),
       // paginação padrão do documento (a mestra pode ter a sua em `numeracao_pagina`) e estilo das notas de rodapé
       ...(documento.paginacao ? { paginacao: sanitizarNumeracao(documento.paginacao) } : {}),
       notas_rodape: obterConfigNotas(documento),
@@ -247,6 +248,7 @@ export function validarPacoteEstilo(conteudo) {
     configuracaoGlobal: {
       perfil: obj.configuracaoGlobal?.perfil || 'abnt',
       tipoDoc: obj.configuracaoGlobal?.tipoDoc || 'artigo',
+      ...(typeof obj.configuracaoGlobal?.fluxo_colunas === 'boolean' ? { fluxo_colunas: obj.configuracaoGlobal.fluxo_colunas } : {}),
       ...(obj.configuracaoGlobal?.paginacao && typeof obj.configuracaoGlobal.paginacao === 'object'
         ? { paginacao: sanitizarNumeracao(obj.configuracaoGlobal.paginacao) } : {}),
       ...(obj.configuracaoGlobal?.notas_rodape && typeof obj.configuracaoGlobal.notas_rodape === 'object'
@@ -361,6 +363,7 @@ export function aplicarPacoteEstilo(documento, pacote, opcoes = {}) {
     documento.perfil = p.configuracaoGlobal.perfil;
   }
   if (p.configuracaoGlobal?.paginacao) documento.paginacao = JSON.parse(JSON.stringify(p.configuracaoGlobal.paginacao));
+  if (typeof p.configuracaoGlobal?.fluxo_colunas === 'boolean') documento.fluxo_colunas = p.configuracaoGlobal.fluxo_colunas;
   if (p.configuracaoGlobal?.notas_rodape) documento.notas_config = JSON.parse(JSON.stringify(p.configuracaoGlobal.notas_rodape));
 
   // 5. Se solicitado, propaga estilos padrão de moldura para figuras, tabelas e fórmulas existentes
@@ -492,6 +495,7 @@ INSTRUÇÕES DE ANÁLISE:
      "espelhada": true usa o espelho horizontal dos elementos nas páginas pares (frente e verso). "guias": [{ "eixo": "v" | "h", "pos_mm" }] são guias de régua.
      "grade_guia": { "visivel", "snap", "passo_mm" (malha regular), "colunas", "linhas", "calha_mm" } é a grade de diagramação da folha.
    - Atribuição de mestras por página ("configuracaoGlobal.atribuicoes_mestra"): [{ "mestraId", "de", "ate" }] (páginas 1-based; "ate" omitido = até o fim; vence o intervalo mais específico).
+   - Encaixe de blocos ("configuracaoGlobal.fluxo_colunas"): booleano opcional. Em páginas progressivas com grade de 12 posições, true empilha blocos de mesma faixa e mantém faixas disjuntas independentes. Um bloco que cruza faixas começa abaixo delas.
 
    - Estilo da citação e da lista de referências ("configuracaoGlobal.estilo_citacao"): "abnt" | "abnt_numerico" | "apa" | "harvard" | "chicago" | "mla" | "vancouver" | "ieee" (omita se o documento não indicar)
    - Separador da legenda numerada ("configuracaoGlobal.separador_legenda"): "travessao" (Tabela 1 — Título) | "meio_traco" (–) | "hifen" (-) | "dois_pontos" (Tabela 1: Título) | "ponto" (Tabela 1. Título) | "espaco" (Tabela 1 Título). Vale para figuras, tabelas, quadros e mapas.
@@ -552,6 +556,7 @@ Responda EXCLUSIVAMENTE com o bloco JSON válido abaixo, sem texto antes ou depo
     "tipoDoc": "artigo",
     "espacoDepoisBlocoPadraoPt": 8,
     "espacoParagrafoPadraoPt": 6,
+    "fluxo_colunas": false,
     "notas_rodape": {
       "marcador": "numerico",
       "reiniciar": "documento",

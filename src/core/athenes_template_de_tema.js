@@ -22,6 +22,7 @@ export function templateDeTema(obj, nomeArquivo = '') {
   if (g.formato_numero_formula) config.formato_numero_formula = g.formato_numero_formula;
   if (g.sumario) config.sumario_config_padrao = g.sumario;
   if (g.paginacao) config.paginacao = g.paginacao;
+  if (typeof g.fluxo_colunas === 'boolean') config.fluxo_colunas = g.fluxo_colunas;
   if (g.atribuicoes_mestra) config.atribuicoes_mestra = g.atribuicoes_mestra;
 
   const ids = new Set(p.estilos.map(e => e.id));

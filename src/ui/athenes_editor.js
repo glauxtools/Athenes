@@ -68,6 +68,7 @@ import { ModalLayoutBloco } from './athenes_editor_layout_bloco.js';
 import { abrirPopoverEstiloTabela } from './athenes_tabela_ui.js';
 import { instalarZoomCanvas } from './athenes_zoom_canvas.js';
 import { montarFluxoDeBlocos } from './athenes_fluxo_blocos.js';
+import { faixasDoFluxo, fluxoColunasAtivo, intervaloDoBloco } from '../core/athenes_fluxo_colunas.js';
 import { ligarReguasDoDocumento } from './athenes_reguas_documento.js';
 
 /** As réguas começam visíveis; a escolha da pessoa fica lembrada. */
@@ -680,6 +681,9 @@ export class EditorView {
             <button type="button" class="rm-ic-bt" id="rmFluxoBlocos" aria-pressed="${this.fluxoVisivel}" aria-label="Fluxo dos blocos" title="Mostrar ou ocultar a ordem dos blocos" ${modoSomenteLeitura(this.modoTrabalho) ? 'hidden' : ''}>
               ${svgIcone('fluxograma', 16)}
             </button>
+            <button type="button" class="rm-ic-bt" id="rmEncaixeColunas" aria-pressed="${this.doc.fluxo_colunas === true}" aria-label="Encaixe de blocos em colunas" title="Encaixe de blocos em colunas com alturas independentes" ${modoSomenteLeitura(this.modoTrabalho) ? 'hidden' : ''}>
+              ${svgIcone('fluxo_colunas', 16)}
+            </button>
           </div>
 
           <!-- Palco de Páginas Reais -->
@@ -1021,6 +1025,13 @@ export class EditorView {
       btnFluxo.setAttribute('aria-pressed', String(this.fluxoVisivel));
       const palco = root.querySelector('#rmPrevPalco');
       this.atualizarFluxoDeBlocos(palco);
+    });
+    const btnEncaixe = root.querySelector('#rmEncaixeColunas');
+    btnEncaixe?.addEventListener('click', () => {
+      this.doc.fluxo_colunas = this.doc.fluxo_colunas !== true;
+      btnEncaixe.setAttribute('aria-pressed', String(this.doc.fluxo_colunas));
+      this.notificarMudanca();
+      this.renderizarFolhasPaginas();
     });
   }
 
@@ -1927,6 +1938,21 @@ export class EditorView {
     dialog.className = 'ath-dialog-sequencia';
     dialog.innerHTML = `<form method="dialog"><h2>Ordem dos blocos</h2><p>Escolha qual bloco deve vir logo depois deste. Texto, imagens e os demais blocos seguem a mesma sequência.</p><label for="athProximoBloco">Próximo bloco</label><select id="athProximoBloco" required></select><div class="ath-dialog-sequencia-acoes"><button type="button" data-acao="cancelar">Cancelar</button><button type="submit" data-acao="aplicar">Aplicar ordem</button></div></form>`;
     const select = dialog.querySelector('select');
+    const faixa = intervaloDoBloco(origem);
+    const mestra = this.doc.mestras?.find(m => m.id === secao.mestraId) || this.doc.mestras?.[0];
+    let encaixe = null;
+    if (faixa.fim - faixa.inicio < 12 && origem.tipo !== 'quebra_pagina' && fluxoColunasAtivo({ fluxo_colunas: true }, mestra)) {
+      const rotulo = document.createElement('label');
+      rotulo.className = 'ath-dialog-encaixe';
+      encaixe = document.createElement('input');
+      encaixe.type = 'checkbox';
+      rotulo.append(encaixe, ' Encaixar abaixo, na mesma coluna');
+      select.after(rotulo);
+      select.addEventListener('change', () => {
+        encaixe.disabled = this.buscarBlocoPorId(select.value)?.tipo === 'quebra_pagina';
+        if (encaixe.disabled) encaixe.checked = false;
+      });
+    }
     select.add(new Option('Selecione um bloco', '', true, true));
     select.options[0].disabled = true;
     candidatos.forEach(b => {
@@ -1940,7 +1966,8 @@ export class EditorView {
     dialog.querySelector('form').addEventListener('submit', e => {
       e.preventDefault();
       const id = select.value;
-      if (!id || !colocarBloco(this.doc, id, origem.id, 'depois')) return;
+      const zona = encaixe?.checked ? 'encaixar' : fluxoColunasAtivo(this.doc, mestra) ? 'sequencia' : 'depois';
+      if (!id || !colocarBloco(this.doc, id, origem.id, zona)) return;
       dialog.close();
       this.aposEstrutura(origem);
     });
@@ -2030,8 +2057,10 @@ export class EditorView {
     const grades = [...palco.querySelectorAll('.ath-fluxo-grade')];
     const entradas = grades.flatMap(grade => {
       const folha = grade.closest('.ath-folha-a4');
-      return [...grade.children].map(el => ({ el, bloco: this._blocoDoFluxo.get(el), folha }))
-        .filter(({ bloco }) => bloco && bloco.tipo !== 'quebra_pagina');
+      return [...grade.querySelectorAll('.ath-bloco-folha')]
+        .map(el => ({ el, ...this._blocoDoFluxo.get(el), folha }))
+        .filter(({ bloco }) => bloco && bloco.tipo !== 'quebra_pagina')
+        .sort((a, b) => a.ordem - b.ordem);
     });
     this._fluxoBlocos = montarFluxoDeBlocos(palco, entradas, grades);
   }
@@ -2299,13 +2328,33 @@ export class EditorView {
       gradeBlocos.style.alignContent = 'start';
 
       const estilosPorId = Object.fromEntries((this.doc.estilos || []).map(e => [e.id, e]));
+      const encaixar = fluxoColunasAtivo(this.doc, mestraPag);
+      const elementosDosBlocos = new Map();
       (pag.blocos || []).forEach((b, k, todos) => {
         const blocoEl = this.renderizarBlocoNaFolha(b, pag);
-        this._blocoDoFluxo.set(blocoEl, b);
-        const colapso = k > 0 ? colapsoEntreBlocosPt(todos[k - 1], b, estilosPorId) : (margensTextoPt(b, estilosPorId)?.antes || 0); // entre parágrafos vale o maior espaço; no topo da página, nenhum
-        if (colapso) blocoEl.style.marginTop = `${Math.max(0, (margensTextoPt(b, estilosPorId)?.antes || 0) - colapso)}pt`;
-        gradeBlocos.appendChild(blocoEl);
+        this._blocoDoFluxo.set(blocoEl, { bloco: b, ordem: k });
+        if (encaixar) {
+          elementosDosBlocos.set(b, blocoEl);
+        } else {
+          const colapso = k > 0 ? colapsoEntreBlocosPt(todos[k - 1], b, estilosPorId) : (margensTextoPt(b, estilosPorId)?.antes || 0);
+          if (colapso) blocoEl.style.marginTop = `${Math.max(0, (margensTextoPt(b, estilosPorId)?.antes || 0) - colapso)}pt`;
+          gradeBlocos.appendChild(blocoEl);
+        }
       });
+      if (encaixar) {
+        for (const faixa of faixasDoFluxo(pag.blocos || [])) {
+          const linha = document.createElement('div');
+          linha.className = 'ath-encaixe-faixa';
+          for (const { inicio, fim, blocos } of faixa) {
+            const coluna = document.createElement('div');
+            coluna.className = 'ath-encaixe-coluna';
+            coluna.style.gridColumn = `${inicio} / ${fim}`;
+            for (const b of blocos) coluna.appendChild(elementosDosBlocos.get(b));
+            linha.appendChild(coluna);
+          }
+          gradeBlocos.appendChild(linha);
+        }
+      }
 
       areaUtil.appendChild(gradeBlocos);
 

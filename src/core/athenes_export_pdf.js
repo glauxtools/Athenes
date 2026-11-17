@@ -24,6 +24,7 @@ import { geometriaCorpoMm, resolverAreasPagina } from './athenes_paginacao.js';
 import { obterConfigNotas, aplicarRotulosNotasHtml, sanitizarHtmlNota, cssMarcadoresNota } from './athenes_notas_rodape.js';
 import { descreverFigura, cssObjParaString, PLACEHOLDER_IMG } from './athenes_figura_layout.js';
 import { cssColunasTexto } from './athenes_colunas_texto.js';
+import { faixasDoFluxo, fluxoColunasAtivo } from './athenes_fluxo_colunas.js';
 import { marcacaoItemCodigo } from './athenes_figura_codigo.js';
 import { obterEstiloTabela, dimensoesTabela, resolverCelula, celulaParaCss, tabelaParaCss } from './athenes_tabela_estilo.js';
 import { rotuloDaFigura, gerarSumarioDinamico, modeloDaPagina, formatarNumeroPagina, gerarCssMolduraBloco, repaginarDocumento, colapsoEntreBlocosPt, margensTextoPt, obterTituloCompletoComNumeracao, obterPrefixoNumeracao, recalcularNumeracaoAutomatica } from './athenes_documento.js';
@@ -402,6 +403,7 @@ export function gerarDocumentoHtmlPdf(documento, opcoes = {}) {
     // página de uma coluna: o editor usa SEMPRE a grade de 12 colunas (blocos lado a lado por `grupo`, `col` e `span`); o PDF faz o mesmo,
     // senão cada bloco do grupo vira uma linha inteira e a página cresce além da área útil
     const grade12 = cols === 1;
+    const encaixar = fluxoColunasAtivo(documento, modelo);
     const gap = modelo.grade?.gap_mm || 0;
 
     const geo = geometriaCorpoMm(modelo);
@@ -411,21 +413,22 @@ export function gerarDocumentoHtmlPdf(documento, opcoes = {}) {
     // Blocos da página
     const opcoesPag = { ...opcoes, margens_mm: m, rotulosNotas: pag.rotulosNotas, prefixosSecoes, marcadores };
     const blocosPag = pag.blocos || [];
-    const partes = [];
-    for (let i = 0; i < blocosPag.length; i++) {
-      const b = blocosPag[i];
+    const renderizar = (b, i) => {
       const span = Math.min(cols, b.span || 1);
-      const gridCol = grade12 ? `grid-column: ${Math.min(12, Math.max(1, b.col || 1))} / span ${Math.min(12, Math.max(1, b.span || 12))};` : (cols > 1 ? `grid-column: span ${span};` : '');
+      const gridCol = encaixar ? '' : grade12 ? `grid-column: ${Math.min(12, Math.max(1, b.col || 1))} / span ${Math.min(12, Math.max(1, b.span || 12))};` : (cols > 1 ? `grid-column: span ${span};` : '');
       // margens colapsadas (maior de "depois" e "antes"), como no Word: sem isso o espaço entre parágrafos dobrava
       const mesmaLinha = grade12 && i > 0 && b.grupo && blocosPag[i - 1].grupo === b.grupo; // lado a lado: sem colapso vertical entre eles
-      const colapso = cols === 1 && !mesmaLinha ? (i > 0 ? colapsoEntreBlocosPt(blocosPag[i - 1], b, estilosMap) : (margensTextoPt(b, estilosMap)?.antes || 0)) : 0; // topo da página: sem espaço antes
+      const colapso = !encaixar && cols === 1 && !mesmaLinha ? (i > 0 ? colapsoEntreBlocosPt(blocosPag[i - 1], b, estilosMap) : (margensTextoPt(b, estilosMap)?.antes || 0)) : 0;
       // figuras, tabelas, fórmulas… também ganham o espaço antes/depois do estilo do bloco, como na folha do editor (texto já leva o seu na própria margem)
       const ehTextoB = ['paragrafo', 'texto', 'titulo', 'subtitulo', 'citacao'].includes(b.tipo);
       const estB = estilosMap[b.estiloId] || estilosMap.corpo || {};
       const margemBloco = ehTextoB ? '' : ` margin-top:${b.espaco_antes_pt ?? estB.espaco_antes_pt ?? 0}pt; margin-bottom:${b.espaco_depois_pt ?? estB.espaco_depois_pt ?? 8}pt;`;
-      partes.push(`<div class="ath-bloco-grid" style="${gridCol}${colapso ? ` margin-top:-${colapso}pt;` : ''}${margemBloco}">${renderizarBlocoHtml(b, estilosMap, documento, opcoesPag)}</div>`);
-    }
-    const blocosHtml = partes.join('\n');
+      return `<div class="ath-bloco-grid" style="${gridCol}${colapso ? ` margin-top:-${colapso}pt;` : ''}${margemBloco}">${renderizarBlocoHtml(b, estilosMap, documento, opcoesPag)}</div>`;
+    };
+    const blocosHtml = encaixar
+      ? faixasDoFluxo(blocosPag).map(faixa => `<div class="ath-encaixe-faixa">${faixa.map(({ inicio, fim, blocos }) =>
+        `<div class="ath-encaixe-coluna" style="grid-column:${inicio}/${fim}">${blocos.map(renderizar).join('\n')}</div>`).join('')}</div>`).join('\n')
+      : blocosPag.map(renderizar).join('\n');
 
     // Notas de rodapé (base do corpo) e rodapé em 3 zonas na margem
     const notasHtml = notasPaginaHtml(pag, documento);
@@ -551,7 +554,10 @@ return `<section class="ath-pagina" style="position:relative; width:${largura_mm
     .ath-num-secao { margin-right: .4em; }
     .ath-toc-item { break-inside: avoid; }
     .ath-toc-link { color: inherit; text-decoration: none; }
-    .ath-bloco-grid:not([style*="flow-root"]) > :is(.ath-figura, .ath-figura-composta, .ath-mapa-wrap, .ath-tabela-wrap, .ath-quadro-wrap) { margin-top: 0 !important; margin-bottom: 0 !important; } /* o espaço antes/depois vem do contêiner (igual ao editor); margem própria da figura/tabela somava ~5 mm por bloco e empurrava o texto para a margem inferior */
+    .ath-bloco-grid:not([style*="flow-root"]) > :is(.ath-figura, .ath-figura-composta, .ath-mapa-wrap, .ath-tabela-wrap, .ath-quadro-wrap) { margin-top: 0 !important; margin-bottom: 0 !important; } /* o espaço antes/depois vem do contêiner (igual ao editor) */
+    .ath-encaixe-faixa { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 3.175mm; align-items: start; }
+    .ath-encaixe-coluna { min-width: 0; display: flex; flex-direction: column; }
+    .ath-encaixe-coluna .ath-bloco-grid { display: flow-root; }
     a.ath-citacao-link { color: inherit; text-decoration: none; } /* citação linkada: sem cara de link (a limpeza de estilos tira o style inline) */
 
     ${cssMarcadoresNota(obterConfigNotas(documento), '', id => (FONTES_SISTEMA[id]?.familia || '').replace(/"/g, "'"))}
