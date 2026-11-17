@@ -10,6 +10,22 @@ import { escapeHtml } from '../core/athenes_seguranca.js';
 import { carregarArtigosEstudo } from './athenes_estudo_artigos.js';
 import { svgIcone } from './athenes_icones.js';
 
+const CHAVE_PASTAS_RECOLHIDAS = 'athenes_dash_pastas_recolhidas';
+
+function criarLinhaPasta(id, nome, icone, quantidade, selecionada) {
+  const item = document.createElement('div');
+  item.className = `ath-pasta-item${selecionada ? ' active' : ''}`;
+  item.dataset.pastaLateral = id;
+  item.innerHTML = `
+    <span class="ath-pasta-seta-espaco" aria-hidden="true"></span>
+    <button type="button" class="ath-pasta-link" title="${escapeHtml(nome)}"${selecionada ? ' aria-current="true"' : ''}>
+      <span class="ath-pasta-icone">${svgIcone(icone, 14)}</span>
+      <span class="ath-pasta-nome">${escapeHtml(nome)}</span>
+      <span class="ath-pasta-badge">${quantidade}</span>
+    </button>`;
+  return item;
+}
+
 export const metodosDashboardPastas = {
   alternarDrawerPastas() {
     const sidebar = this.container?.querySelector('#athDashSidebar');
@@ -36,6 +52,17 @@ export const metodosDashboardPastas = {
   renderizarPastasLateral() {
     const listaEl = this.container.querySelector('#athDashPastasLista');
     if (!listaEl) return;
+    const rolagem = listaEl.scrollTop;
+    const botaoFocado = document.activeElement;
+    const itemFocado = listaEl.contains(botaoFocado) ? botaoFocado.closest('[data-pasta-lateral]') : null;
+    const selecao = `${this.abaAtiva}:${this.pastaAtivaId}`;
+    const revelarSelecao = selecao !== this._selecaoLateralRenderizada;
+    this._selecaoLateralRenderizada = selecao;
+    if (!this._pastasLateralRecolhidas) {
+      let salvas;
+      try { salvas = JSON.parse(localStorage.getItem(CHAVE_PASTAS_RECOLHIDAS)); } catch {}
+      this._pastasLateralRecolhidas = new Set(Array.isArray(salvas) ? salvas : []);
+    }
     listaEl.innerHTML = '';
 
     const ehAbaBib = this.abaAtiva === 'artigos_zotero';
@@ -49,16 +76,8 @@ export const metodosDashboardPastas = {
       : 'Todos os Documentos';
     const iconeTodas = ehAbaBib ? 'livro' : 'pasta';
 
-    const itemTodas = document.createElement('div');
-    itemTodas.className = `ath-pasta-item ${this.pastaAtivaId === 'todas' ? 'active' : ''}`;
-    itemTodas.innerHTML = `
-      <div style="display:flex; align-items:center; gap:7px;">
-        ${svgIcone(iconeTodas, 15)}
-        <span>${rotuloTodas}</span>
-      </div>
-      <span class="ath-pasta-badge">${totalItens}</span>
-    `;
-    itemTodas.addEventListener('click', () => this.selecionarPasta('todas'));
+    const itemTodas = criarLinhaPasta('todas', rotuloTodas, iconeTodas, totalItens, this.pastaAtivaId === 'todas');
+    itemTodas.querySelector('.ath-pasta-link').addEventListener('click', () => this.selecionarPasta('todas'));
     listaEl.appendChild(itemTodas);
 
     // 2. Seção Minhas Pastas (Google Drive) - Estritamente filtrada por tipo da aba ativa
@@ -85,7 +104,7 @@ export const metodosDashboardPastas = {
       listaEl.appendChild(avisoVazio);
     } else {
       for (const pasta of minhasPastas) {
-        this.montarItemPastaComSubpastas(listaEl, pasta, 0);
+        this.montarItemPastaComSubpastas(listaEl, pasta, 0, false, revelarSelecao);
       }
     }
 
@@ -108,10 +127,9 @@ export const metodosDashboardPastas = {
       const qtd = ehAbaBib
         ? (this.estudoView?.artigosCompartilhados || []).length
         : this.documentos.filter(d => d.compartilhadoComigo).length;
-      const itemComigo = document.createElement('div');
-      itemComigo.className = `ath-pasta-item ${this.pastaAtivaId === 'compartilhados_comigo' ? 'active' : ''}`;
-      itemComigo.innerHTML = `<div style="display:flex; align-items:center; gap:7px;">${svgIcone('usuarios', 15)}<span>${ehAbaBib ? 'Artigos de outras pessoas' : 'Documentos de outras pessoas'}</span></div><span class="ath-pasta-badge">${qtd}</span>`;
-      itemComigo.addEventListener('click', () => this.selecionarPasta('compartilhados_comigo'));
+      const rotuloComigo = ehAbaBib ? 'Artigos de outras pessoas' : 'Documentos de outras pessoas';
+      const itemComigo = criarLinhaPasta('compartilhados_comigo', rotuloComigo, 'usuarios', qtd, this.pastaAtivaId === 'compartilhados_comigo');
+      itemComigo.querySelector('.ath-pasta-link').addEventListener('click', () => this.selecionarPasta('compartilhados_comigo'));
       listaEl.appendChild(itemComigo);
     }
 
@@ -124,15 +142,19 @@ export const metodosDashboardPastas = {
       listaEl.appendChild(avisoVazio);
     } else {
       for (const pasta of compartilhadas) {
-        this.montarItemPastaComSubpastas(listaEl, pasta, 0, true);
+        this.montarItemPastaComSubpastas(listaEl, pasta, 0, true, revelarSelecao);
       }
+    }
+    listaEl.scrollTop = rolagem;
+    if (itemFocado && getComputedStyle(listaEl.closest('.ath-dash-sidebar') || listaEl).visibility === 'visible') {
+      const linha = listaEl.querySelector(`[data-pasta-lateral="${CSS.escape(itemFocado.dataset.pastaLateral)}"]`);
+      const classe = [...botaoFocado.classList].find(nome => nome === 'ath-pasta-link' || nome === 'ath-pasta-seta' || nome === 'ath-pasta-acao');
+      if (classe) linha?.querySelector(`.${classe}`)?.focus({ preventScroll: true });
     }
   },
 
-  montarItemPastaComSubpastas(container, pasta, nivel = 0, ehCompartilhada = false) {
-    const item = document.createElement('div');
+  montarItemPastaComSubpastas(container, pasta, nivel = 0, ehCompartilhada = false, revelarSelecao = false) {
     const ativo = (this.pastaAtivaId === pasta.id);
-    item.className = `ath-pasta-item ${ativo ? 'active' : ''} ${nivel > 0 ? 'ath-pasta-item-sub' : ''}`;
     
     const ehAbaBib = this.abaAtiva === 'artigos_zotero';
     let count = 0;
@@ -147,35 +169,22 @@ export const metodosDashboardPastas = {
     }
 
     const iconeNome = pasta.icone || (pasta.tipo === 'bibliografia' ? 'livro' : (pasta.tipo === 'relatorios' ? 'documento' : (ehCompartilhada ? 'usuarios' : 'pasta')));
-    const prefixo = nivel > 0 ? '↳ ' : '';
-
-    item.innerHTML = `
-      <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
-        ${svgIcone(iconeNome, 14)}
-        <span style="white-space:nowrap; text-overflow:ellipsis; overflow:hidden;" title="${escapeHtml(pasta.nome)}">${prefixo}${escapeHtml(pasta.nome)}</span>
-      </div>
-      <div style="display:flex; align-items:center; gap:4px;">
-        <span class="ath-pasta-badge">${count}</span>
-        ${ehCompartilhada ? `
-          <button type="button" class="ath-btn ath-btn-xs ath-btn-remover-comp" title="Desvincular pasta compartilhada" style="padding:0 3px; height:18px; color:#DC2626; border:none; background:transparent;">
-            ✕
-          </button>
-        ` : (this.pastaPodeSerExcluida(pasta) ? `
-          <button type="button" class="ath-btn ath-btn-xs ath-btn-excluir-pasta" title="Excluir pasta (os documentos dela vão para a pasta de cima)" aria-label="Excluir pasta ${escapeHtml(pasta.nome)}" style="padding:0 3px; height:18px; color:#94A3B8; border:none; background:transparent;">
-            ${svgIcone('lixeira', 12)}
-          </button>
-        ` : '')}
-      </div>
-    `;
-
-    item.addEventListener('click', (ev) => {
-      if (ev.target.closest('.ath-btn-excluir-pasta')) {
-        ev.stopPropagation();
-        this.excluirPasta(pasta);
-        return;
-      }
-      if (ev.target.closest('.ath-btn-remover-comp')) {
-        ev.stopPropagation();
+    const no = document.createElement('div');
+    no.className = 'ath-pasta-no';
+    const item = criarLinhaPasta(pasta.id, pasta.nome, iconeNome, count, ativo);
+    item.classList.toggle('ath-pasta-item-raiz', nivel === 0);
+    if (/^#[\da-f]{6}$/i.test(pasta.cor || '')) item.style.setProperty('--ath-cor-pasta-lateral', pasta.cor);
+    item.querySelector('.ath-pasta-link').addEventListener('click', () => this.selecionarPasta(pasta.id));
+    if (ehCompartilhada || this.pastaPodeSerExcluida(pasta)) {
+      const acao = document.createElement('button');
+      acao.type = 'button';
+      acao.className = `ath-pasta-acao ${ehCompartilhada ? 'ath-btn-remover-comp' : 'ath-btn-excluir-pasta'}`;
+      acao.title = ehCompartilhada ? 'Desvincular pasta compartilhada' : 'Excluir pasta';
+      acao.setAttribute('aria-label', `${acao.title} ${pasta.nome}`);
+      acao.innerHTML = svgIcone(ehCompartilhada ? 'fechar' : 'lixeira', 13);
+      item.appendChild(acao);
+      if (!ehCompartilhada) acao.addEventListener('click', () => this.excluirPasta(pasta));
+      else acao.addEventListener('click', () => {
         if (confirm(`Deseja desvincular a pasta compartilhada "${pasta.nome}"?`)) {
           const todas = [];
           const coletar = (p) => {
@@ -206,17 +215,40 @@ export const metodosDashboardPastas = {
           else this.estudoView?.filtrarPorPasta?.(this.pastaAtivaId);
           this.agendarPerfil?.(200);
         }
-        return;
-      }
-      this.selecionarPasta(pasta.id);
-    });
+      });
+    }
 
-    container.appendChild(item);
+    no.appendChild(item);
+    container.appendChild(no);
     if (!ehAbaBib) this.arquivos.tornarAlvoDeSolta(item, pasta.id);
 
     if (Array.isArray(pasta.subpastas) && pasta.subpastas.length > 0) {
+      const recolhidas = this._pastasLateralRecolhidas;
+      if (revelarSelecao && recolhidas.has(pasta.id) && buscarPastaNaArvore(pasta.subpastas, this.pastaAtivaId)) recolhidas.delete(pasta.id);
+      const filhos = document.createElement('div');
+      filhos.className = nivel < 6 ? 'ath-pasta-filhos' : 'ath-pasta-filhos ath-pasta-filhos-compactos';
+      const seta = document.createElement('button');
+      seta.type = 'button';
+      seta.className = 'ath-pasta-seta';
+      seta.innerHTML = svgIcone('baixo', 14);
+      const atualizarSeta = () => {
+        filhos.hidden = recolhidas.has(pasta.id);
+        const rotulo = `${filhos.hidden ? 'Expandir' : 'Recolher'} subpastas de ${pasta.nome}`;
+        seta.setAttribute('aria-expanded', String(!filhos.hidden));
+        seta.setAttribute('aria-label', rotulo);
+        seta.title = rotulo;
+      };
+      seta.addEventListener('click', () => {
+        if (filhos.hidden) recolhidas.delete(pasta.id);
+        else recolhidas.add(pasta.id);
+        atualizarSeta();
+        try { localStorage.setItem(CHAVE_PASTAS_RECOLHIDAS, JSON.stringify([...recolhidas])); } catch {}
+      });
+      item.querySelector('.ath-pasta-seta-espaco').replaceWith(seta);
+      no.appendChild(filhos);
+      atualizarSeta();
       for (const sub of pasta.subpastas) {
-        this.montarItemPastaComSubpastas(container, sub, nivel + 1, ehCompartilhada);
+        this.montarItemPastaComSubpastas(filhos, sub, nivel + 1, ehCompartilhada, revelarSelecao);
       }
     }
   },
