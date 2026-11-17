@@ -7,6 +7,7 @@
 import { extrairItensSumario, nivelDe } from './athenes_sumario.js';
 import { TIPOS_BLOCO_TEXTO, sanearHtmlTexto, ajusteDeFragmento } from './athenes_estilo_exclusivo.js';
 import { parametrosTextoPt, linhasEstimadas, lacunasInternasPt, alturaTabelaPt, dividirParaPagina, podeDividir, alturaMedidaDoBloco } from './athenes_fragmentos.js';
+import { normalizarColunasTexto } from './athenes_colunas_texto.js';
 import { garantirEstilosDeTitulos } from './athenes_estilos.js';
 import { aplicarRegrasMestraNasPaginas, vincularOverridesAsPaginas } from './athenes_mestra_canvas.js';
 import { criarEstilosPadrao, PERFIS_FORMATACAO } from './athenes_estilos.js';
@@ -253,6 +254,7 @@ function copiarTipografiaBloco(b, dados) {
 export function criarNovoBloco(tipo, dados = {}) {
   // Bloco de texto: só `estiloId` define o visual. Fonte, cor, alinhamento, entrelinha, espaços, recuos e marcadores são do estilo.
   const ehTexto = TIPOS_BLOCO_TEXTO.includes(tipo || 'paragrafo');
+  const colunasTexto = normalizarColunasTexto(dados);
   const b = {
     id: dados.id || gerarId('bloco'),
     tipo: tipo || 'paragrafo',
@@ -260,6 +262,7 @@ export function criarNovoBloco(tipo, dados = {}) {
     span: dados.span || 12,
     linha_grade: dados.linha_grade || null,
     estiloId: dados.estiloId || (tipo === 'titulo' ? 'titulo1' : tipo === 'subtitulo' ? 'subtitulo' : 'corpo'),
+    ...(tipo === 'paragrafo' ? { colunas_texto: colunasTexto.colunas, espaco_colunas_mm: colunasTexto.espacoMm } : {}),
     ...(ehTexto ? {} : { alinhamento: dados.alinhamento || 'esquerda' }),
     manterComProximo: dados.manterComProximo !== undefined ? dados.manterComProximo : (tipo === 'titulo' || tipo === 'subtitulo'),
     quebra_antes: !!dados.quebra_antes,
@@ -339,7 +342,7 @@ export function criarNovoBloco(tipo, dados = {}) {
       if (dados.mostrar_titulo !== undefined) b.mostrar_titulo = dados.mostrar_titulo;
       if (dados.mostrar_legenda !== undefined) b.mostrar_legenda = dados.mostrar_legenda;
       if (dados.mostrar_fonte !== undefined) b.mostrar_fonte = dados.mostrar_fonte;
-      // diagramação do subgrid (gap, rótulos, moldura da imagem, sombra, enquadramento, largura, fluxo...)
+      // diagramação do subgrid (gap, rótulos, moldura da imagem, sombra, enquadramento e largura)
       for (const k of CHAVES_ESTILO_FIGURA) {
         if (dados[k] !== undefined && k !== 'layout' && k !== 'largura_pct') b[k] = dados[k];
       }
@@ -527,7 +530,8 @@ let TITULOS_NO_DOC = 8;
 function alturaTextoPorEstilo(bloco, ctx) {
   const P = parametrosTextoPt(bloco, ctx);
   if (!P) return null;
-  return linhasEstimadas(bloco.texto, P.porLinha) * P.tam * P.ent + P.antes + P.depois + lacunasInternasPt(bloco.texto, P.gapParagrafo);
+  return Math.ceil(linhasEstimadas(bloco.texto, P.porLinha) / P.colunas) * P.tam * P.ent + P.antes + P.depois
+    + lacunasInternasPt(bloco.texto, P.gapParagrafo) / P.colunas;
 }
 
 export function estimarAlturaBlocoPt(bloco, ctx = null) {

@@ -18,6 +18,7 @@ import { aplicarRotulosNotasHtml } from '../core/athenes_notas_rodape.js';
 import { construirGradeFiguraDom } from './athenes_figura_ui.js';
 import { descreverFigura, ehFonteCodigo, fonteDoItem } from '../core/athenes_figura_layout.js';
 import { sanearHtmlTexto, ehBlocoDeTexto, ajusteDeFragmento } from '../core/athenes_estilo_exclusivo.js';
+import { cssColunasTexto } from '../core/athenes_colunas_texto.js';
 import { tagDoNivel, nivelDe, estiloIdDoTitulo } from '../core/athenes_sumario.js';
 import { MODOS_TRABALHO } from '../core/athenes_colaboracao.js';
 
@@ -151,7 +152,7 @@ export const metodosBlocoNaFolha = {
       if (classesAv) p.className += ` ${classesAv}`;
       p.setAttribute('lang', 'pt-BR');
       const hifAtivoP = Boolean(estiloMesclado.hifenizacao);
-      p.style.cssText = `${cssEstilo}; outline:none;`;
+      p.style.cssText = `${cssEstilo}; ${b.tipo === 'paragrafo' ? cssColunasTexto(b) : ''} outline:none;`;
 
       let conteudoHtml = this.comEstilosDeTrecho(b.texto || 'Escreva diretamente neste bloco...');
       const marcP = this.mapaMarc?.get(chaveMarcador(b));
@@ -608,6 +609,16 @@ export const metodosBlocoNaFolha = {
     alca.addEventListener('dragend', () => this.encerrarArrasto());
     alca.addEventListener('click', e => e.stopPropagation());
     el.appendChild(alca);
+    const proximo = document.createElement('button');
+    proximo.type = 'button';
+    proximo.className = 'ath-bloco-proximo';
+    const temOutroBloco = ((this.doc.secoes || []).find(s => s.id === pag?.secaoId)?.blocos.length || 0) > 1;
+    proximo.disabled = !temOutroBloco;
+    proximo.title = temOutroBloco ? 'Escolher o próximo bloco' : 'Adicione outro bloco para definir a ordem';
+    proximo.setAttribute('aria-label', proximo.title);
+    proximo.innerHTML = svgIcone('seta_direita', 14);
+    proximo.addEventListener('click', e => { e.stopPropagation(); this.abrirMenuSequencia(b); });
+    el.appendChild(proximo);
     this.ligarAlvoDeSolta(el, b);
 
     // O navegador usa o idioma do bloco para sublinhar erros e oferecer correções no menu nativo.

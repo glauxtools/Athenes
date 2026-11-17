@@ -18,6 +18,7 @@ const REGISTRO = new WeakMap();
 
 import { entrelinhaEfetiva } from './athenes_estilos.js';
 import { ajusteDeFragmento } from './athenes_estilo_exclusivo.js';
+import { normalizarColunasTexto } from './athenes_colunas_texto.js';
 export const ehFragmento = (b) => !!b?._frag;
 export const origemDoFragmento = (b) => REGISTRO.get(b)?.origem || null;
 
@@ -101,7 +102,7 @@ export const limparCalibracaoTexto = () => CALIBRACAO.clear();
  */
 const ALTURA_MEDIDA = new Map();
 export const TIPOS_COM_ALTURA_MEDIDA = new Set(['figura', 'imagem', 'mapa', 'formula', 'campos', 'tabela', 'quadro']);
-const assinaturaAltura = (b) => [b.tipo, b.layout, b.span, b.col, (b.itens || []).length, (b.linhas || []).length, (b.colunas || []).length, String(b.titulo || '').length, String(b.legenda || '').length, String(b.legenda_geral || '').length, String(b.fonte || '').length, String(b.latex || '').length, b.proporcao, b.altura_mm, b.fluxo].join('|');
+const assinaturaAltura = (b) => [b.tipo, b.layout, b.span, b.col, (b.itens || []).length, (b.linhas || []).length, (b.colunas || []).length, String(b.titulo || '').length, String(b.legenda || '').length, String(b.legenda_geral || '').length, String(b.fonte || '').length, String(b.latex || '').length, b.proporcao, b.altura_mm].join('|');
 /** Guarda a altura medida (pt). Devolve true se mudou o suficiente para a paginação precisar ser refeita. */
 export function definirAlturaMedida(bloco, pt) {
   if (!bloco?.id || !Number.isFinite(pt) || pt <= 0) return false;
@@ -129,13 +130,15 @@ export function parametrosTextoPt(bloco, ctx) {
   const antes = aj.espaco_antes_pt ?? est.espaco_antes_pt ?? 0;
   const depois = aj.espaco_depois_pt ?? est.espaco_depois_pt ?? 0;
   const recuoMm = est.recuo_esquerdo_mm ?? 0;
-  const larg = Math.max(40, ctx.larguraPt * Math.min(12, Math.max(1, bloco.span || 12)) / 12 - recuoMm * PT_POR_MM);
+  const { colunas, espacoMm } = bloco.tipo === 'paragrafo' ? normalizarColunasTexto(bloco) : { colunas: 1, espacoMm: 0 };
+  const larguraBloco = ctx.larguraPt * Math.min(12, Math.max(1, bloco.span || 12)) / 12 - recuoMm * PT_POR_MM;
+  const larg = Math.max(20, (larguraBloco - (colunas - 1) * espacoMm * PT_POR_MM) / colunas);
   const largChar = tam * (est.caixa_alta ? 0.63 : 0.5) * ((est.peso || 400) >= 700 ? 1.06 : 1);
   const idOrigem = bloco._frag?.origemId || bloco.id;
   const porLinha = Math.max(6, Math.floor(larg / largChar / calibracaoDoTexto(idOrigem)));
   POR_LINHA_USADO.set(idOrigem, porLinha);
   const gapParagrafo = bloco.espaco_paragrafos_pt ?? est.espaco_paragrafos_pt ?? 6; // espaço entre os parágrafos internos (Enter), como no CSS
-  return { tam, ent, antes, depois, porLinha, est, gapParagrafo };
+  return { tam, ent, antes, depois, porLinha, colunas, est, gapParagrafo };
 }
 
 /** Espaço (pt) entre os parágrafos internos de um texto: cada </p> ou </div> seguido de mais texto abre `gap`; cada </li>, 40% dele. */
@@ -222,20 +225,20 @@ function dividirTexto(b, livrePt, ctx, topoDePagina) {
   if (total < 4 || livre < alturaLinha * 2) return null; // evita viúva/órfã: pelo menos 2 linhas de cada lado
   // percorre os trechos (separados por <br>, </p>, </div>, </li>) somando linhas e o espaço entre parágrafos até esgotar o que resta
   const trechos = String(b.texto || '').split(/(<br\s*\/?>|<\/p>|<\/div>|<\/li>)/i);
-  let usado = 0; let linhas = 0; let ini = 0; let corte = plano.length - 1; let achou = false;
+  let usadoGap = 0; let linhas = 0; let ini = 0; let corte = plano.length - 1; let achou = false;
   for (let i = 0; i < trechos.length; i += 2) {
     const len = textoPlano(trechos[i]).length;
     const n = Math.max(1, Math.ceil(len / P.porLinha));
-    if (usado + n * alturaLinha > livre) {
-      const cabem = Math.floor((livre - usado) / alturaLinha);
+    if (Math.ceil((linhas + n) / P.colunas) * alturaLinha + usadoGap / P.colunas > livre) {
+      const cabem = Math.max(0, Math.floor((livre - usadoGap / P.colunas) / alturaLinha) * P.colunas - linhas);
       corte = ini + Math.min(len - 1, Math.max(0, cabem) * P.porLinha);
       linhas += Math.max(0, cabem);
       achou = true;
       break;
     }
-    usado += n * alturaLinha; linhas += n; ini += len;
+    linhas += n; ini += len;
     const sep = (trechos[i + 1] || '').toLowerCase();
-    if (/<\/(p|div)>/.test(sep)) usado += P.gapParagrafo; else if (sep === '</li>') usado += P.gapParagrafo * 0.4;
+    if (/<\/(p|div)>/.test(sep)) usadoGap += P.gapParagrafo; else if (sep === '</li>') usadoGap += P.gapParagrafo * 0.4;
   }
   if (!achou || linhas < 2) return null;
   if (total - linhas < 2) { corte = Math.max(0, corte - (2 - (total - linhas)) * P.porLinha); }

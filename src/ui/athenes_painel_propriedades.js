@@ -31,6 +31,7 @@ import { ModalLayoutBloco } from './athenes_editor_layout_bloco.js';
 import { montarPainelFiguraVisual, montarPainelTipografiaBloco, papeisTipografiaFigura } from './athenes_figura_ui.js';
 import { qtdSlotsDoLayout, ajustarItensAoLayout, papelDoSubtipo, fonteDoItem, ehFonteCodigo, FONTES_CONTEUDO } from '../core/athenes_figura_layout.js';
 import { abrirEditorCodigoFigura } from './athenes_figura_codigo_ui.js';
+import { normalizarColunasTexto } from '../core/athenes_colunas_texto.js';
 import { criarSeletorSimbolosMatematica } from './athenes_simbolos_matematica.js';
 import { escapeHtml, registrarListenerSelecaoSegura, obterOuRestaurarSelecaoDoBloco } from '../core/athenes_seguranca.js';
 
@@ -555,6 +556,13 @@ export class PainelPropriedades {
         <label style="font:700 12px var(--glx-font); width:100%; display:block;">Texto
           <textarea id="rmCampoTexto" class="glx-input" rows="3" style="width:100%; min-height:56px; margin-top:4px; resize:vertical; font-family:var(--glx-font); font-size:12.5px; line-height:1.45; padding:8px 12px; border-radius:12px; box-sizing:border-box;">${escapeHtml(b.texto || '')}</textarea>
         </label>
+        ${b.tipo === 'paragrafo' ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font:700 11px var(--glx-font);color:#475569">Colunas do texto
+            <select id="athColunasTexto" class="glx-select" style="width:100%;margin-top:4px">${[1, 2, 3].map(n => `<option value="${n}" ${normalizarColunasTexto(b).colunas === n ? 'selected' : ''}>${n} ${n === 1 ? 'coluna' : 'colunas'}</option>`).join('')}</select>
+          </label>
+          <label style="font:700 11px var(--glx-font);color:#475569">Espaço (mm)
+            <input id="athEspacoColunasTexto" class="glx-input" type="number" min="0" max="20" step="0.5" value="${normalizarColunasTexto(b).espacoMm}" style="width:100%;margin-top:4px" ${normalizarColunasTexto(b).colunas === 1 ? 'disabled' : ''}>
+          </label></div>` : ''}
 
         <!-- Estilo de texto -->
         <div>
@@ -591,6 +599,16 @@ export class PainelPropriedades {
       box.querySelector('#rmCampoTexto')?.addEventListener('input', e => {
         b.texto = sanearHtmlTexto(e.target.value);
         this.notificarMudanca();
+      });
+      box.querySelector('#athColunasTexto')?.addEventListener('change', e => {
+        b.colunas_texto = Number(e.target.value);
+        this.notificarMudanca(true);
+        this.renderizar();
+      });
+      box.querySelector('#athEspacoColunasTexto')?.addEventListener('change', e => {
+        b.espaco_colunas_mm = Number(e.target.value);
+        this.notificarMudanca(true);
+        this.renderizar();
       });
 
       box.querySelector('#rmCampoEstilo').addEventListener('change', e => {

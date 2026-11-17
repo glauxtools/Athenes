@@ -63,7 +63,7 @@ test('Subgrid — configuração normalizada rejeita valores inválidos', () => 
   assert.equal(c.img_borda_largura_pt, 6);
   assert.equal(c.foco_x, 0);
   assert.equal(c.largura_pct, 20);
-  assert.equal(c.fluxo, 'em_linha');
+  assert.ok(!('fluxo' in c));
   assert.equal(c.altura_modo, 'auto');
   assert.equal(obterConfigFigura({ ajuste_enquadramento: 'scale-down' }).ajuste_enquadramento, 'contain');
 });
@@ -99,7 +99,7 @@ test('Subgrid — descrição: gap, moldura, raio, sombra, foco, rótulos e ajus
   assert.equal(di.itens[1].img.objectFit, 'contain');
 });
 
-test('Subgrid — largura, alinhamento e fluxo do bloco', () => {
+test('Subgrid — largura e alinhamento do bloco', () => {
   assert.deepEqual(descreverFigura(fig({})).bloco, {}, 'padrão: largura do texto, sem estilos extras');
   const pct = descreverFigura(fig({ largura_modo: 'pct', largura_pct: 50, alinhamento_bloco: 'direita' })).bloco;
   assert.equal(pct.width, '50%');
@@ -111,11 +111,7 @@ test('Subgrid — largura, alinhamento e fluxo do bloco', () => {
   assert.equal(pagina.marginRight, '-20mm');
   const est = descreverFigura(fig({ largura_modo: 'estendida' }), { margens_mm: { l: 30, r: 20 } }).bloco;
   assert.equal(est.marginLeft, '-15mm');
-  // contorno só quando o consumidor permite (PDF)
   assert.equal(descreverFigura(fig({ fluxo: 'contornar_esq' })).bloco.float, undefined);
-  const fl = descreverFigura(fig({ fluxo: 'contornar_dir' }), { permitirFlutuar: true }).bloco;
-  assert.equal(fl.float, 'right');
-  assert.equal(fl.width, '50%');
   assert.equal(cssObjParaString({ marginLeft: '-3mm', gridRow: '1 / 2', x: undefined }), 'margin-left:-3mm;grid-row:1 / 2');
 });
 
@@ -131,20 +127,18 @@ test('PDF — figura usa a mesma descrição: grade, sombra, rótulos e placehol
   assert.ok(!html.includes('unsplash'), 'sem imagem externa');
 });
 
-test('PDF — texto contorna a figura: figura flutuante e parágrafo seguinte dividem a célula', () => {
-  const doc = criarDocumento({ titulo: 'Contorno' });
+test('PDF — figura e parágrafo seguem a mesma ordem de blocos exibida no editor', () => {
+  const doc = criarDocumento({ titulo: 'Fluxo consistente' });
   const f = fig({ layout: '1', fluxo: 'contornar_esq', largura_modo: 'pct', largura_pct: 40 });
   const p = criarNovoBloco('paragrafo', { texto: 'Texto que contorna a figura.' });
   doc.secoes[0].blocos.push(f, p);
   repaginarDocumento(doc);
   const html = gerarDocumentoHtmlPdf(doc);
-  const i = html.indexOf('display:flow-root');
-  assert.ok(i > 0, 'célula de fluxo');
-  const cel = html.slice(i, i + 12000).replace(/­/g, ''); // ignora hifens suaves da hifenização
-  assert.match(cel, /float:left/);
-  const iTexto = cel.indexOf('Texto que');
-  assert.ok(iTexto > 0, 'parágrafo na mesma célula');
-  assert.ok(cel.indexOf('float:left') < iTexto, 'figura vem antes do texto');
+  assert.ok(!html.includes('display:flow-root'), 'sem célula especial só no PDF');
+  assert.ok(!html.includes('float:left'), 'sem contorno invisível no editor');
+  const iFigura = html.indexOf('ath-figura');
+  const iTexto = html.replace(/­/g, '').indexOf('Texto que');
+  assert.ok(iFigura > 0 && iTexto > iFigura, 'figura e parágrafo mantêm a ordem');
 });
 
 test('Tema athenes-tema-v1 — estilo_figura exporta, sanitiza e reaplica sem perder imagens', () => {
@@ -167,7 +161,7 @@ test('Tema athenes-tema-v1 — estilo_figura exporta, sanitiza e reaplica sem pe
   const v = validarPacoteEstilo(ruim);
   assert.equal(v.valido, true);
   assert.equal(v.pacote.layout_padrao_figuras.figura.estilo_figura.img_borda_cor, '#94A3B8');
-  assert.equal(v.pacote.layout_padrao_figuras.figura.estilo_figura.fluxo, 'em_linha');
+  assert.ok(!('fluxo' in v.pacote.layout_padrao_figuras.figura.estilo_figura));
 
   const doc2 = criarDocumento({ titulo: 'Outro' });
   const b2 = fig({ layout: '3_linha', moldura_tipo: 'limpo' });
@@ -180,9 +174,10 @@ test('Tema athenes-tema-v1 — estilo_figura exporta, sanitiza e reaplica sem pe
   assert.equal(b2.itens[0].url, 'a.png');
 
   const prompt = obterPromptIaParaExtracaoDeLayout();
-  for (const chave of ['estilo_figura', 'subrotulo_tipo', 'subrotulo_formato', 'sublegenda_estilo_id', 'img_sombra', 'passe_partout', '3_panoramica', 'contornar_esq']) {
+  for (const chave of ['estilo_figura', 'subrotulo_tipo', 'subrotulo_formato', 'sublegenda_estilo_id', 'img_sombra', 'passe_partout', '3_panoramica']) {
     assert.ok(prompt.includes(chave), chave);
   }
+  assert.ok(!prompt.includes('contornar_esq'));
   assert.deepEqual(Object.keys(extrairEstiloFigura({})).sort(), Object.keys(sanitizarEstiloFigura({})).sort());
   assert.equal(aplicarEstiloFiguraAoBloco({ layout: '2_lado', itens: [{}, {}] }, { layout: '1', gap_modo: 'nenhum' }).layout, '2_lado');
 });

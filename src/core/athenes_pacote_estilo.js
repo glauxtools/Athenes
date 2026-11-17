@@ -20,6 +20,7 @@ import { declaracaoDeFontes, sanearDeclaracaoDeFontes, registrarFontePendente } 
 import { ESTILOS_BIBLIOGRAFIA } from './athenes_bibliografia_estilos.js';
 import { obterConfigNotas } from './athenes_notas_rodape.js';
 import { extrairEstiloFigura, sanitizarEstiloFigura, aplicarEstiloFiguraAoBloco, extrairTipografiaTituloFonte } from './athenes_figura_layout.js';
+import { normalizarColunasTexto } from './athenes_colunas_texto.js';
 import { extrairEstiloGlobalTabela, sanitizarEstiloTabela, garantirEstiloTabela } from './athenes_tabela_estilo.js';
 
 export const VERSAO_SCHEMA_TEMA = 'athenes-tema-v1';
@@ -91,6 +92,7 @@ export function exportarPacoteEstilo(documento, opcoes = {}) {
     ...(declaracaoDeFontes({ estilos, mestras }).length ? { fontes: declaracaoDeFontes({ estilos, mestras }) } : {}),
     mestras: mestras,
     modelos_blocos: modelosBlocos,
+    layout_padrao_texto: normalizarColunasTexto((documento.secoes || []).flatMap(s => s.blocos || []).find(b => b.tipo === 'paragrafo' && normalizarColunasTexto(b).colunas > 1) || {}),
     layout_padrao_figuras: layoutPadraoBlocos,
     estilo_relacoes: normalizeRelationStyle(documento.estilo_relacoes||{primary:documento.cor_primaria||'#314F79'}),
     // templates de documento (Meus templates) que acompanham o tema
@@ -162,7 +164,7 @@ export function extrairConfiguracaoMoldurasDoDocumento(doc) {
     }
   }
 
-  // Diagramação de figuras/subgrid (layout, gap, rótulos, moldura, sombra, enquadramento, largura, fluxo)
+  // Diagramação de figuras/subgrid (layout, gap, rótulos, moldura, sombra, enquadramento e largura)
   const figuraRef = todosBlocos.find(b => (b.tipo === 'figura' || b.tipo === 'imagem') && b.moldura_tipo);
   padroes.figura.estilo_figura = extrairEstiloFigura(figuraRef || {});
 
@@ -263,6 +265,8 @@ export function validarPacoteEstilo(conteudo) {
     ...(Array.isArray(obj.fontes) ? { fontes: sanearDeclaracaoDeFontes(obj.fontes) } : {}),
     mestras: (Array.isArray(obj.mestras) && obj.mestras.length > 0 ? obj.mestras : criarModelosPaginaPadrao('abnt')).map(m => normalizarMestraCanvas(m)),
     modelos_blocos: Array.isArray(obj.modelos_blocos) ? obj.modelos_blocos : [],
+    ...(obj.layout_padrao_texto && typeof obj.layout_padrao_texto === 'object'
+      ? { layout_padrao_texto: normalizarColunasTexto({ colunas_texto: obj.layout_padrao_texto.colunas, espaco_colunas_mm: obj.layout_padrao_texto.espacoMm }) } : {}),
     layout_padrao_figuras: obj.layout_padrao_figuras || {},
     estilo_relacoes: normalizeRelationStyle(obj.estilo_relacoes||{primary:'#314F79'}),
     ...(Array.isArray(obj.templates) ? { templates: templatesParaPacote(obj.templates) } : {})
@@ -361,6 +365,14 @@ export function aplicarPacoteEstilo(documento, pacote, opcoes = {}) {
 
   // 5. Se solicitado, propaga estilos padrão de moldura para figuras, tabelas e fórmulas existentes
   let blocosAtualizados = 0;
+  if (aplicarNosBlocosExistentes && p.layout_padrao_texto) {
+    for (const b of (documento.secoes || []).flatMap(s => s.blocos || [])) {
+      if (b.tipo !== 'paragrafo') continue;
+      b.colunas_texto = p.layout_padrao_texto.colunas;
+      b.espaco_colunas_mm = p.layout_padrao_texto.espacoMm;
+      blocosAtualizados++;
+    }
+  }
   if (aplicarNosBlocosExistentes && p.layout_padrao_figuras) {
     const todosBlocos = (documento.secoes || []).flatMap(s => s.blocos || []);
     for (const b of todosBlocos) {
@@ -498,6 +510,7 @@ INSTRUÇÕES DE ANÁLISE:
    - moldura_tipo: "limpo" (sem borda), "linha_lateral" (tarja lateral elegante), "cartao" (fundo suave), "borda_completa" (caixa fechada técnica), ou "esquadro".
    - linha_estilo: "solida" (linha reta), "quadriculada_reta" (cantos retos 0px), "pontilhada", "tracejada", "dupla" (técnica) ou "ponto_destaque".
    - linha_cor: cor hexadecimal da linha decorativa (ex: "#314F79").
+   - "layout_padrao_texto" na raiz: { "colunas": 1 a 3, "espacoMm": 0 a 20 }; o texto de um único parágrafo flui da primeira para as demais colunas, igual na folha e no PDF.
 
 4. DIAGRAMAÇÃO DE FIGURAS E SUBGRID ("estilo_figura" dentro de layout_padrao_figuras.figura):
    - layout: "1" | "2_lado" (1×2) | "3_linha" (1×3) | "4_linha" (1×4) | "2_empilhado" (2×1) | "4_grade" (2×2) | "6_grade" (2×3) | "6_grade_3x2" (3×2) | "3_misto" (1 grande à esquerda + 2 empilhadas) | "3_panoramica" (1 panorâmica no topo + 2 na base).
@@ -506,7 +519,7 @@ INSTRUÇÕES DE ANÁLISE:
    - Estilos de texto (ids de itens de "estilos", "" = padrão do bloco): titulo_estilo_id, numeracao_estilo_id (prefixo "Figura 1 —"), legenda_estilo_id, fonte_estilo_id, sublegenda_estilo_id (legenda de cada subimagem), subrotulo_texto_estilo_id (rótulo a/b/c); alinhamentos titulo_alinhamento, legenda_alinhamento, fonte_alinhamento, sublegenda_alinhamento: "estilo" | "left" | "center" | "right" | "justify".
    - img_moldura: "nenhuma" | "fina" | "dupla" | "passe_partout"; img_borda_largura_pt (0.25-6), img_borda_estilo ("solida"|"tracejada"), img_borda_cor (#RRGGBB); img_raio: "reto" | "discreto" | "arredondado" | "pilula"; img_sombra: "nenhuma" | "suave" | "media" | "elevada".
    - ajuste_enquadramento: "contain" | "cover" | "fill"; foco_x/foco_y (0-100, ponto focal); proporcao_imagem: "livre" | "16/9" | "4/3" | "1/1" | "3/4" | "9/16".
-   - largura_modo: "corpo" | "estendida" | "pagina" | "pct" (com largura_pct 20-100); alinhamento_bloco: "esquerda" | "centro" | "direita"; fluxo: "em_linha" | "contornar_esq" | "contornar_dir".
+   - largura_modo: "corpo" | "estendida" | "pagina" | "pct" (com largura_pct 20-100); alinhamento_bloco: "esquerda" | "centro" | "direita".
    - Figuras por código (SVG, HTML+CSS, Mermaid, gráficos JSON — conteúdo do bloco, não do tema): codigo_fundo: "transparente" | "branco" | "suave" (fundo do contêiner da figura por código); codigo_paleta: "tema" (cor primária do tema + complementares) | "vivida" | "cinza" (impressão P&B com hachuras); Mermaid e gráficos herdam também a tipografia do estilo de corpo. A proporção padrão por categoria é dada por proporcao_imagem (ex.: gráfico "4/3", diagrama "16/9"). Classificação semântica do bloco (semanticRole: chart/figure/diagram/scheme/frame) define o prefixo da legenda (Gráfico, Figura, Diagrama, Esquema, Quadro) e não faz parte do tema.
 
 5. REDES E RELAÇÕES: "estilo_relacoes" no nível raiz contém layout (force, clusters, radial, star, circle, ellipse, bundled, tree, sphere, arc, sankey ou temporal), primary (#RRGGBB), labels (boolean), nodeScale (0.5 a 2), edgeOpacity (0.05 a 0.9) e font (família). Inclua estes atributos ao extrair redes de um PDF. Dados, referências, filtros e ligações pertencem ao conteúdo do documento, nunca ao pacote de estilo.
@@ -774,6 +787,7 @@ Responda EXCLUSIVAMENTE com o bloco JSON válido abaixo, sem texto antes ou depo
       "elementos_recorrentes": []
     }
   ],
+  "layout_padrao_texto": { "colunas": 1, "espacoMm": 5 },
   "layout_padrao_figuras": {
     "figura": {
       "moldura_tipo": "limpo",
@@ -813,7 +827,6 @@ Responda EXCLUSIVAMENTE com o bloco JSON válido abaixo, sem texto antes ou depo
         "largura_modo": "corpo",
         "largura_pct": 100,
         "alinhamento_bloco": "centro",
-        "fluxo": "em_linha",
         "codigo_fundo": "transparente",
         "codigo_paleta": "tema"
       }

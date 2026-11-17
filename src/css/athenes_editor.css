@@ -1184,6 +1184,20 @@ html, body, button, input, select, textarea, option, summary, label, table,
 .ath-bloco-alca.topo { left: 4px; top: -17px; width: clamp(26px, 30%, 64px); height: 16px; border-radius: 6px 6px 0 0; transform: none; box-shadow: 0 -1px 4px rgba(15,23,42,.16); }
 .ath-bloco-alca.topo svg { transform: rotate(90deg); }
 .ath-bloco-folha:hover > .ath-bloco-alca, .ath-bloco-folha.sel > .ath-bloco-alca { opacity: 1; }
+.ath-bloco-proximo { position:absolute;right:2px;top:-21px;z-index:6;width:23px;height:20px;display:grid;place-items:center;border:1px solid #CBD5E1;border-radius:6px 6px 0 0;background:#fff;color:#314F79;cursor:pointer;opacity:0;transition:opacity .12s; }
+.ath-bloco-folha:hover > .ath-bloco-proximo, .ath-bloco-folha.sel > .ath-bloco-proximo, .ath-bloco-proximo:focus-visible { opacity:1; }
+.ath-bloco-proximo:hover { background:#EEF4FA; }
+.ath-bloco-proximo:disabled { cursor:default;opacity:0 !important; }
+.ath-dialog-sequencia { width:min(440px,calc(100vw - 32px));border:1px solid #D8E1EC;border-radius:14px;padding:22px;background:#fff;color:#1F2733;box-shadow:0 20px 60px rgba(15,23,42,.24);font-family:var(--glx-font); }
+.ath-dialog-sequencia::backdrop { background:rgba(15,23,42,.38); }
+.ath-dialog-sequencia form { display:grid;gap:12px; }
+.ath-dialog-sequencia h2 { margin:0;font-size:18px; }
+.ath-dialog-sequencia p { margin:0;color:#64748B;font-size:12px;line-height:1.5; }
+.ath-dialog-sequencia label { font-size:12px;font-weight:700; }
+.ath-dialog-sequencia select { width:100%;min-height:38px;border:1px solid #CBD5E1;border-radius:8px;padding:6px 8px;background:#fff;color:#1F2733; }
+.ath-dialog-sequencia-acoes { display:flex;justify-content:flex-end;gap:8px;margin-top:8px; }
+.ath-dialog-sequencia-acoes button { min-height:36px;border:1px solid #CBD5E1;border-radius:8px;padding:6px 12px;background:#fff;color:#314F79;cursor:pointer; }
+.ath-dialog-sequencia-acoes [data-acao="aplicar"] { background:#314F79;border-color:#314F79;color:#fff; }
 .ath-bloco-alca svg { stroke: none; }
 
 /* Marcas de soltura na folha */

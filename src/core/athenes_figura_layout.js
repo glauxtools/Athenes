@@ -11,7 +11,7 @@
  *   titulo_alinhamento, legenda_alinhamento, fonte_alinhamento, sublegenda_alinhamento,
  *   img_moldura, img_borda_largura_pt, img_borda_estilo, img_borda_cor, img_raio, img_sombra,
  *   ajuste_enquadramento, foco_x, foco_y, proporcao_imagem, altura_modo,
- *   largura_modo, largura_pct, alinhamento_bloco, fluxo
+ *   largura_modo, largura_pct, alinhamento_bloco
  *   codigo_fundo, codigo_paleta  (figuras por código: fundo do contêiner e paleta herdada por Mermaid/gráficos)
  * Por item (`itens[i]`): url, legenda_sub, ajuste, foco_x, foco_y e, para figuras por código,
  *   sourceType ('image_url'|'svg_code'|'html_code'|'mermaid_code'|'chart_json') + content (URL ou código).
@@ -80,7 +80,6 @@ export const SOMBRAS_IMG = Object.freeze({
 export const AJUSTES_IMG = ['contain', 'cover', 'fill'];
 export const LARGURAS_BLOCO = ['corpo', 'estendida', 'pagina', 'pct'];
 export const ALINHAMENTOS_BLOCO = ['esquerda', 'centro', 'direita'];
-export const FLUXOS = ['em_linha', 'contornar_esq', 'contornar_dir'];
 export const PROPORCOES = ['livre', '16/9', '4/3', '1/1', '3/4', '9/16'];
 export const FUNDOS_CODIGO = ['transparente', 'branco', 'suave'];
 export const FUNDOS_CODIGO_CSS = Object.freeze({ transparente: '', branco: '#FFFFFF', suave: '#F8FAFC' });
@@ -190,7 +189,7 @@ export const CHAVES_ESTILO_FIGURA = Object.freeze([
   'titulo_alinhamento', 'legenda_alinhamento', 'fonte_alinhamento', 'sublegenda_alinhamento',
   'img_moldura', 'img_borda_largura_pt', 'img_borda_estilo', 'img_borda_cor', 'img_raio', 'img_sombra',
   'ajuste_enquadramento', 'foco_x', 'foco_y', 'proporcao_imagem',
-  'largura_modo', 'largura_pct', 'alinhamento_bloco', 'fluxo',
+  'largura_modo', 'largura_pct', 'alinhamento_bloco',
   'codigo_fundo', 'codigo_paleta'
 ]);
 
@@ -216,7 +215,6 @@ export function obterConfigFigura(b = {}) {
     largura_modo: dentro(b.largura_modo, LARGURAS_BLOCO, 'corpo'),
     largura_pct: num(b.largura_pct, 20, 100, 100),
     alinhamento_bloco: dentro(b.alinhamento_bloco, ALINHAMENTOS_BLOCO, 'centro'),
-    fluxo: dentro(b.fluxo, FLUXOS, 'em_linha'),
     codigo_fundo: dentro(b.codigo_fundo, FUNDOS_CODIGO, 'transparente'),
     codigo_paleta: dentro(b.codigo_paleta, PALETAS_FIGURA, 'tema'),
     titulo_estilo_id: idEstilo(b.titulo_estilo_id),
@@ -308,22 +306,19 @@ export function cssObjParaString(o) {
 /**
  * Descreve a figura: estilos CSS (objetos camelCase) do bloco, da grade e de cada item.
  * @param {object} b  bloco figura/imagem
- * @param {{margens_mm?:{l:number,r:number}, permitirFlutuar?:boolean}} opc
- *   `permitirFlutuar`: só o PDF (fluxo contínuo) contorna texto; o canvas do editor posiciona blocos em
- *   grade de 12 colunas, onde o contorno é obtido colocando blocos lado a lado.
+ * @param {{margens_mm?:{l:number,r:number}}} opc
  */
-export function descreverFigura(b, { margens_mm = { l: 25, r: 20 }, permitirFlutuar = false } = {}) {
+export function descreverFigura(b, { margens_mm = { l: 25, r: 20 } } = {}) {
   const cfg = obterConfigFigura(b);
   const layout = obterLayoutFigura(cfg.layout);
   const gap = GAPS_FIGURA[cfg.gap_modo];
   const qtd = layout.slots.length;
   const itensSrc = Array.isArray(b.itens) && b.itens.length ? b.itens : [{ url: b.src || '', legenda_sub: '' }];
 
-  // — bloco (largura, alinhamento, fluxo) —
+  // — bloco (largura e alinhamento) —
   const bloco = {};
   const ml = Number(margens_mm.l) || 0;
   const mr = Number(margens_mm.r) || 0;
-  const flutua = permitirFlutuar && cfg.fluxo !== 'em_linha';
   if (cfg.largura_modo === 'pct') bloco.width = `${cfg.largura_pct}%`;
   else if (cfg.largura_modo === 'pagina') {
     bloco.width = `calc(100% + ${ml + mr}mm)`;
@@ -334,19 +329,10 @@ export function descreverFigura(b, { margens_mm = { l: 25, r: 20 }, permitirFlut
     bloco.marginLeft = `-${ml / 2}mm`;
     bloco.marginRight = `-${mr / 2}mm`;
   }
-  if (cfg.largura_modo === 'pct' || flutua) {
-    if (flutua && cfg.largura_modo !== 'pct') bloco.width = '50%';
+  if (cfg.largura_modo === 'pct') {
     const al = cfg.alinhamento_bloco;
     bloco.marginLeft = al === 'esquerda' ? '0' : 'auto';
     bloco.marginRight = al === 'direita' ? '0' : 'auto';
-  }
-  if (flutua) {
-    bloco.float = cfg.fluxo === 'contornar_esq' ? 'left' : 'right';
-    bloco.marginLeft = cfg.fluxo === 'contornar_esq' ? '0' : '12px';
-    bloco.marginRight = cfg.fluxo === 'contornar_esq' ? '12px' : '0';
-    bloco.marginBottom = '8px';
-  } else if (permitirFlutuar) {
-    bloco.clear = 'both';
   }
 
   // — grade —
