@@ -23,6 +23,7 @@ import { ajusteDeFragmento, aplicarEstilosDeTrecho } from './athenes_estilo_excl
 import { geometriaCorpoMm, resolverAreasPagina } from './athenes_paginacao.js';
 import { obterConfigNotas, aplicarRotulosNotasHtml, sanitizarHtmlNota, cssMarcadoresNota } from './athenes_notas_rodape.js';
 import { descreverFigura, cssObjParaString, PLACEHOLDER_IMG } from './athenes_figura_layout.js';
+import { cssColunasTexto } from './athenes_colunas_texto.js';
 import { marcacaoItemCodigo } from './athenes_figura_codigo.js';
 import { obterEstiloTabela, dimensoesTabela, resolverCelula, celulaParaCss, tabelaParaCss } from './athenes_tabela_estilo.js';
 import { rotuloDaFigura, gerarSumarioDinamico, modeloDaPagina, formatarNumeroPagina, gerarCssMolduraBloco, repaginarDocumento, colapsoEntreBlocosPt, margensTextoPt, obterTituloCompletoComNumeracao, obterPrefixoNumeracao, recalcularNumeracaoAutomatica } from './athenes_documento.js';
@@ -165,10 +166,10 @@ export function renderizarBlocoHtml(bloco, estilosMap, documento, opcoes = {}) {
         const partes = segmentosDeLista(texto, cfg, inicio).map(sg => sg.tipo === 'texto'
           ? `<div>${sg.html}</div>`
           : `<div style="position:relative;padding-left:${ind + cfg.tabMm}mm;text-indent:0;"><span class="ath-marc" style="position:absolute;left:${ind}mm;width:${cfg.tabMm - 1.5}mm;text-align:${cfg.alinhamento};white-space:nowrap;">${escaparHtml(sg.rotulo)}</span>${sg.html}</div>`).join('');
-        return `<div class="ath-bloco ath-paragrafo${av ? ' ' + av : ''}" style="${estiloCss}" data-id="${bloco.id}">${partes}</div>`;
+        return `<div class="ath-bloco ath-paragrafo${av ? ' ' + av : ''}" style="${estiloCss}${cssColunasTexto(bloco)}" data-id="${bloco.id}">${partes}</div>`;
       }
       const mk = marcadorDoBlocoPdf(bloco, opcoes);
-      return `<p class="ath-bloco ath-paragrafo${av ? ' ' + av : ''}" style="${estiloCss}${mk.estilo}" data-id="${bloco.id}">${mk.html}${texto}</p>`;
+      return `<p class="ath-bloco ath-paragrafo${av ? ' ' + av : ''}" style="${estiloCss}${mk.estilo}${cssColunasTexto(bloco)}" data-id="${bloco.id}">${mk.html}${texto}</p>`;
     }
 
     case 'citacao': {
@@ -220,8 +221,8 @@ export function renderizarBlocoHtml(bloco, estilosMap, documento, opcoes = {}) {
     case 'figura': {
       const estLegenda = estilosMap.legenda || estilosMap.corpo;
       const estFonte = estilosMap.fonte_citada || estilosMap.corpo;
-      // mesma descrição de estilo usada no canvas do editor (moldura, sombra, grade, rótulos, largura, fluxo)
-      const d = descreverFigura(bloco, { margens_mm: opcoes.margens_mm || { l: 25, r: 20 }, permitirFlutuar: true });
+      // mesma descrição de estilo usada no canvas do editor (moldura, sombra, grade, rótulos e largura)
+      const d = descreverFigura(bloco, { margens_mm: opcoes.margens_mm || { l: 25, r: 20 } });
       const rot = rotuloDaFigura(bloco);
 
       // conteúdo do slot: imagem (url) ou figura por código (SVG/Mermaid/gráfico JSON → SVG vetorial; HTML+CSS escopado)
@@ -415,14 +416,6 @@ export function gerarDocumentoHtmlPdf(documento, opcoes = {}) {
       const b = blocosPag[i];
       const span = Math.min(cols, b.span || 1);
       const gridCol = grade12 ? `grid-column: ${Math.min(12, Math.max(1, b.col || 1))} / span ${Math.min(12, Math.max(1, b.span || 12))};` : (cols > 1 ? `grid-column: span ${span};` : '');
-      const contorna = (b.tipo === 'figura' || b.tipo === 'imagem') && ['contornar_esq', 'contornar_dir'].includes(b.fluxo);
-      const prox = blocosPag[i + 1];
-      // texto contornando: a figura flutuante e o parágrafo seguinte dividem a mesma célula (contexto de fluxo)
-      if (contorna && prox && ['paragrafo', 'texto', 'citacao'].includes(prox.tipo)) {
-        partes.push(`<div class="ath-bloco-grid" style="${gridCol} display:flow-root;">${renderizarBlocoHtml(b, estilosMap, documento, opcoesPag)}${renderizarBlocoHtml(prox, estilosMap, documento, opcoesPag)}</div>`);
-        i++;
-        continue;
-      }
       // margens colapsadas (maior de "depois" e "antes"), como no Word: sem isso o espaço entre parágrafos dobrava
       const mesmaLinha = grade12 && i > 0 && b.grupo && blocosPag[i - 1].grupo === b.grupo; // lado a lado: sem colapso vertical entre eles
       const colapso = cols === 1 && !mesmaLinha ? (i > 0 ? colapsoEntreBlocosPt(blocosPag[i - 1], b, estilosMap) : (margensTextoPt(b, estilosMap)?.antes || 0)) : 0; // topo da página: sem espaço antes

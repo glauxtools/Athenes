@@ -1559,6 +1559,7 @@ export class EditorView {
       <div class="rm-bl-acoes" draggable="false">
         <button type="button" class="rm-ic" data-acao="subir" draggable="false" title="Subir uma linha">${svgIcone('cima', 14)}</button>
         <button type="button" class="rm-ic" data-acao="descer" draggable="false" title="Descer uma linha">${svgIcone('baixo', 14)}</button>
+        <button type="button" class="rm-ic" data-acao="proximo" draggable="false" title="${(secAtiva.blocos || []).length > 1 ? 'Escolher o próximo bloco' : 'Adicione outro bloco para definir a ordem'}" ${(secAtiva.blocos || []).length > 1 ? '' : 'disabled'}>${svgIcone('seta_direita', 14)}</button>
         <button type="button" class="rm-ic" data-acao="duplicar" draggable="false" title="Duplicar">${svgIcone('copiar', 14)}</button>
         <button type="button" class="rm-ic" data-acao="dividir" draggable="false" title="Dividir este bloco em dois">${svgIcone('divisor', 14)}</button>
         <button type="button" class="rm-ic rm-ic-perigo" data-acao="remover" draggable="false" title="Excluir">${svgIcone('fechar', 14)}</button>
@@ -1587,6 +1588,7 @@ export class EditorView {
 
     acao('subir', () => { if (moverBlocoPorLinha(this.doc, b.id, -1)) this.aposEstrutura(b); });
     acao('descer', () => { if (moverBlocoPorLinha(this.doc, b.id, 1)) this.aposEstrutura(b); });
+    acao('proximo', () => this.abrirMenuSequencia(b));
     acao('duplicar', () => { const c = duplicarBlocoNaSecao(this.doc, b.id); if (c) this.aposEstrutura(c); });
     acao('dividir', () => { this.dividirBlocoAtual(b.id); });
     acao('remover', () => {
@@ -1898,6 +1900,38 @@ export class EditorView {
       if (b) return b;
     }
     return null;
+  }
+
+  abrirMenuSequencia(bloco) {
+    const origem = this.buscarBlocoPorId(bloco?._frag?.origemId || bloco?.id);
+    const secao = origem && buscarSecaoDoBloco(this.doc, origem.id);
+    const candidatos = (secao?.blocos || []).filter(b => b.id !== origem.id);
+    if (!candidatos.length) return;
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'ath-dialog-sequencia';
+    dialog.innerHTML = `<form method="dialog"><h2>Ordem dos blocos</h2><p>Escolha qual bloco deve vir logo depois deste. Texto, imagens e os demais blocos seguem a mesma sequência.</p><label for="athProximoBloco">Próximo bloco</label><select id="athProximoBloco" required></select><div class="ath-dialog-sequencia-acoes"><button type="button" data-acao="cancelar">Cancelar</button><button type="submit" data-acao="aplicar">Aplicar ordem</button></div></form>`;
+    const select = dialog.querySelector('select');
+    select.add(new Option('Selecione um bloco', '', true, true));
+    select.options[0].disabled = true;
+    candidatos.forEach(b => {
+      const posicao = secao.blocos.indexOf(b) + 1;
+      const descricao = `${posicao}. ${rotuloDoBloco(b, this.doc)} — ${resumoBloco(b)}`;
+      select.add(new Option(descricao.slice(0, 120), b.id));
+    });
+    dialog.querySelector('[data-acao="cancelar"]').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    dialog.querySelector('form').addEventListener('submit', e => {
+      e.preventDefault();
+      const id = select.value;
+      if (!id || !colocarBloco(this.doc, id, origem.id, 'depois')) return;
+      dialog.close();
+      this.aposEstrutura(origem);
+    });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    select.focus();
   }
 
   iniciarArrasto(ev, bloco, elImagem) {

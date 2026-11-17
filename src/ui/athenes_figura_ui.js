@@ -138,13 +138,6 @@ const ICONES = {
     const x = v === 'esquerda' ? 3 : v === 'direita' ? 13 : 8;
     return svg(`<path d="M2 3h20M2 15h20" stroke-opacity=".4"/><rect x="${x}" y="6" width="8" height="6" fill="currentColor" fill-opacity=".3"/>`);
   },
-  fluxo: (v) => {
-    const linhas = '<path d="M2 3h20M2 15h20" stroke-opacity=".45"/>';
-    if (v === 'em_linha') return svg(`${linhas}<rect x="6" y="6" width="12" height="6" fill="currentColor" fill-opacity=".3"/>`);
-    const x = v === 'contornar_esq' ? 2 : 14;
-    const tx = v === 'contornar_esq' ? 12 : 2;
-    return svg(`<rect x="${x}" y="2" width="8" height="8" fill="currentColor" fill-opacity=".3"/><path d="M${tx} 4h${v === 'contornar_esq' ? 10 : 10}M${tx} 8h10M2 13h20" stroke-opacity=".5"/>`);
-  },
   estilo_traco: (v) => svg(`<path d="M3 9h18" stroke-width="2" ${v === 'tracejada' ? 'stroke-dasharray="3 2.5"' : ''}/>`),
   trocar: () => svg('<rect x="3" y="3" width="18" height="12" rx="1.5"/><path d="M8 10l3-3 3 3M11 7v6"/>'),
   remover: () => svg('<path d="M6 5l12 8M18 5L6 13" /><rect x="3" y="3" width="18" height="12" rx="1.5" stroke-opacity=".5"/>')
@@ -221,7 +214,6 @@ const ROT = {
   proporcao: { livre: 'Proporção livre', '16/9': '16:9', '4/3': '4:3', '1/1': '1:1 quadrada', '3/4': '3:4 retrato', '9/16': '9:16 vertical' },
   largura_modo: { corpo: 'Largura do texto', estendida: 'Estendida até a margem', pagina: 'Largura total da página', pct: 'Porcentagem personalizada' },
   alinhamento_bloco: { esquerda: 'Alinhar à esquerda', centro: 'Centralizar', direita: 'Alinhar à direita' },
-  fluxo: { em_linha: 'Em linha (sem contorno)', contornar_esq: 'Texto contorna à direita da figura', contornar_dir: 'Texto contorna à esquerda da figura' },
   estilo_traco: { solida: 'Traço contínuo', tracejada: 'Traço tracejado' },
   codigo_fundo: { transparente: 'Transparente (usa o fundo da folha)', branco: 'Branco', suave: 'Cinza suave' },
   codigo_paleta: { tema: 'Cores do tema', vivida: 'Cores vivas', cinza: 'Escala de cinza (impressão P&B)' }
@@ -554,14 +546,8 @@ export function montarPainelFiguraVisual(el, ctx) {
   secao('Largura e alinhamento no documento',
     ['Largura', grupo('largura_modo', cfg.largura_modo, v => { b.largura_modo = v; if (v === 'pct') b.largura_pct = 75; montarPct(); ctx.aoAlterar('largura_modo'); }, ['corpo', 'estendida', 'pagina', 'pct'])],
     pctWrap,
-    ['Alinhamento', grupo('alinhamento_bloco', cfg.alinhamento_bloco, v => set('alinhamento_bloco', v), ['esquerda', 'centro', 'direita'])],
-    ['Texto ao redor', grupo('fluxo', cfg.fluxo, v => set('fluxo', v), ['em_linha', 'contornar_esq', 'contornar_dir'])]);
+    ['Alinhamento', grupo('alinhamento_bloco', cfg.alinhamento_bloco, v => set('alinhamento_bloco', v), ['esquerda', 'centro', 'direita'])]);
   montarPct();
-
-  const nota = document.createElement('div');
-  nota.style.cssText = 'font-size:10.5px;color:#64748B;line-height:1.35';
-  nota.textContent = 'O contorno de texto é aplicado na exportação PDF; no editor use blocos lado a lado (colunas da folha).';
-  el.appendChild(nota);
 }
 
 // ───────────────────────────── Tipografia (estilos de texto) ─────────────────────────────
