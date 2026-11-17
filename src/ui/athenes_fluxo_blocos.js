@@ -25,10 +25,34 @@ function rota(a, b) {
   const porta = (caixa, lado) => (caixa.top + caixa.bottom) / 2 + lado * Math.min(5, (caixa.bottom - caixa.top) / 5);
   const yA = porta(a, 1), yB = porta(b, -1);
   const mesmaFolha = a.folha === b.folha;
-  if (mesmaFolha && a.grupo && a.grupo === b.grupo && a.right < b.left) {
-    const inicio = a.right + 1, fim = b.left - 1;
+  const paraDireita = a.right < b.left;
+  const paraEsquerda = b.right < a.left;
+  const ladoALado = a.top < b.bottom && b.top < a.bottom;
+  if (mesmaFolha && (paraDireita || paraEsquerda) && (ladoALado || (a.grupo && a.grupo === b.grupo))) {
+    const inicio = paraDireita ? a.right + 1 : a.left - 1;
+    const fim = paraDireita ? b.left - 1 : b.right + 1;
     const meio = (inicio + fim) / 2;
     return [ponto(inicio, yA), ponto(meio, yA), ponto(meio, yB), ponto(fim, yB)];
+  }
+
+  if (mesmaFolha && Math.abs(a.left - b.left) < 1 && a.right === b.right) {
+    const x = a.left - (a.left <= a.linha.left + 1 && b.left <= b.linha.left + 1 ? 14 : 8);
+    return [ponto(a.left - 2, yA), ponto(x, yA), ponto(x, yB), ponto(b.left - 2, yB)];
+  }
+
+  if (a.faixa && b.faixa && a.faixa !== b.faixa) {
+    // As mudanças de coluna acontecem no vão entre faixas, sem cruzar a área de texto.
+    const portaLateral = (caixa, y) => {
+      const direita = caixa.right >= caixa.faixa.right - 1 && caixa.left > caixa.faixa.left + 1;
+      const borda = direita ? caixa.right : caixa.left;
+      const lado = direita ? 1 : -1;
+      return { porta: ponto(borda + lado * 2, y), corredor: borda + lado * 6 };
+    };
+    const inicio = portaLateral(a, yA);
+    const fim = portaLateral(b, yB);
+    const y = (a.faixa.bottom + b.faixa.top) / 2;
+    return [inicio.porta, ponto(inicio.corredor, yA), ponto(inicio.corredor, y),
+      ponto(fim.corredor, y), ponto(fim.corredor, yB), fim.porta];
   }
 
   const x = Math.min(a.linha.left, b.linha.left) - 14;
@@ -63,11 +87,17 @@ export function montarFluxoDeBlocos(palco, entradas, grades) {
       const palcoRect = palco.getBoundingClientRect();
       const dx = palco.scrollLeft - palcoRect.left - palco.clientLeft;
       const dy = palco.scrollTop - palcoRect.top - palco.clientTop;
-      const folhas = new Map(), linhas = new Map();
+      const folhas = new Map(), linhas = new Map(), faixas = new Map();
       const caixas = entradas.map(({ el, bloco, folha }) => {
         if (!folhas.has(folha)) folhas.set(folha, { bottom: folha.getBoundingClientRect().bottom + dy });
         const r = el.getBoundingClientRect();
+        const elFaixa = el.closest('.ath-encaixe-faixa');
+        if (elFaixa && !faixas.has(elFaixa)) {
+          const rf = elFaixa.getBoundingClientRect();
+          faixas.set(elFaixa, { left: rf.left + dx, right: rf.right + dx, top: rf.top + dy, bottom: rf.bottom + dy });
+        }
         const caixa = { id: bloco._frag?.origemId || bloco.id, grupo: bloco.grupo, folha: folhas.get(folha),
+          faixa: faixas.get(elFaixa),
           left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy };
         const chave = bloco.grupo ? `${folha.dataset.paginaId}:${bloco.grupo}` : el;
         if (!linhas.has(chave)) linhas.set(chave, { left: caixa.left, top: caixa.top, bottom: caixa.bottom });

@@ -19,6 +19,7 @@ const REGISTRO = new WeakMap();
 import { entrelinhaEfetiva } from './athenes_estilos.js';
 import { ajusteDeFragmento } from './athenes_estilo_exclusivo.js';
 import { normalizarColunasTexto } from './athenes_colunas_texto.js';
+import { larguraDoBlocoNoFluxo } from './athenes_fluxo_colunas.js';
 export const ehFragmento = (b) => !!b?._frag;
 export const origemDoFragmento = (b) => REGISTRO.get(b)?.origem || null;
 
@@ -131,7 +132,9 @@ export function parametrosTextoPt(bloco, ctx) {
   const depois = aj.espaco_depois_pt ?? est.espaco_depois_pt ?? 0;
   const recuoMm = est.recuo_esquerdo_mm ?? 0;
   const { colunas, espacoMm } = bloco.tipo === 'paragrafo' ? normalizarColunasTexto(bloco) : { colunas: 1, espacoMm: 0 };
-  const larguraBloco = ctx.larguraPt * Math.min(12, Math.max(1, bloco.span || 12)) / 12 - recuoMm * PT_POR_MM;
+  const larguraBloco = (ctx.fluxoColunas
+    ? larguraDoBlocoNoFluxo(bloco, ctx.larguraPt, ctx.gapGradePt)
+    : ctx.larguraPt * Math.min(12, Math.max(1, bloco.span || 12)) / 12) - recuoMm * PT_POR_MM;
   const larg = Math.max(20, (larguraBloco - (colunas - 1) * espacoMm * PT_POR_MM) / colunas);
   const largChar = tam * (est.caixa_alta ? 0.63 : 0.5) * ((est.peso || 400) >= 700 ? 1.06 : 1);
   const idOrigem = bloco._frag?.origemId || bloco.id;
@@ -208,8 +211,8 @@ function criarFragmentoTexto(origem, irmaos, html, extra) {
  * O bloco pode ser dividido entre páginas? Texto: parágrafo/citação de HTML inline simples (sem <br>, listas
  * ou blocos internos) e fora de linhas lado a lado. Tabela/quadro: 3+ linhas.
  */
-export function podeDividir(b) {
-  if (!b || b.grupo || (b.span && b.span < 12)) return false;
+export function podeDividir(b, fluxoColunas = false) {
+  if (!b || (!fluxoColunas && (b.grupo || (b.span && b.span < 12)))) return false;
   if (b.tipo === 'paragrafo' || b.tipo === 'citacao') return !/<\s*(table|h[1-6])\b/i.test(b.texto || ''); // quebras de linha, divs e listas dentro do texto também podem continuar na página seguinte
   if (b.tipo === 'tabela' || b.tipo === 'quadro') return (b.linhas || []).length >= 3;
   return false;
@@ -253,12 +256,13 @@ function dividirTexto(b, livrePt, ctx, topoDePagina) {
 function dividirTabela(b, livrePt, ctx, topoDePagina) {
   const linhas = b.linhas || [];
   const f = b._frag || {};
-  const cab = b.com_cabecalho !== false ? alturaLinhaTabelaPt(b.colunas || [], b, ctx.larguraPt) : 0;
+  const largura = ctx.fluxoColunas ? larguraDoBlocoNoFluxo(b, ctx.larguraPt, ctx.gapGradePt) : ctx.larguraPt;
+  const cab = b.com_cabecalho !== false ? alturaLinhaTabelaPt(b.colunas || [], b, largura) : 0;
   // folga de 10 pt: a estimativa das linhas de tabela nunca pode passar da margem inferior
   let restante = livrePt - 10 - (f.continuaDaAnterior ? ALT_CONTINUACAO : ALT_TITULO) - cab - ALT_CONTINUA;
   let k = 0;
   for (const l of linhas) {
-    const h = alturaLinhaTabelaPt(l, b, ctx.larguraPt);
+    const h = alturaLinhaTabelaPt(l, b, largura);
     if (restante - h < 0) break;
     restante -= h; k++;
   }
@@ -274,7 +278,7 @@ function dividirTabela(b, livrePt, ctx, topoDePagina) {
  * fragmentos (o `resto` pode ser dividido de novo) ou null quando não vale a pena dividir.
  */
 export function dividirParaPagina(b, livrePt, ctx, topoDePagina = false) {
-  if (!podeDividir(b)) return null;
+  if (!podeDividir(b, ctx.fluxoColunas)) return null;
   const reg = REGISTRO.get(b);
   const origem = reg?.origem || b;
   const irmaos = reg?.irmaos || [b];
