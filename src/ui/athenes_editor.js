@@ -67,6 +67,7 @@ import { ModalEditorMestra } from './athenes_editor_mestra.js';
 import { ModalLayoutBloco } from './athenes_editor_layout_bloco.js';
 import { abrirPopoverEstiloTabela } from './athenes_tabela_ui.js';
 import { instalarZoomCanvas } from './athenes_zoom_canvas.js';
+import { montarFluxoDeBlocos } from './athenes_fluxo_blocos.js';
 import { ligarReguasDoDocumento } from './athenes_reguas_documento.js';
 
 /** As réguas começam visíveis; a escolha da pessoa fica lembrada. */
@@ -162,6 +163,7 @@ export class EditorView {
     this.historicoIndice = -1;
     this.margemElo = false;
     this.guiasVisiveis = false;
+    this.fluxoVisivel = true;
     this.arrastandoId = null;
     this.rascunhoEstilo = null;
     this.estilosAberto = false;
@@ -367,6 +369,7 @@ export class EditorView {
   desmontarAtalhos() {
     this.atalhos?.destruir();
     this.atalhos = null;
+    this.limparFluxoDeBlocos();
   }
 
   /** O papel do usuário neste documento permite este modo de trabalho? (compartilhado como leitura/comentário não edita) */
@@ -457,6 +460,7 @@ export class EditorView {
 
   renderizar() {
     if (!this.container) return;
+    this.limparFluxoDeBlocos();
     const rolagem = {
       palco: this.container.querySelector('#rmPrevPalco')?.scrollTop || 0,
       palcoLeft: this.container.querySelector('#rmPrevPalco')?.scrollLeft || 0,
@@ -673,6 +677,9 @@ export class EditorView {
             <button type="button" class="rm-ic-bt rm-ic-guia ${this.guiasVisiveis ? 'on' : ''}" id="rmGuia" aria-pressed="${this.guiasVisiveis}" title="Alternar visualização da grade de 12 colunas">
               ${svgIcone('guia_grade', 18)}
             </button>
+            <button type="button" class="rm-ic-bt" id="rmFluxoBlocos" aria-pressed="${this.fluxoVisivel}" aria-label="Fluxo dos blocos" title="Mostrar ou ocultar a ordem dos blocos" ${modoSomenteLeitura(this.modoTrabalho) ? 'hidden' : ''}>
+              ${svgIcone('fluxograma', 16)}
+            </button>
           </div>
 
           <!-- Palco de Páginas Reais -->
@@ -739,6 +746,7 @@ export class EditorView {
           f.style.zoom = String(z);
           f.style.transformOrigin = 'top center';
         });
+        this._fluxoBlocos?.redesenhar();
       };
 
       const aplicarNovoZoom = (novoZ) => {
@@ -1006,6 +1014,13 @@ export class EditorView {
       btnGuia.setAttribute('aria-pressed', String(this.guiasVisiveis));
       btnGuia.classList.toggle('on', this.guiasVisiveis);
       this.renderizarFolhasPaginas();
+    });
+    const btnFluxo = root.querySelector('#rmFluxoBlocos');
+    btnFluxo?.addEventListener('click', () => {
+      this.fluxoVisivel = !this.fluxoVisivel;
+      btnFluxo.setAttribute('aria-pressed', String(this.fluxoVisivel));
+      const palco = root.querySelector('#rmPrevPalco');
+      this.atualizarFluxoDeBlocos(palco);
     });
   }
 
@@ -2004,10 +2019,29 @@ export class EditorView {
     if (info) info.textContent = this.modoTrabalho === MODOS_TRABALHO.COMPARAR ? 'comparação original × proposta' : 'leitura fiel (réplica da exportação)';
   }
 
+  limparFluxoDeBlocos() {
+    this._fluxoBlocos?.destruir();
+    this._fluxoBlocos = null;
+  }
+
+  atualizarFluxoDeBlocos(palco) {
+    this.limparFluxoDeBlocos();
+    if (!palco || !this.fluxoVisivel || modoSomenteLeitura(this.modoTrabalho)) return;
+    const grades = [...palco.querySelectorAll('.ath-fluxo-grade')];
+    const entradas = grades.flatMap(grade => {
+      const folha = grade.closest('.ath-folha-a4');
+      return [...grade.children].map(el => ({ el, bloco: this._blocoDoFluxo.get(el), folha }))
+        .filter(({ bloco }) => bloco && bloco.tipo !== 'quebra_pagina');
+    });
+    this._fluxoBlocos = montarFluxoDeBlocos(palco, entradas, grades);
+  }
+
   renderizarFolhasPaginas() {
     const palco = this.container.querySelector('#rmPrevPalco');
     if (!palco) return;
+    this.limparFluxoDeBlocos();
     if (modoSomenteLeitura(this.modoTrabalho)) { this.renderizarVisaoRevisao(palco); return; }
+    this._blocoDoFluxo = new WeakMap();
     const scrollTopSalvo = palco.scrollTop || 0;
     const scrollLeftSalvo = palco.scrollLeft || 0;
     palco.classList.remove('ath-palco-revisao');
@@ -2258,6 +2292,7 @@ export class EditorView {
 
       // Container dos Blocos na folha (Grid de 12 Colunas)
       const gradeBlocos = document.createElement('div');
+      gradeBlocos.className = 'ath-fluxo-grade';
       gradeBlocos.style.display = 'grid';
       gradeBlocos.style.gridTemplateColumns = 'repeat(12, 1fr)';
       gradeBlocos.style.gap = '0 12px'; // o espaço vertical vem dos estilos (igual ao PDF); antes havia 10px extras entre os blocos
@@ -2266,6 +2301,7 @@ export class EditorView {
       const estilosPorId = Object.fromEntries((this.doc.estilos || []).map(e => [e.id, e]));
       (pag.blocos || []).forEach((b, k, todos) => {
         const blocoEl = this.renderizarBlocoNaFolha(b, pag);
+        this._blocoDoFluxo.set(blocoEl, b);
         const colapso = k > 0 ? colapsoEntreBlocosPt(todos[k - 1], b, estilosPorId) : (margensTextoPt(b, estilosPorId)?.antes || 0); // entre parágrafos vale o maior espaço; no topo da página, nenhum
         if (colapso) blocoEl.style.marginTop = `${Math.max(0, (margensTextoPt(b, estilosPorId)?.antes || 0) - colapso)}pt`;
         gradeBlocos.appendChild(blocoEl);
@@ -2304,6 +2340,7 @@ export class EditorView {
     });
     if (scrollTopSalvo > 0) palco.scrollTop = scrollTopSalvo;
     if (scrollLeftSalvo > 0) palco.scrollLeft = scrollLeftSalvo;
+    this.atualizarFluxoDeBlocos(palco);
     this.semanticaUI?.sincronizarOverlayCss();
     this.semanticaUI?.instalarPincelNoPalco(palco);
     this.semanticaUI?.instalarHoverBadge(palco);

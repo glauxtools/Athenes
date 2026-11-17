@@ -12,7 +12,7 @@ import { sincronizarTemplatesUsuario } from '../core/athenes_templates.js';
 import { sincronizarPerfil } from '../core/athenes_perfil_servidor.js';
 import { montarEstadoLocal, chaveDoZotero } from '../core/athenes_perfil_local.js';
 import { mostrarAviso } from './athenes_aviso.js';
-import { driveConectado, obterTokenDrive, processarPastasExcluidas, docsRemovidosDoDrive, processarExclusoesPendentes, obterPastaRaizDrive, repararPastaDosDocumentos, sincronizarZoteroComDrive, importarPastasDoDrive, listarBibliotecaDoDrive, mesclarBibliotecaDrive } from '../core/athenes_drive_sync.js';
+import { obterTokenDrive, marcarSessaoDriveExpirada, processarPastasExcluidas, docsRemovidosDoDrive, processarExclusoesPendentes, obterPastaRaizDrive, repararPastaDosDocumentos, sincronizarZoteroComDrive, importarPastasDoDrive, listarBibliotecaDoDrive, mesclarBibliotecaDrive } from '../core/athenes_drive_sync.js';
 
 export const metodosDashboardSincronia = {
   async sincronizarComSupabase(silencioso = false) {
@@ -20,8 +20,14 @@ export const metodosDashboardSincronia = {
     const perfilSrv = await this.sincronizarPerfilServidor(); // o que vale vem do servidor; o Drive entrega os arquivos
     const permitidos = perfilSrv && !perfilSrv.criado ? new Set(perfilSrv.indice.documentos.map(e => e.driveFileId).filter(Boolean)) : null;
     const btn = this.container?.querySelector('#athBtnSincronizarNuvem');
-    if (!driveConectado()) {
-      if (!silencioso) mostrarAviso('Conecte o Google Drive para sincronizar seus documentos.', { tipo: 'info' });
+    const cfg = obterConfigGoogleDrive();
+    const token = await obterTokenDrive({ cfg });
+    if (!token) {
+      this.atualizarStatusDrive();
+      const mensagem = cfg.accessToken || cfg.accessTokenExpiraEm
+        ? 'Sincronização pausada. Clique em “Reconectar Drive” na barra lateral.'
+        : 'Conecte o Google Drive para sincronizar seus documentos.';
+      if (!silencioso) this.arquivos.toast(mensagem, { ms: 4000 });
       return;
     }
     if (btn && !silencioso) {
@@ -30,8 +36,6 @@ export const metodosDashboardSincronia = {
       btn.title = 'Sincronizando…';
     }
     try {
-      const token = await obterTokenDrive();
-      if (!token) { if (!silencioso) mostrarAviso('A sessão do Google Drive expirou. Reconecte o Drive.'); return; }
       try { await obterPastaRaizDrive(token); } catch (e) { console.warn('[Athenes] Raiz do Drive:', e.message); } // adota a pasta Athenes mais antiga (a de todos os computadores)
       // outro computador: sem a estrutura gravada, descobre/cria as pastas do Athenes e fixa a pasta de documentos desta conta
       try { const c = obterConfigGoogleDrive(); if (!c.pastaDocumentosId || !c.pastaRaizId) await obterOuCriarEstruturaPastasAthenes(token); } catch (e) { console.warn('[Athenes] Estrutura do Drive:', e.message); }
@@ -77,13 +81,17 @@ export const metodosDashboardSincronia = {
       let envio = null;
       try { envio = await this.sincronizarComDrive({ aviso: false }); await processarPastasExcluidas(token); this.limparCopiaDoNavegador(); } catch (e) { console.warn('[Athenes] Envio ao Drive:', e.message); }
       if (envio?.rp?.criadas || envio?.rd?.enviados) { this.atualizarGrid(); }
-      if (!silencioso) {
+      if (!silencioso && !envio?.rp?.sessaoExpirada && !envio?.rd?.sessaoExpirada) {
         this.arquivos.toast(r.novos || r.atualizados || excluidosFora || pastasNovas.importadas
           ? `${excluidosFora ? `${excluidosFora} documento(s) excluído(s) em outro computador saíram da lista. ` : ''}${zotero === 'baixou' ? 'Zotero conectado trazido do seu Drive. ' : ''}${r.novos} documento(s) novo(s) e ${r.atualizados} atualizado(s)${pastasNovas.importadas ? `, ${pastasNovas.importadas} pasta(s) trazida(s)` : ''} vindos do seu Google Drive.`
           : (zotero === 'baixou' ? 'Zotero conectado pelo Drive. Seus documentos já estão atualizados.' : 'Seus documentos já estão atualizados no Drive.'), { ms: 4000 });
       }
     } catch (err) {
-      if (!silencioso) mostrarAviso(`Não foi possível sincronizar com o Drive: ${err.message}`);
+      if (err.status === 401) {
+        marcarSessaoDriveExpirada(token);
+        this.atualizarStatusDrive();
+        if (!silencioso) this.arquivos.toast('Sincronização pausada. Clique em “Reconectar Drive” na barra lateral.', { ms: 4000 });
+      } else if (!silencioso) mostrarAviso(`Não foi possível sincronizar com o Drive: ${err.message}`);
     } finally {
       if (btn && !silencioso) {
         btn.classList.remove('ath-girando');

@@ -22,7 +22,6 @@ import {
   nuvemAutenticada,
   carregarDocumentoDoSupabase,
   salvarDocumentoNoSupabase,
-  autenticarGoogleDrive,
   obterInfoUsuarioGoogle,
   obterOuCriarEstruturaPastasAthenes,
   obterPastasDriveLocais,
@@ -48,7 +47,7 @@ import { escapeHtml } from '../core/athenes_seguranca.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import { abrirNovoDocumentoModal, abrirImportadorDocxModal } from './athenes_novo_documento_modal.js';
 import { criarDocumentoDeTemplate } from '../core/athenes_templates.js';
-import { driveConectado, tokenDriveValido, obterTokenDrive, sincronizarPastasComDrive, sincronizarDocumentosComDrive, marcarSessaoDriveExpirada, precisaEnviarAoDrive, registrarPastasExcluidas, processarPastasExcluidas, registrarExclusoes, idsExcluidos, processarExclusoesPendentes, baixarDocumentoDoDrive } from '../core/athenes_drive_sync.js';
+import { driveConectado, tokenDriveValido, obterTokenDrive, obterTokenOuConectar, sincronizarPastasComDrive, sincronizarDocumentosComDrive, marcarSessaoDriveExpirada, precisaEnviarAoDrive, registrarPastasExcluidas, processarPastasExcluidas, registrarExclusoes, idsExcluidos, processarExclusoesPendentes, baixarDocumentoDoDrive } from '../core/athenes_drive_sync.js';
 import { metodosDashboardModais } from './athenes_dashboard_modais.js';
 import { metodosDashboardPastas } from './athenes_dashboard_pastas.js';
 import { metodosDashboardSincronia } from './athenes_dashboard_sincronia.js';
@@ -751,7 +750,7 @@ export class DashboardView {
       const quando = cfg.ultimaSincronizacao ? new Date(cfg.ultimaSincronizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'ainda não sincronizado';
       cor = '#166534'; fundo = '#DCFCE7'; texto = `● Drive conectado · ${quando}`;
     } else if (cfg.accessToken || cfg.accessTokenExpiraEm) {
-      cor = '#92400E'; fundo = '#FEF3C7'; texto = '● Conexão vencida — clique para renovar';
+      cor = '#92400E'; fundo = '#FEF3C7'; texto = '● Sincronização pausada · Reconectar Drive';
     } else {
       texto = '○ Drive desconectado — clique para conectar';
     }
@@ -763,15 +762,17 @@ export class DashboardView {
   /** Conecta (ou renova) o Drive com um clique e já sincroniza pastas e documentos. */
   async conectarDrive() {
     const btn = this.container.querySelector('#athDriveStatus');
-    if (btn) btn.textContent = '… conectando';
+    if (btn?.disabled) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Conectando…'; }
     try {
-      const cfg = obterConfigGoogleDrive();
-      const token = (await obterTokenDrive()) || await autenticarGoogleDrive(cfg.clientId);
-      if (token) await this.sincronizarComDrive({ aviso: true });
+      const token = await obterTokenOuConectar();
+      if (token) await this.sincronizarComSupabase(false);
     } catch (err) {
       mostrarAviso(`Não foi possível conectar ao Google Drive: ${err.message}`);
+    } finally {
+      if (btn) btn.disabled = false;
+      this.atualizarStatusDrive();
     }
-    this.atualizarStatusDrive();
   }
 
   /**
@@ -783,7 +784,7 @@ export class DashboardView {
       if (aviso) mostrarAviso('Conecte o Google Drive para criar as pastas e enviar os documentos (menu da nuvem no editor ou tela de login).', { tipo: 'info' });
       return null;
     }
-    const token = await obterTokenDrive(); // renova em silêncio se o token venceu
+    const token = await obterTokenDrive();
     if (!token) {
       this.atualizarStatusDrive();
       if (aviso) mostrarAviso('A conexão com o Google Drive venceu. Clique em "Conectar Drive" na barra lateral para renová-la.', { tipo: 'info' });
@@ -794,16 +795,16 @@ export class DashboardView {
     const rd = docs && !rp.sessaoExpirada ? await sincronizarDocumentosComDrive(this.documentos, token, { pastas }) : { enviados: 0, erros: [], sessaoExpirada: false };
     this.salvarDocumentosLocais();
     if (!rp.sessaoExpirada && !rd.sessaoExpirada) salvarConfigGoogleDrive({ ...obterConfigGoogleDrive(), ultimaSincronizacao: new Date().toISOString() });
-    this.atualizarStatusDrive();
     if (rp.sessaoExpirada || rd.sessaoExpirada) {
-      marcarSessaoDriveExpirada();
-      mostrarAviso('A sessão do Google Drive expirou. Reconecte o Drive e tente de novo.');
+      marcarSessaoDriveExpirada(token);
+      if (aviso) mostrarAviso('Sincronização pausada. Clique em “Reconectar Drive” na barra lateral.', { tipo: 'info' });
     } else if (rp.erros.length || rd.erros.length) {
       const primeiro = rp.erros[0] ? `${rp.erros[0].pasta}: ${rp.erros[0].erro}` : `${rd.erros[0].documento}: ${rd.erros[0].erro}`;
       mostrarAviso(`Drive: ${rp.criadas} pasta(s) criada(s), ${rd.enviados} documento(s) enviado(s), ${rp.erros.length + rd.erros.length} falha(s). ${primeiro}`);
     } else if (aviso) {
       mostrarAviso(`Drive sincronizado: ${rp.criadas} pasta(s) criada(s), ${rd.enviados} documento(s) enviado(s).`, { tipo: 'info' });
     }
+    this.atualizarStatusDrive();
     return { rp, rd };
   }
 

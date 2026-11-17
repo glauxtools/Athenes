@@ -865,6 +865,7 @@ export function salvarConfigGoogleDrive(cfg) {
  * Solicita autenticação OAuth2 do Google Identity Services com escopo restrito `drive.file`.
  */
 export async function autenticarGoogleDrive(clientId = DEFAULT_GOOGLE_CLIENT_ID, scope = GOOGLE_AUTH_ESCOPOS, { silencioso = false } = {}) {
+  if (silencioso) return null; // versões em cache ainda podem pedir renovação automática
   if (typeof window === 'undefined') throw new Error('Autenticação Google requer navegador.');
   const cid = (clientId || obterConfigGoogleDrive().clientId || DEFAULT_GOOGLE_CLIENT_ID).trim();
   if (!cid) throw new Error('Informe o Google Client ID para conectar ao Google Drive.');
@@ -893,7 +894,7 @@ export async function autenticarGoogleDrive(clientId = DEFAULT_GOOGLE_CLIENT_ID,
         },
         error_callback: (err) => reject(new Error(err?.message || err?.type || 'Autorização do Google cancelada ou bloqueada.'))
       });
-      // '' = o Google só mostra a tela de consentimento na primeira vez (antes aparecia a cada conexão); na renovação silenciosa não abre nada
+      // Reutiliza o consentimento já concedido. A solicitação ainda pode abrir a janela do Google.
       tokenClient.requestAccessToken({ prompt: '' });
     } catch (err) {
       reject(err);
@@ -997,7 +998,7 @@ export async function listarArquivosDoGoogleDrive(accessToken, fetchImpl = globa
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     if (!resp.ok) {
-      throw new Error(`Erro ao listar arquivos do Google Drive (${resp.status}).`);
+      throw Object.assign(new Error(`Erro ao listar arquivos do Google Drive (${resp.status}).`), { status: resp.status });
     }
     const data = await resp.json();
     todos.push(...(data.files || []));
