@@ -10,6 +10,7 @@
  * Falhas NUNCA são silenciosas: voltam em `erros` ou lançam, e `sessaoExpirada` indica token vencido.
  */
 import {
+  autenticarGoogleDrive,
   obterConfigGoogleDrive, salvarConfigGoogleDrive, obterPastasDriveLocais, salvarPastasDriveLocais,
   salvarArquivoNoGoogleDrive, obterOuCriarEstruturaPastasAthenes, explicarErroDrive,
   listarArquivosDoGoogleDrive, baixarArquivoDoGoogleDrive
@@ -42,23 +43,15 @@ export function tokenDriveValido(cfg = obterConfigGoogleDrive(), agora = Date.no
   return Boolean(cfg.accessToken) && (!cfg.accessTokenExpiraEm || cfg.accessTokenExpiraEm > agora);
 }
 
-let renovacaoEmCurso = null;
-
-/**
- * Token do Drive utilizável agora: o guardado, se ainda vale; senão tenta renová-lo em silêncio (sem janela, sem consentimento).
- * Devolve null quando não dá (o usuário precisa reconectar). `renovar` é injetável para teste.
- */
-/** Token válido agora ou, sem ele, abre a conexão com o Google (janela do usuário). Substitui `cfg.accessToken || await autenticarGoogleDrive(...)`. */
+/** Use a partir de uma ação do usuário que precisa de acesso ao Drive. */
 export async function obterTokenOuConectar(cfg = obterConfigGoogleDrive()) {
-  return (await obterTokenDrive({ cfg })) || (await import('./athenes_colaboracao.js')).autenticarGoogleDrive(cfg.clientId);
+  if (tokenDriveValido(cfg)) return cfg.accessToken;
+  return autenticarGoogleDrive(cfg.clientId);
 }
 
-export async function obterTokenDrive({ renovar = null, cfg = obterConfigGoogleDrive(), agora = Date.now() } = {}) {
-  if (tokenDriveValido(cfg, agora)) return cfg.accessToken;
-  if (!cfg.accessToken && !cfg.accessTokenExpiraEm) return null; // nunca conectou
-  const tentar = renovar || (async () => Promise.race([(await import('./athenes_colaboracao.js')).autenticarGoogleDrive(cfg.clientId, undefined, { silencioso: true }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3500))]));
-  renovacaoEmCurso = renovacaoEmCurso || Promise.resolve().then(tentar).catch(() => null).finally(() => { renovacaoEmCurso = null; });
-  return renovacaoEmCurso;
+/** Consulta a autorização atual. Operações em segundo plano esperam pela reconexão quando ela vence. */
+export async function obterTokenDrive({ cfg = obterConfigGoogleDrive(), agora = Date.now() } = {}) {
+  return tokenDriveValido(cfg, agora) ? cfg.accessToken : null;
 }
 
 /** Procura a pasta pelo nome dentro do pai; cria quando não existe. */
@@ -393,9 +386,10 @@ export async function sincronizarDocumentosComDrive(documentos, token, { fetchIm
 }
 
 /** Limpa o token vencido para a interface pedir reconexão em vez de falhar de novo. */
-export function marcarSessaoDriveExpirada() {
+export function marcarSessaoDriveExpirada(tokenUsado) {
   const cfg = obterConfigGoogleDrive();
-  salvarConfigGoogleDrive({ ...cfg, accessToken: '' });
+  if (!cfg.accessToken || (tokenUsado && cfg.accessToken !== tokenUsado)) return;
+  salvarConfigGoogleDrive({ ...cfg, accessToken: '', accessTokenExpiraEm: Date.now() });
 }
 
 // ───────────────────────────── Biblioteca pelo Drive (cada conta enxerga só o próprio Drive) ─────────────────────────────
