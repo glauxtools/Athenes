@@ -5,6 +5,18 @@ import { svgIcone } from './athenes_icones.js';
 
 let balaoAtual = null;
 const DESTAQUE_ORIGINAL = 'ath-traducao-original-selecionado';
+const CHAVE_PREFERENCIAS_PAINEL = 'athenes_traducao_painel_v1';
+let ultimasPreferenciasPainel;
+
+function carregarPreferenciasPainel() {
+  if (ultimasPreferenciasPainel) return ultimasPreferenciasPainel;
+  ultimasPreferenciasPainel = {};
+  try {
+    const salvas = JSON.parse(localStorage.getItem(CHAVE_PREFERENCIAS_PAINEL));
+    if (salvas && typeof salvas === 'object' && !Array.isArray(salvas)) ultimasPreferenciasPainel = salvas;
+  } catch {}
+  return ultimasPreferenciasPainel;
+}
 
 function localizarOrigem(range, texto, inicio, fim) {
   if (!range?.commonAncestorContainer.isConnected) return null;
@@ -93,15 +105,17 @@ function instalarAjustesDoPainel(balao, ret, signal) {
   const alca = balao.querySelector('.ath-traducao-redimensionar');
   const cabecalho = balao.querySelector('.ath-traducao-cabecalho');
   const titulo = cabecalho.querySelector('span');
+  const preferencias = carregarPreferenciasPainel();
+  const gravarPreferencias = alteracoes => {
+    Object.assign(preferencias, alteracoes);
+    try { localStorage.setItem(CHAVE_PREFERENCIAS_PAINEL, JSON.stringify(preferencias)); } catch {}
+  };
   const margem = 12;
   const limitar = (v, min, max) => Math.max(min, Math.min(max, v));
   const posicionar = (x, y, w, h) => {
     balao.style.left = `${limitar(x, margem, innerWidth - w - margem)}px`;
     balao.style.top = `${limitar(y, margem, innerHeight - h - margem)}px`;
   };
-  const inicial = balao.getBoundingClientRect();
-  const alturaPrevista = Math.max(inicial.height, Math.min(420, innerHeight - 2 * margem));
-  posicionar(ret.left, ret.bottom + 9, inicial.width, alturaPrevista);
   let ladoX, ladoY;
   const atualizarCanto = (altura) => {
     const posicao = balao.getBoundingClientRect();
@@ -112,9 +126,7 @@ function instalarAjustesDoPainel(balao, ret, signal) {
     balao.classList.toggle('ath-traducao-reserva-topo', ladoY < 0);
     balao.classList.toggle('ath-traducao-reserva-esquerda', ladoX < 0);
   };
-  atualizarCanto(alturaPrevista);
-
-  const dimensionar = (base, largura, altura) => {
+  const definirTamanho = (largura, altura) => {
     const maxW = Math.max(1, innerWidth - 2 * margem);
     const maxH = Math.max(1, innerHeight - 2 * margem);
     const w = limitar(largura, Math.min(250, maxW), maxW);
@@ -122,10 +134,18 @@ function instalarAjustesDoPainel(balao, ret, signal) {
     balao.classList.add('ath-traducao-ajustado');
     balao.style.width = `${w}px`;
     balao.style.height = `${h}px`;
-    posicionar(ladoX < 0 ? base.right - w : base.left, ladoY < 0 ? base.bottom - h : base.top, w, h);
+    return { w, h };
   };
   const mover = (base, dx, dy) => posicionar(base.left + dx, base.top + dy, base.width, base.height);
-  const redimensionar = (base, dx, dy) => dimensionar(base, base.width + dx * ladoX, base.height + dy * ladoY);
+  const redimensionar = (base, dx, dy) => {
+    const { w, h } = definirTamanho(base.width + dx * ladoX, base.height + dy * ladoY);
+    posicionar(ladoX < 0 ? base.right - w : base.left, ladoY < 0 ? base.bottom - h : base.top, w, h);
+  };
+  const guardarGeometria = redimensionado => {
+    const { left: x, top: y, width: largura, height: altura } = balao.getBoundingClientRect();
+    gravarPreferencias(redimensionado ? { posicao: { x, y }, tamanho: { largura, altura } } : { posicao: { x, y } });
+    atualizarCanto();
+  };
   let ponteiroAtivo = null;
   const ligarArrasto = (area, foco, aplicar, aoSoltar) => {
     let arrasto = null;
@@ -144,13 +164,17 @@ function instalarAjustesDoPainel(balao, ret, signal) {
     });
     area.addEventListener('pointermove', e => {
       if (!arrasto || ponteiroAtivo !== e.pointerId) return;
-      aplicar(arrasto.base, e.clientX - arrasto.x, e.clientY - arrasto.y);
+      const dx = e.clientX - arrasto.x;
+      const dy = e.clientY - arrasto.y;
+      if (!arrasto.movido && dx === 0 && dy === 0) return;
+      arrasto.movido = true;
+      aplicar(arrasto.base, dx, dy);
     });
     area.addEventListener('lostpointercapture', e => {
       if (!arrasto || ponteiroAtivo !== e.pointerId) return;
+      if (arrasto.movido) aoSoltar();
       arrasto = null;
       ponteiroAtivo = null;
-      aoSoltar?.();
     });
     foco.addEventListener('keydown', e => {
       const direcao = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -158,25 +182,39 @@ function instalarAjustesDoPainel(balao, ret, signal) {
       e.preventDefault();
       e.stopPropagation();
       aplicar(balao.getBoundingClientRect(), direcao[0] * 24, direcao[1] * 24);
-      aoSoltar?.();
+      aoSoltar();
     });
   };
-  ligarArrasto(alca, alca, redimensionar);
-  ligarArrasto(cabecalho, titulo, mover, atualizarCanto);
+  ligarArrasto(alca, alca, redimensionar, () => guardarGeometria(true));
+  ligarArrasto(cabecalho, titulo, mover, () => guardarGeometria(false));
 
   const menor = cabecalho.querySelector('[data-fonte="menor"]');
   const maior = cabecalho.querySelector('[data-fonte="maior"]');
-  let ajuste = 0;
-  const ajustarFonte = (passo) => {
-    ajuste = limitar(ajuste + passo, -2, 11);
+  let ajuste;
+  const definirFonte = tamanho => {
+    ajuste = limitar(tamanho, -2, 11);
     balao.style.setProperty('--ath-traducao-ajuste-fonte', `${ajuste}px`);
     menor.disabled = ajuste === -2;
     maior.disabled = ajuste === 11;
+  };
+  const ajustarFonte = passo => {
+    definirFonte(ajuste + passo);
+    gravarPreferencias({ fonte: ajuste });
     if (document.activeElement === menor && menor.disabled) maior.focus();
     if (document.activeElement === maior && maior.disabled) menor.focus();
   };
   menor.addEventListener('click', () => ajustarFonte(-1));
   maior.addEventListener('click', () => ajustarFonte(1));
+
+  definirFonte(Number.isInteger(preferencias.fonte) ? preferencias.fonte : 0);
+  const { largura, altura } = preferencias.tamanho ?? {};
+  if (Number.isFinite(largura) && Number.isFinite(altura)) definirTamanho(largura, altura);
+  const { x, y } = preferencias.posicao ?? {};
+  const inicial = balao.getBoundingClientRect();
+  const alturaPrevista = balao.classList.contains('ath-traducao-ajustado') ? inicial.height
+    : Math.max(inicial.height, Math.min(420, innerHeight - 2 * margem));
+  posicionar(Number.isFinite(x) ? x : ret.left, Number.isFinite(y) ? y : ret.bottom + 9, inicial.width, alturaPrevista);
+  atualizarCanto(alturaPrevista);
   window.addEventListener('resize', () => {
     const base = balao.getBoundingClientRect();
     posicionar(base.left, base.top, base.width, base.height);
