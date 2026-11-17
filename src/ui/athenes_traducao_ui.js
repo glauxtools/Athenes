@@ -4,6 +4,90 @@ import { salvarArtigosEstudo } from './athenes_estudo_artigos_dados.js';
 import { svgIcone } from './athenes_icones.js';
 
 let balaoAtual = null;
+const DESTAQUE_ORIGINAL = 'ath-traducao-original-selecionado';
+
+function localizarOrigem(range, texto, inicio, fim) {
+  if (!range?.commonAncestorContainer.isConnected) return null;
+  const semEspacos = valor => valor.replace(/\s/g, '');
+  const raiz = range.commonAncestorContainer;
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+  const partes = [];
+  let posicao = 0;
+  for (let no = raiz.nodeType === Node.TEXT_NODE ? raiz : walker.nextNode(); no; no = walker.nextNode()) {
+    if (!range.intersectsNode(no)) continue;
+    const de = no === range.startContainer ? range.startOffset : 0;
+    const ate = no === range.endContainer ? range.endOffset : no.length;
+    const trecho = no.data.slice(de, ate);
+    partes.push({ no, de, trecho, posicao });
+    posicao += trecho.length;
+  }
+  const bruto = partes.map(parte => parte.trecho).join('');
+  if (semEspacos(bruto) !== semEspacos(texto)) return null;
+  const caracteres = Array.from(bruto.matchAll(/\S/g), item => item.index);
+  const primeiro = caracteres[semEspacos(texto.slice(0, inicio)).length];
+  const ultimo = caracteres[semEspacos(texto.slice(0, fim)).length - 1];
+  if (primeiro === undefined || ultimo === undefined) return null;
+  const acharParte = indice => partes.find(parte => indice >= parte.posicao && indice < parte.posicao + parte.trecho.length);
+  const comeco = acharParte(primeiro);
+  const final = acharParte(ultimo);
+  const destaque = document.createRange();
+  destaque.setStart(comeco.no, comeco.de + primeiro - comeco.posicao);
+  destaque.setEnd(final.no, final.de + ultimo - final.posicao + 1);
+  return destaque;
+}
+
+function instalarSelecaoCorrespondente(balao, texto, rangeOriginal, signal) {
+  const original = balao.querySelector('.ath-traducao-original');
+  const resultado = balao.querySelector('.ath-traducao-resultado');
+  const botao = balao.querySelector('[data-acao="original"]');
+  const destaques = globalThis.CSS?.highlights;
+  let faixas = [];
+  let trecho = null;
+
+  document.addEventListener('selectionchange', () => {
+    const selecao = window.getSelection();
+    const range = selecao?.rangeCount ? selecao.getRangeAt(0) : null;
+    const no = resultado.firstChild;
+    const contemSelecao = range && !range.collapsed && resultado.contains(range.startContainer) && resultado.contains(range.endContainer);
+    const inicio = range?.startContainer === no ? range.startOffset : 0;
+    const fim = range?.endContainer === no ? range.endOffset : no?.textContent.length;
+    const tocadas = contemSelecao ? faixas.filter(par => par.inicio < fim && par.fim > inicio) : [];
+    trecho = tocadas.length ? [tocadas[0].de, tocadas.at(-1).ate] : null;
+    botao.disabled = !trecho;
+  }, { signal });
+
+  botao.addEventListener('pointerdown', ev => ev.preventDefault());
+  botao.addEventListener('click', () => {
+    if (!trecho) return;
+    const [inicio, fim] = trecho;
+    const range = document.createRange();
+    range.setStart(original.firstChild, inicio);
+    range.setEnd(original.firstChild, fim);
+    if (destaques && globalThis.Highlight) {
+      const origem = localizarOrigem(rangeOriginal, texto, inicio, fim);
+      destaques.set(DESTAQUE_ORIGINAL, new Highlight(...(origem ? [range, origem] : [range])));
+    } else {
+      const selecao = window.getSelection();
+      selecao?.removeAllRanges();
+      selecao?.addRange(range);
+    }
+    original.scrollTop += range.getBoundingClientRect().top - original.getBoundingClientRect().top - 10;
+  });
+  signal.addEventListener('abort', () => destaques?.delete(DESTAQUE_ORIGINAL), { once: true });
+
+  return (pares, traduzido) => {
+    let origem = 0;
+    let traducao = 0;
+    faixas = pares.flatMap(par => {
+      const de = texto.indexOf(par.fonte, origem);
+      const inicio = traduzido.indexOf(par.traducao, traducao);
+      if (de < 0 || inicio < 0 || !par.traducao) return [];
+      origem = de + par.fonte.length;
+      traducao = inicio + par.traducao.length;
+      return [{ de, ate: origem, inicio, fim: traducao }];
+    });
+  };
+}
 
 function instalarAjustesDoPainel(balao, ret, signal) {
   const alca = balao.querySelector('.ath-traducao-redimensionar');
@@ -121,7 +205,7 @@ export function salvarTraducaoComoNota(view, root, art, original, traduzido, des
   return nota;
 }
 
-export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNota }) {
+export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, rangeOriginal, aoSalvarNota }) {
   balaoAtual?.fechar();
   const controlador = new AbortController();
   const balao = document.createElement('section');
@@ -139,12 +223,14 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
     <p class="ath-traducao-original"></p>
     <p class="ath-traducao-motor" aria-live="polite"></p>
     <div class="ath-traducao-resultado" aria-live="polite">Traduzindo…</div>
-    <div class="ath-traducao-acoes"><button type="button" data-acao="copiar" disabled>${svgIcone('copiar', 14)} Copiar tradução</button><button type="button" data-acao="nota" disabled>${svgIcone('mais', 14)} Inserir no fichamento</button></div>
+    <div class="ath-traducao-acoes"><button type="button" data-acao="copiar" disabled>${svgIcone('copiar', 14)} Copiar tradução</button><button type="button" data-acao="nota" disabled>${svgIcone('mais', 14)} Inserir no fichamento</button><button type="button" data-acao="original" title="Selecione um trecho da tradução para destacar o original" disabled>${svgIcone('referencias', 14)} Destacar original</button></div>
     <button type="button" class="ath-traducao-redimensionar" aria-label="Redimensionar painel de tradução" title="Arraste ou use as setas do teclado para ajustar o tamanho"></button>`;
   balao.querySelector('.ath-traducao-original').textContent = texto;
   const ret = ancora?.getBoundingClientRect?.() || ancora || { left: 16, bottom: 70 };
   document.body.append(balao);
   instalarAjustesDoPainel(balao, ret, controlador.signal);
+  const mapearSelecao = instalarSelecaoCorrespondente(balao, texto, rangeOriginal, controlador.signal);
+  let pares = [];
   let traduzido = '';
   const fechar = () => { controlador.abort(); balao.remove(); if (balaoAtual?.elemento === balao) balaoAtual = null; };
   const painel = { fechar, elemento: balao };
@@ -163,6 +249,10 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
   });
   traduzirTextoAcademico(texto, {
     destino, signal: controlador.signal,
+    aoAlinhar: alinhamento => { pares = alinhamento; },
+    aoProgresso: (feitos, total) => {
+      if (balao.isConnected && total > 1) balao.querySelector('.ath-traducao-resultado').textContent = `Traduzindo… ${feitos}/${total} trechos`;
+    },
     aoMotor: motor => {
       if (balao.isConnected) balao.querySelector('.ath-traducao-motor').textContent =
         motor === 'basico' ? 'Modo gratuito com limite diário de uso.' : motor === 'local' ? 'Tradução local no navegador.' : '';
@@ -171,7 +261,8 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
     if (!balao.isConnected) return;
     traduzido = resultado;
     balao.querySelector('.ath-traducao-resultado').textContent = resultado;
-    balao.querySelectorAll('.ath-traducao-acoes button').forEach(botao => { botao.disabled = false; });
+    mapearSelecao(pares, traduzido);
+    balao.querySelectorAll('[data-acao="copiar"], [data-acao="nota"]').forEach(botao => { botao.disabled = false; });
   }).catch(erro => {
     if (controlador.signal.aborted) return;
     balao.querySelector('.ath-traducao-resultado').textContent = erro.message || 'Não foi possível traduzir.';
@@ -228,14 +319,16 @@ export function configurarTraducaoEstudio(view, root, art) {
     const ativo = document.activeElement;
     let texto = '';
     let ancora = null;
+    let rangeOriginal = null;
     if (ativo?.matches?.('textarea, input[type="text"]') && inspecao.contains(ativo)) {
       texto = ativo.value.slice(ativo.selectionStart, ativo.selectionEnd).trim();
       ancora = ativo.getBoundingClientRect();
     } else {
       const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && inspecao.contains(sel.anchorNode)) {
+      if (sel && !sel.isCollapsed && inspecao.contains(sel.anchorNode) && inspecao.contains(sel.focusNode)) {
         texto = sel.toString().trim();
-        ancora = sel.getRangeAt(0).getBoundingClientRect();
+        rangeOriginal = sel.getRangeAt(0).cloneRange();
+        ancora = rangeOriginal.getBoundingClientRect();
       }
     }
     if (texto.length < 2) return;
@@ -248,7 +341,7 @@ export function configurarTraducaoEstudio(view, root, art) {
     document.body.append(acao);
     acao.addEventListener('pointerdown', ev => ev.preventDefault());
     acao.addEventListener('click', () => {
-      mostrarBalaoTraducao({ texto, destino: idioma.value, ancora: acao, aoSalvarNota: resultado => salvarTraducaoComoNota(view, root, art, texto, resultado, idioma.value) });
+      mostrarBalaoTraducao({ texto, destino: idioma.value, ancora: acao, rangeOriginal, aoSalvarNota: resultado => salvarTraducaoComoNota(view, root, art, texto, resultado, idioma.value) });
       acao.remove(); acao = null;
     });
   };
@@ -267,7 +360,6 @@ export function configurarTraducaoEstudio(view, root, art) {
     document.removeEventListener('selectionchange', verificarSelecaoInspetor);
     clearTimeout(selecaoTimer);
     acao?.remove();
-    balaoAtual?.remove();
-    balaoAtual = null;
+    balaoAtual?.fechar();
   };
 }
