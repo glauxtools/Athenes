@@ -562,13 +562,13 @@ export const metodosEstudoAnotacoes = {
     popSel.querySelector('#athSelBtnTraduzir')?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!ultimaSelecao) return;
-      const { texto } = ultimaSelecao;
+      const { texto, range: rangeOriginal } = ultimaSelecao;
       const ancora = popSel.getBoundingClientRect();
       const destino = root.querySelector('#athIdiomaTraducao')?.value || 'pt';
       popSel.hidden = true;
       window.getSelection()?.removeAllRanges();
       mostrarBalaoTraducao({
-        texto, destino, ancora,
+        texto, destino, ancora, rangeOriginal,
         aoSalvarNota: traduzido => salvarTraducaoComoNota(this, root, art, texto, traduzido, destino)
       });
     });

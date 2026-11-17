@@ -51,6 +51,30 @@ test('prefere tradução local quando o navegador oferece o idioma', async () =>
   assert.equal(destruido, true);
 });
 
+test('a tradução por seleção retorna frases correspondentes inclusive quando vem do cache', async () => {
+  const frases = ['The beam is long.', 'The roof is ready.'];
+  const traducoes = ['A viga é comprida.', 'A cobertura está pronta.'];
+  const texto = frases.join('\n\n');
+  const esperar = frases.map((fonte, i) => ({ fonte, traducao: traducoes[i] }));
+  const chamadas = [];
+  const opcoes = {
+    origem: 'en',
+    TranslatorImpl: {
+      availability: async () => 'available',
+      create: async () => ({ translate: async fonte => {
+        chamadas.push(fonte);
+        return traducoes[frases.indexOf(fonte)];
+      } })
+    },
+    aoAlinhar: pares => assert.deepEqual(pares, esperar)
+  };
+  // Frases adjacentes e parágrafos mantêm a correspondência e os separadores.
+  assert.equal(await traduzirTextoAcademico(frases.join(' '), opcoes), traducoes.join(' '));
+  assert.equal(await traduzirTextoAcademico(texto, opcoes), traducoes.join('\n\n'));
+  assert.equal(await traduzirTextoAcademico(texto, opcoes), traducoes.join('\n\n'));
+  assert.deepEqual(chamadas, [...frases, ...frases]);
+});
+
 test('falha do tradutor local volta para a tradução de rede', async () => {
   const motores = [];
   const resultado = await traduzirTextoAcademico('The fallback acoustic example is clear.', {

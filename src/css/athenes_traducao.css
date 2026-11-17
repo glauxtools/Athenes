@@ -47,6 +47,7 @@
 .ath-traducao-acoes { display:flex; gap:7px; flex-wrap:wrap; padding:9px 13px 12px; border-top:1px solid #E4EAF2; }
 .ath-traducao-acoes button { display:inline-flex; align-items:center; gap:5px; border:1px solid #D7E1EC; border-radius:8px; background:#F7FAFD; color:#314F79; padding:6px 8px; font:800 10.5px var(--glx-font, Nunito, sans-serif); cursor:pointer; }
 .ath-traducao-acoes button:disabled { opacity:.5; cursor:default; }
+::highlight(ath-traducao-original-selecionado) { background-color:#FFD36A; }
 .ath-traducao-balao .ath-traducao-cabecalho { cursor:grab; touch-action:none; user-select:none; }
 .ath-traducao-balao .ath-traducao-cabecalho:active { cursor:grabbing; }
 .ath-traducao-balao .ath-traducao-cabecalho span { min-width:0; }

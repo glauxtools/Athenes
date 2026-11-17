@@ -137,17 +137,25 @@ async function traduzirTrecho(parte, origem, destino, fetchImpl, signal) {
 /** Prefere tradução local; Gemini e serviço público são alternativas quando ela não existe. */
 export async function traduzirTextoAcademico(texto, {
   origem = 'auto', destino = 'pt', fetchImpl = globalThis.fetch, TranslatorImpl = globalThis.Translator,
-  signal, aoProgresso, aoMotor
+  signal, aoProgresso, aoMotor, aoAlinhar
 } = {}) {
   const original = String(texto || '').trim();
   if (!original) throw new Error('Selecione um trecho para traduzir.');
   if (!IDIOMAS_TRADUCAO[destino]) throw new Error('Idioma de destino inválido.');
   if (origem !== 'auto' && !IDIOMAS_TRADUCAO[origem]) throw new Error('Idioma de origem inválido.');
-  if (origem === destino) return original;
-  const chave = `${origem}|${destino}|${original}`;
+  const idiomaOrigem = aoAlinhar && origem === 'auto' ? detectarIdiomaLeitura(original) : origem;
+  const segmentador = aoAlinhar && typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(idiomaOrigem, { granularity: 'sentence' }) : null;
+  const segmentar = bloco => segmentador ? Array.from(segmentador.segment(bloco), item => item.segment) : [bloco];
+  if (origem === destino) {
+    aoAlinhar?.(segmentar(original).map(trecho => ({ fonte: trecho.trim(), traducao: trecho.trim() })).filter(par => par.fonte));
+    return original;
+  }
+  const chave = `${origem}|${destino}|${aoAlinhar ? 'alinhado' : 'texto'}|${original}`;
   if (cache.has(chave)) {
     const anterior = cache.get(chave);
     aoMotor?.(anterior.motor);
+    aoAlinhar?.(anterior.pares);
     return anterior.resultado;
   }
   const tradutorLocal = await criarTradutorLocal(original, origem, destino, TranslatorImpl);
@@ -155,14 +163,16 @@ export async function traduzirTextoAcademico(texto, {
   aoMotor?.(motor);
   const blocos = original.split(/(\n\s*\n)/);
   const limite = tradutorLocal ? 3000 : LIMITE_TRECHO;
-  const total = blocos.reduce((n, bloco, i) => n + (i % 2 === 0 ? dividirTextoTraducao(bloco, limite).length : 0), 0);
+  const blocosSegmentados = blocos.map((bloco, i) => i % 2 ? bloco : segmentar(bloco).flatMap(trecho => dividirTextoTraducao(trecho, limite)));
+  const total = blocosSegmentados.reduce((n, bloco, i) => n + (i % 2 === 0 ? bloco.length : 0), 0);
   let concluidos = 0;
   const traduzidos = [];
+  const pares = [];
   try {
-    for (const [indice, bloco] of blocos.entries()) {
+    for (const [indice, bloco] of blocosSegmentados.entries()) {
       if (indice % 2) { traduzidos.push(bloco); continue; }
       const partes = [];
-      for (const parte of dividirTextoTraducao(bloco, limite)) {
+      for (const parte of bloco) {
         if (signal?.aborted) throw signal.reason || new DOMException('Operação cancelada.', 'AbortError');
         let traducao;
         if (motor === 'local') {
@@ -179,12 +189,15 @@ export async function traduzirTextoAcademico(texto, {
             if (signal?.aborted || ![429, 502, 503].includes(erro.status)) throw erro;
             motor = 'basico';
             aoMotor?.(motor);
-            traducao = await traduzirTrechoBasico(parte, origem, destino, fetchImpl, signal);
+            traducao = await traduzirTrechoBasico(parte, idiomaOrigem, destino, fetchImpl, signal);
           }
         } else if (traducao === undefined) {
-          traducao = await traduzirTrechoBasico(parte, origem, destino, fetchImpl, signal);
+          traducao = await traduzirTrechoBasico(parte, idiomaOrigem, destino, fetchImpl, signal);
         }
-        partes.push(corrigirTermosTecnicos(parte, String(traducao).trim(), origem === 'auto' ? detectarIdiomaLeitura(parte) : origem, destino));
+        const idiomaTrecho = idiomaOrigem === 'auto' ? detectarIdiomaLeitura(parte) : idiomaOrigem;
+        const traduzida = corrigirTermosTecnicos(parte, String(traducao).trim(), idiomaTrecho, destino);
+        partes.push(traduzida);
+        if (aoAlinhar) pares.push({ fonte: parte, traducao: traduzida });
         aoProgresso?.(++concluidos, total);
       }
       traduzidos.push(partes.join(' '));
@@ -195,7 +208,8 @@ export async function traduzirTextoAcademico(texto, {
   const resultado = traduzidos.join('');
   if (original.length <= 40000) {
     if (cache.size >= 30) cache.delete(cache.keys().next().value);
-    cache.set(chave, { resultado, motor });
+    cache.set(chave, { resultado, motor, pares });
   }
+  aoAlinhar?.(pares);
   return resultado;
 }
