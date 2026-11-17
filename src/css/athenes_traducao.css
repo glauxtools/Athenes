@@ -37,7 +37,9 @@
 .ath-traducao-redimensionar:hover, .ath-traducao-redimensionar:focus-visible { background:#E9F0F8; }
 .ath-traducao-redimensionar:focus-visible { outline:2px solid #314F79; outline-offset:-3px; }
 .ath-traducao-cabecalho span { display:flex; align-items:center; gap:6px; }
-.ath-traducao-fechar { display:grid; place-items:center; width:25px; height:25px; border:0; border-radius:7px; background:transparent; color:#526781; cursor:pointer; }
+.ath-traducao-balao .ath-icon {
+  flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+}
 .ath-traducao-original { margin:0; padding:10px 13px 0; color:#68788B; font-size:11px; line-height:1.45; max-height:58px; overflow:auto; }
 .ath-traducao-motor { margin:0; padding:3px 13px; color:#68788B; font:700 10px var(--glx-font, Nunito, sans-serif); }
 .ath-traducao-motor:empty { display:none; }
@@ -49,12 +51,12 @@
 .ath-traducao-balao .ath-traducao-cabecalho:active { cursor:grabbing; }
 .ath-traducao-balao .ath-traducao-cabecalho span { min-width:0; }
 .ath-traducao-controles-fonte { display:flex; flex:none; align-items:center; gap:4px; }
-.ath-traducao-controles-fonte button { touch-action:manipulation; }
-.ath-traducao-controles-fonte [data-fonte] {
-  min-width:28px; height:28px; padding:0 4px; border:1px solid #D7E1EC; border-radius:6px;
+.ath-traducao-controles-fonte button {
+  display:grid; place-items:center; min-width:28px; height:28px; padding:0 4px; touch-action:manipulation;
+  border:1px solid #D7E1EC; border-radius:6px;
   background:#fff; color:#314F79; font:800 12px var(--glx-font, Nunito, sans-serif); cursor:pointer;
 }
-.ath-traducao-controles-fonte [data-fonte]:hover:not(:disabled) { background:#E9F0F8; }
+.ath-traducao-controles-fonte button:hover:not(:disabled) { background:#E9F0F8; }
 .ath-traducao-controles-fonte [data-fonte]:disabled { opacity:.45; cursor:default; }
 .ath-traducao-balao .ath-traducao-original { font-size:calc(11px + var(--ath-traducao-ajuste-fonte, 0px)); }
 .ath-traducao-balao .ath-traducao-resultado { font-size:calc(13px + var(--ath-traducao-ajuste-fonte, 0px)); }
