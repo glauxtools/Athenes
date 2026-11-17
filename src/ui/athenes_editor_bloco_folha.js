@@ -617,7 +617,8 @@ export const metodosBlocoNaFolha = {
     proximo.title = temOutroBloco ? 'Escolher o próximo bloco' : 'Adicione outro bloco para definir a ordem';
     proximo.setAttribute('aria-label', proximo.title);
     proximo.innerHTML = svgIcone('seta_direita', 14);
-    proximo.addEventListener('click', e => { e.stopPropagation(); this.abrirMenuSequencia(b); });
+    proximo.setAttribute('aria-pressed', 'false');
+    proximo.addEventListener('click', e => { e.stopPropagation(); this.iniciarSelecaoDeSequencia(b); });
     el.appendChild(proximo);
     this.ligarAlvoDeSolta(el, b);
 
