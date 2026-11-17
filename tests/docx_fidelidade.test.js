@@ -24,6 +24,34 @@ function bemFormado(xml) {
   return pilha.length === 0;
 }
 
+test('imagens do rodapé acompanham seções herdadas e imagens do corpo continuam editáveis', async () => {
+  const z = new ZipBuilder();
+  const geometria = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:bottom="1701" w:left="1134" w:right="1134" w:footer="567"/>';
+  const sect = (id = '') => `<w:sectPr>${id ? `<w:footerReference w:type="default" r:id="${id}"/>` : ''}${geometria}</w:sectPr>`;
+  const figura = '<w:r><w:drawing><wp:inline><wp:extent cx="2160000" cy="360000"/><a:blip r:embed="imagem"/></wp:inline></w:drawing></w:r>';
+  const ancora = '<w:r><w:drawing><wp:anchor behindDoc="1"><wp:positionH relativeFrom="page"><wp:posOffset>720000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>9720000</wp:posOffset></wp:positionV><wp:extent cx="2160000" cy="360000"/><a:blip r:embed="imagem"/></wp:anchor></w:drawing></w:r>';
+  const rel = '<Relationships><Relationship Id="imagem" Target="media/faixa.png"/></Relationships>';
+  z.add('word/_rels/document.xml.rels', rel.replace('</Relationships>', '<Relationship Id="f1" Target="footer1.xml"/><Relationship Id="f2" Target="footer2.xml"/></Relationships>'));
+  z.add('word/media/faixa.png', PNG_1PX);
+  z.add('word/_rels/footer1.xml.rels', rel);
+  z.add('word/_rels/footer2.xml.rels', rel);
+  z.add('word/footer1.xml', `<w:ftr ${W}>${p('Rodapé herdado', { extra: figura })}</w:ftr>`);
+  z.add('word/footer2.xml', `<w:ftr ${W}>${p('Rodapé novo', { extra: ancora })}</w:ftr>`);
+  z.add('word/document.xml', `<w:document ${W}><w:body>${p(lorem, { ppr: sect('f1') })}${p(lorem.repeat(2), { ppr: sect(), extra: figura })}${p(lorem)}${sect('f2')}</w:body></w:document>`);
+  let cargas = 0;
+  const { template } = await importarTemplateDocx(z.build(), { incluirConteudo: true, prepararImagem: url => { cargas++; return url; } });
+  const doc = criarDocumentoDeTemplate(template);
+  repaginarDocumento(doc);
+  const mestras = doc.secoes.map(s => doc.mestras.find(m => m.id === s.mestraId));
+  assert.deepEqual(mestras.map(m => m.rodape.zonas.esquerda), ['Rodapé herdado', 'Rodapé herdado', 'Rodapé novo']);
+  const faixas = mestras.map(m => m.elementos_recorrentes[0]);
+  assert.ok(faixas.every(e => e.url.startsWith('data:image/png;') && e.y_mm > 260 && e.y_mm + e.altura_mm < 297));
+  assert.deepEqual([faixas[2].x_mm, faixas[2].y_mm, faixas[2].camada], [20, 270, 'fundo']);
+  assert.equal(doc.secoes[1].blocos.find(b => b.tipo === 'figura')?.itens[0].url, faixas[1].url);
+  assert.equal(cargas, 1, 'a imagem usada em partes diferentes do DOCX é lida uma vez');
+  assert.match(gerarDocumentoHtmlPdf(doc), /top:270mm;width:60mm;height:10mm/);
+});
+
 function docxRodapeDuasLinhas() {
   const z = new ZipBuilder();
   const corpo = Array.from({ length: 6 }, () => p(lorem)).join('');

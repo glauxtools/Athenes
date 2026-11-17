@@ -164,7 +164,8 @@ test('conteúdo: traz o texto do arquivo, capa em seção própria, quebras de p
   const idEnfase = /<span class="ath-estilo-span" data-estilo-id="([\w-]+)">trecho forte<\/span>/.exec(textos)?.[1];
   assert.ok(idEnfase, 'o trecho em negrito ficou num trecho de estilo');
   assert.ok(template.config.estilos.find(e => e.id === idEnfase)?.peso >= 700, 'o estilo do trecho tem peso de negrito');
-  for (const b of [...capa, ...corpo]) for (const k of ['alinhamento', 'fonte', 'cor', 'entrelinha', 'espaco_antes_pt', 'espaco_depois_pt', 'recuo_esquerdo_mm', 'recuo_primeira_linha_mm']) assert.equal(k in b, false, `${k} em ${b.tipo}`);
+  for (const b of [...capa, ...corpo].filter(b => b.tipo !== 'tabela')) for (const k of ['alinhamento', 'fonte', 'cor', 'entrelinha', 'espaco_antes_pt', 'espaco_depois_pt', 'recuo_esquerdo_mm', 'recuo_primeira_linha_mm']) assert.equal(k in b, false, `${k} em ${b.tipo}`);
+  assert.deepEqual(corpo.find(b => b.tipo === 'tabela')?.linhas, [['célula']]);
   assert.ok(corpo.some(b => b.tipo === 'titulo' && /Introdução/.test(b.texto)));
   assert.ok(relatorio.avisos.some(a => /tabela/.test(a)));
   // níveis de título consecutivos e ids de bloco únicos
