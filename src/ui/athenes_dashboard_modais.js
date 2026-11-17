@@ -124,11 +124,6 @@ export const metodosDashboardModais = {
             </button>
           </div>
 
-          <!-- Opção discreta para download do App Android (.apk) no perfil -->
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; margin-top:6px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px;">
-            <span style="display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:#334155;"><span style="color:#047857; display:flex;">${svgIcone('android', 14)}</span>Athenes para Android (.apk)</span>
-            <a href="/athenes.apk" download="athenes.apk" class="ath-btn ath-btn-sm" id="athBtnModalDownloadAndroid" style="height:24px; font-size:11px; font-weight:700; color:#047857; background:#ECFDF5; border:1px solid #A7F3D0; text-decoration:none; padding:0 10px; border-radius:6px; display:inline-flex; align-items:center;" title="Baixar pacote de instalação para Android (.apk)">Baixar .APK</a>
-          </div>
         </div>
         <div class="ath-modal-foot ath-modal-foot-perfil">
           <button type="button" class="ath-btn-rodape ath-btn-rodape-sair" id="athBtnModalSairConta" title="Encerrar a sessão e trocar de conta">

@@ -5,6 +5,69 @@ import { svgIcone } from './athenes_icones.js';
 
 let balaoAtual = null;
 
+function instalarRedimensionamento(balao, ret, signal) {
+  const alca = balao.querySelector('.ath-traducao-redimensionar');
+  const margem = 12;
+  const limitar = (v, min, max) => Math.max(min, Math.min(max, v));
+  const posicionar = (x, y, w, h) => {
+    balao.style.left = `${limitar(x, margem, innerWidth - w - margem)}px`;
+    balao.style.top = `${limitar(y, margem, innerHeight - h - margem)}px`;
+  };
+  const inicial = balao.getBoundingClientRect();
+  const alturaPrevista = Math.max(inicial.height, Math.min(420, innerHeight - 2 * margem));
+  posicionar(ret.left, ret.bottom + 9, inicial.width, alturaPrevista);
+  const posicao = balao.getBoundingClientRect();
+  const ladoX = posicao.left + posicao.width / 2 > innerWidth / 2 ? -1 : 1;
+  const ladoY = posicao.top + alturaPrevista / 2 > innerHeight / 2 ? -1 : 1;
+  alca.classList.toggle('ath-traducao-alca-esquerda', ladoX < 0);
+  alca.classList.toggle('ath-traducao-alca-topo', ladoY < 0);
+  balao.classList.toggle('ath-traducao-reserva-topo', ladoY < 0);
+  balao.classList.toggle('ath-traducao-reserva-esquerda', ladoX < 0);
+
+  const dimensionar = (base, largura, altura) => {
+    const maxW = Math.max(1, innerWidth - 2 * margem);
+    const maxH = Math.max(1, innerHeight - 2 * margem);
+    const w = limitar(largura, Math.min(250, maxW), maxW);
+    const h = limitar(altura, Math.min(190, maxH), maxH);
+    balao.classList.add('ath-traducao-ajustado');
+    balao.style.width = `${w}px`;
+    balao.style.height = `${h}px`;
+    posicionar(ladoX < 0 ? base.right - w : base.left, ladoY < 0 ? base.bottom - h : base.top, w, h);
+  };
+  let arrasto = null;
+  alca.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || arrasto) return;
+    arrasto = { id: e.pointerId, x: e.clientX, y: e.clientY, base: balao.getBoundingClientRect() };
+    alca.setPointerCapture(e.pointerId);
+    alca.focus({ preventScroll: true });
+    e.preventDefault();
+  });
+  alca.addEventListener('pointermove', e => {
+    if (arrasto?.id !== e.pointerId) return;
+    const { base, x, y } = arrasto;
+    dimensionar(base, base.width + (e.clientX - x) * ladoX, base.height + (e.clientY - y) * ladoY);
+  });
+  alca.addEventListener('lostpointercapture', () => { arrasto = null; });
+  alca.addEventListener('keydown', e => {
+    const direcao = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!direcao) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const base = balao.getBoundingClientRect();
+    dimensionar(base, base.width + direcao[0] * ladoX * 24, base.height + direcao[1] * ladoY * 24);
+  });
+  window.addEventListener('resize', () => {
+    const base = balao.getBoundingClientRect();
+    posicionar(base.left, base.top, base.width, base.height);
+  }, { signal });
+  const observador = new ResizeObserver(() => {
+    const base = balao.getBoundingClientRect();
+    posicionar(base.left, base.top, base.width, base.height);
+  });
+  observador.observe(balao);
+  signal.addEventListener('abort', () => observador.disconnect(), { once: true });
+}
+
 export function salvarTraducaoComoNota(view, root, art, original, traduzido, destino) {
   const nota = `Tradução para ${IDIOMAS_TRADUCAO[destino]}\n${traduzido}\n\nOriginal: ${original}`;
   if (!Array.isArray(art.pinnedNotes)) art.pinnedNotes = [];
@@ -21,7 +84,7 @@ export function salvarTraducaoComoNota(view, root, art, original, traduzido, des
 }
 
 export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNota }) {
-  balaoAtual?.remove();
+  balaoAtual?.fechar();
   const controlador = new AbortController();
   const balao = document.createElement('section');
   balao.className = 'ath-traducao-balao';
@@ -31,15 +94,16 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
     <p class="ath-traducao-original"></p>
     <p class="ath-traducao-motor" aria-live="polite"></p>
     <div class="ath-traducao-resultado" aria-live="polite">Traduzindo…</div>
-    <div class="ath-traducao-acoes"><button type="button" data-acao="copiar" disabled>${svgIcone('copiar', 14)} Copiar tradução</button><button type="button" data-acao="nota" disabled>${svgIcone('mais', 14)} Inserir no fichamento</button></div>`;
+    <div class="ath-traducao-acoes"><button type="button" data-acao="copiar" disabled>${svgIcone('copiar', 14)} Copiar tradução</button><button type="button" data-acao="nota" disabled>${svgIcone('mais', 14)} Inserir no fichamento</button></div>
+    <button type="button" class="ath-traducao-redimensionar" aria-label="Redimensionar painel de tradução" title="Arraste ou use as setas do teclado para ajustar o tamanho"></button>`;
   balao.querySelector('.ath-traducao-original').textContent = texto;
   const ret = ancora?.getBoundingClientRect?.() || ancora || { left: 16, bottom: 70 };
-  balao.style.left = `${Math.max(12, Math.min(window.innerWidth - 360, ret.left))}px`;
-  balao.style.top = `${Math.max(12, Math.min(window.innerHeight - 280, ret.bottom + 9))}px`;
   document.body.append(balao);
-  balaoAtual = balao;
+  instalarRedimensionamento(balao, ret, controlador.signal);
   let traduzido = '';
-  const fechar = () => { controlador.abort(); balao.remove(); if (balaoAtual === balao) balaoAtual = null; };
+  const fechar = () => { controlador.abort(); balao.remove(); if (balaoAtual?.elemento === balao) balaoAtual = null; };
+  const painel = { fechar, elemento: balao };
+  balaoAtual = painel;
   balao.querySelector('.ath-traducao-fechar').addEventListener('click', fechar);
   balao.querySelector('[data-acao="copiar"]').addEventListener('click', async ev => {
     if (!traduzido) return;
@@ -67,7 +131,7 @@ export function mostrarBalaoTraducao({ texto, destino = 'pt', ancora, aoSalvarNo
     if (controlador.signal.aborted) return;
     balao.querySelector('.ath-traducao-resultado').textContent = erro.message || 'Não foi possível traduzir.';
   });
-  return { fechar, elemento: balao };
+  return painel;
 }
 
 export function configurarTraducaoEstudio(view, root, art) {
