@@ -1188,6 +1188,27 @@ html, body, button, input, select, textarea, option, summary, label, table,
 .ath-bloco-folha:hover > .ath-bloco-proximo, .ath-bloco-folha.sel > .ath-bloco-proximo, .ath-bloco-proximo:focus-visible { opacity:1; }
 .ath-bloco-proximo:hover { background:#EEF4FA; }
 .ath-bloco-proximo:disabled { cursor:default;opacity:0 !important; }
+.ath-sequencia-direta[hidden], .ath-sequencia-direta label[hidden] { display: none; }
+.ath-sequencia-direta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 5px 10px;
+  border: 1px solid #ccd8e6;
+  border-radius: 10px;
+  background: #eef4fa;
+  color: #263f60;
+  font: 700 12px var(--glx-font, system-ui);
+}
+.ath-sequencia-direta label { display: inline-flex; align-items: center; gap: 5px; }
+.ath-sequencia-direta button { margin-inline-start: auto; }
+.ath-sequencia-em-curso .ath-sequencia-alvo,
+.ath-sequencia-em-curso .ath-sequencia-alvo * { cursor: crosshair !important; }
+.ath-sequencia-em-curso .ath-sequencia-alvo:hover { outline: 2px dashed #7390b3; }
+.ath-sequencia-em-curso .ath-sequencia-origem { outline: 2px solid #314f79; }
+.ath-sequencia-origem > .ath-bloco-proximo { opacity: 1; background: #314f79; color: #fff; }
 #rmFluxoBlocos[hidden], #rmEncaixeColunas[hidden] { display: none; }
 .ath-encaixe-faixa {
   grid-column: 1 / -1;

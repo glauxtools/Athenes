@@ -370,6 +370,7 @@ export class EditorView {
   desmontarAtalhos() {
     this.atalhos?.destruir();
     this.atalhos = null;
+    this._conexaoSequencia = null;
     this.limparFluxoDeBlocos();
   }
 
@@ -686,6 +687,11 @@ export class EditorView {
             </button>
           </div>
 
+          <div class="ath-sequencia-direta" id="athSequenciaDireta" hidden>
+            <span role="status">Clique no próximo bloco desta seção.</span>
+            <label><input type="checkbox"> Encaixar na mesma coluna</label>
+            <button type="button" class="ath-btn">Cancelar</button>
+          </div>
           <!-- Palco de Páginas Reais -->
           <div class="ath-palco-reguas ${reguasVisiveis() ? '' : 'sem-reguas'}" id="athPalcoReguas">
             <canvas class="ath-regua-h" aria-hidden="true"></canvas><canvas class="ath-regua-v" aria-hidden="true"></canvas><div class="ath-regua-canto" aria-hidden="true"></div>
@@ -706,6 +712,7 @@ export class EditorView {
 
     // Liga eventos dos botões de topo e barra
     this.ligarEventosGerais(root);
+    this.ligarSelecaoDeSequencia(root);
 
     // Monta menus suspensos de topo (Arquivo, Cabeçalho/Rodapé, Estilos)
     this.montarMenusTopo(root);
@@ -734,7 +741,7 @@ export class EditorView {
     if (palcoNovo) {
       // clicar fora de qualquer bloco (fundo do palco, margem ou espaço vazio da folha) tira a seleção do bloco e do texto
       palcoNovo.addEventListener('mousedown', (ev) => {
-        if (ev.button !== 0 || modoSomenteLeitura(this.modoTrabalho) || !this.blocoSelecionado) return;
+        if (ev.button !== 0 || this._conexaoSequencia || modoSomenteLeitura(this.modoTrabalho) || !this.blocoSelecionado) return;
         if (ev.target.closest('.ath-bloco-folha, .ath-barra-contextual, .ath-pill-cursor-acoes, .ath-popover, [contenteditable="true"], button, input, select, textarea, a, .ath-pg-area, .ath-nota')) return;
         this.limparSelecaoDeBloco();
       });
@@ -1928,20 +1935,114 @@ export class EditorView {
     return null;
   }
 
-  abrirMenuSequencia(bloco) {
+  contextoSequencia(bloco) {
+    if (modoSomenteLeitura(this.modoTrabalho)) return null;
     const origem = this.buscarBlocoPorId(bloco?._frag?.origemId || bloco?.id);
-    const secao = origem && buscarSecaoDoBloco(this.doc, origem.id);
-    const candidatos = (secao?.blocos || []).filter(b => b.id !== origem.id);
-    if (!candidatos.length) return;
+    if (!origem) return null;
+    const secao = buscarSecaoDoBloco(this.doc, origem.id);
+    if (!secao || secao.blocos.length < 2) return null;
+    const mestra = this.doc.mestras?.find(m => m.id === secao.mestraId) || this.doc.mestras?.[0];
+    const faixa = intervaloDoBloco(origem);
+    const podeEncaixar = faixa.fim - faixa.inicio < 12 && origem.tipo !== 'quebra_pagina'
+      && fluxoColunasAtivo({ fluxo_colunas: true }, mestra);
+    return { origem, secao, podeEncaixar };
+  }
+
+  aplicarSequencia({ origem, secao, podeEncaixar }, id, encaixar) {
+    const destino = secao.blocos.find(b => b.id === id);
+    if (!destino || destino === origem || (encaixar && (!podeEncaixar || destino.tipo === 'quebra_pagina'))) return false;
+    if (!encaixar && secao.blocos[secao.blocos.indexOf(origem) + 1] === destino) return true;
+    if (!colocarBloco(this.doc, id, origem.id, encaixar ? 'encaixar' : 'sequencia')) return false;
+    this.aposEstrutura(origem);
+    return true;
+  }
+
+  iniciarSelecaoDeSequencia(bloco) {
+    const ctx = this.contextoSequencia(bloco);
+    if (!ctx) return;
+    this._conexaoSequencia = { origemId: ctx.origem.id, encaixar: false };
+    this.atualizarSelecaoDeSequencia();
+    this.container.querySelector('#athSequenciaDireta button')?.focus({ preventScroll: true });
+  }
+
+  cancelarSelecaoDeSequencia(id = this._conexaoSequencia?.origemId) {
+    this._conexaoSequencia = null;
+    this.atualizarSelecaoDeSequencia();
+    const bloco = [...this.container.querySelectorAll('.ath-bloco-folha')].find(el => el.dataset.blocoId === id);
+    bloco?.querySelector('.ath-bloco-proximo')?.focus({ preventScroll: true });
+  }
+
+  atualizarSelecaoDeSequencia() {
+    const barra = this.container.querySelector('#athSequenciaDireta');
+    const palco = this.container.querySelector('#rmPrevPalco');
+    if (!barra || !palco) return;
+    const estado = this._conexaoSequencia;
+    const ctx = estado && this.contextoSequencia({ id: estado.origemId });
+    if (!ctx) this._conexaoSequencia = null;
+    barra.hidden = !ctx;
+    palco.classList.toggle('ath-sequencia-em-curso', !!ctx);
+    const opcoes = barra.querySelector('label');
+    opcoes.hidden = !ctx?.podeEncaixar;
+    opcoes.querySelector('input').checked = !!ctx?.podeEncaixar && estado.encaixar;
+    const alvos = new Set((ctx?.secao.blocos || []).map(b => b.id));
+    for (const el of palco.querySelectorAll('.ath-bloco-folha')) {
+      const origem = el.dataset.blocoId === ctx?.origem.id;
+      el.classList.toggle('ath-sequencia-origem', origem);
+      el.classList.toggle('ath-sequencia-alvo', !origem && alvos.has(el.dataset.blocoId));
+      el.querySelector('.ath-bloco-proximo')?.setAttribute('aria-pressed', String(origem));
+    }
+  }
+
+  ligarSelecaoDeSequencia(root) {
+    const barra = root.querySelector('#athSequenciaDireta');
+    barra.querySelector('button').addEventListener('click', () => this.cancelarSelecaoDeSequencia());
+    barra.querySelector('input').addEventListener('change', e => {
+      if (this._conexaoSequencia) this._conexaoSequencia.encaixar = e.target.checked;
+    });
+    root.addEventListener('keydown', e => {
+      if (!this._conexaoSequencia || e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.cancelarSelecaoDeSequencia();
+    }, true);
+    root.addEventListener('pointerdown', e => {
+      if (this._conexaoSequencia && e.button === 0 && e.pointerType === 'mouse'
+        && e.target.closest('#rmPrevPalco .ath-bloco-folha')) e.preventDefault();
+    }, true);
+    root.addEventListener('click', e => {
+      const estado = this._conexaoSequencia;
+      const bloco = estado && e.target.closest('#rmPrevPalco .ath-bloco-folha');
+      if (!bloco) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const ctx = this.contextoSequencia({ id: estado.origemId });
+      if (bloco.dataset.blocoId === estado.origemId) {
+        if (e.target.closest('.ath-bloco-proximo')) this.cancelarSelecaoDeSequencia();
+        return;
+      }
+      if (!ctx || !ctx.secao.blocos.some(b => b.id === bloco.dataset.blocoId)) return;
+      this._conexaoSequencia = null;
+      if (this.aplicarSequencia(ctx, bloco.dataset.blocoId, estado.encaixar)) {
+        this.cancelarSelecaoDeSequencia(estado.origemId);
+      } else {
+        this._conexaoSequencia = estado;
+      }
+    }, true);
+  }
+
+  abrirMenuSequencia(bloco) {
+    if (this._conexaoSequencia) this.cancelarSelecaoDeSequencia();
+    const ctx = this.contextoSequencia(bloco);
+    if (!ctx) return;
+    const { origem, secao, podeEncaixar } = ctx;
+    const candidatos = secao.blocos.filter(b => b !== origem);
 
     const dialog = document.createElement('dialog');
     dialog.className = 'ath-dialog-sequencia';
     dialog.innerHTML = `<form method="dialog"><h2>Ordem dos blocos</h2><p>Escolha qual bloco deve vir logo depois deste. Texto, imagens e os demais blocos seguem a mesma sequência.</p><label for="athProximoBloco">Próximo bloco</label><select id="athProximoBloco" required></select><div class="ath-dialog-sequencia-acoes"><button type="button" data-acao="cancelar">Cancelar</button><button type="submit" data-acao="aplicar">Aplicar ordem</button></div></form>`;
     const select = dialog.querySelector('select');
-    const faixa = intervaloDoBloco(origem);
-    const mestra = this.doc.mestras?.find(m => m.id === secao.mestraId) || this.doc.mestras?.[0];
     let encaixe = null;
-    if (faixa.fim - faixa.inicio < 12 && origem.tipo !== 'quebra_pagina' && fluxoColunasAtivo({ fluxo_colunas: true }, mestra)) {
+    if (podeEncaixar) {
       const rotulo = document.createElement('label');
       rotulo.className = 'ath-dialog-encaixe';
       encaixe = document.createElement('input');
@@ -1966,10 +2067,8 @@ export class EditorView {
     dialog.querySelector('form').addEventListener('submit', e => {
       e.preventDefault();
       const id = select.value;
-      const zona = encaixe?.checked ? 'encaixar' : fluxoColunasAtivo(this.doc, mestra) ? 'sequencia' : 'depois';
-      if (!id || !colocarBloco(this.doc, id, origem.id, zona)) return;
+      if (!id || !this.aplicarSequencia(ctx, id, encaixe?.checked)) return;
       dialog.close();
-      this.aposEstrutura(origem);
     });
     document.body.appendChild(dialog);
     dialog.showModal();
@@ -2069,7 +2168,7 @@ export class EditorView {
     const palco = this.container.querySelector('#rmPrevPalco');
     if (!palco) return;
     this.limparFluxoDeBlocos();
-    if (modoSomenteLeitura(this.modoTrabalho)) { this.renderizarVisaoRevisao(palco); return; }
+    if (modoSomenteLeitura(this.modoTrabalho)) { this.atualizarSelecaoDeSequencia(); this.renderizarVisaoRevisao(palco); return; }
     this._blocoDoFluxo = new WeakMap();
     const scrollTopSalvo = palco.scrollTop || 0;
     const scrollLeftSalvo = palco.scrollLeft || 0;
@@ -2390,6 +2489,7 @@ export class EditorView {
     if (scrollTopSalvo > 0) palco.scrollTop = scrollTopSalvo;
     if (scrollLeftSalvo > 0) palco.scrollLeft = scrollLeftSalvo;
     this.atualizarFluxoDeBlocos(palco);
+    if (this._conexaoSequencia) this.atualizarSelecaoDeSequencia();
     this.semanticaUI?.sincronizarOverlayCss();
     this.semanticaUI?.instalarPincelNoPalco(palco);
     this.semanticaUI?.instalarHoverBadge(palco);
