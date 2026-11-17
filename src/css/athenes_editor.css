@@ -1200,12 +1200,15 @@ html, body, button, input, select, textarea, option, summary, label, table,
 }
 .ath-fluxo-blocos path {
   fill: none;
-  stroke: #a5acb6;
-  stroke-width: .9;
+  stroke: #77818d;
+  stroke-width: 1.15;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.ath-fluxo-blocos g > path { stroke-dasharray: .2 3; }
+.ath-fluxo-blocos g > path {
+  stroke-width: 1.7;
+  stroke-dasharray: .7 3.6;
+}
 @media print { .ath-fluxo-blocos { display: none; } }
 .ath-dialog-sequencia { width:min(440px,calc(100vw - 32px));border:1px solid #D8E1EC;border-radius:14px;padding:22px;background:#fff;color:#1F2733;box-shadow:0 20px 60px rgba(15,23,42,.24);font-family:var(--glx-font); }
 .ath-dialog-sequencia::backdrop { background:rgba(15,23,42,.38); }
