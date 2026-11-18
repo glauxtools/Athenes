@@ -5,6 +5,7 @@
  */
 import { obterTokenDrive } from '../core/athenes_drive_sync.js';
 import { resumoContaZotero } from '../core/athenes_zotero_conta.js';
+import { escolherEspelhoZotero, pastaDoEspelhoZotero, PASTA_BIBLIOGRAFIA_LOCAL } from '../core/athenes_zotero_pastas.js';
 
 /** Depois de salvar a chave: mostra, quando o envio termina, se ela ficou guardada na conta e no Drive. */
 function mostrarOndeGuardou(el, prefixo) {
@@ -526,10 +527,15 @@ export const metodosEstudoModais = {
     let driveFileIdSelecionado = '';
 
     const pastasDrive = obterPastasDriveLocais();
+    const espelho = escolherEspelhoZotero(pastasDrive);
     const opcoesPastasBib = [];
     function coletarPastasBib(lista, prefixo = '') {
       for (const p of lista) {
         if (p.tipo === 'bibliografia' || p.id === 'pasta_bib_raiz' || p.tipo === 'compartilhada') {
+          if (pastaDoEspelhoZotero(espelho, p)) {
+            if (p.id === 'pasta_bib_raiz') coletarPastasBib(p.subpastas || [], prefixo);
+            continue;
+          }
           opcoesPastasBib.push({ id: p.id, nome: `${prefixo}${p.nome}` });
           if (p.subpastas && p.subpastas.length > 0) {
             coletarPastasBib(p.subpastas, `${prefixo}  ↳ `);
@@ -542,7 +548,8 @@ export const metodosEstudoModais = {
       opcoesPastasBib.push({ id: 'pasta_bib_raiz', nome: 'Bibliografia & Leituras' });
     }
 
-    const pastaAlvoId = opcoes.pastaId || (this.pastaFiltroId && this.pastaFiltroId !== 'todas' ? this.pastaFiltroId : 'pasta_bib_raiz');
+    const pastaPretendida = opcoes.pastaId || this.pastaFiltroId;
+    const pastaAlvoId = opcoesPastasBib.some(p => p.id === pastaPretendida) ? pastaPretendida : (espelho ? PASTA_BIBLIOGRAFIA_LOCAL : 'pasta_bib_raiz');
 
     const modal = document.createElement('div');
     modal.className = 'ath-modal-backdrop';

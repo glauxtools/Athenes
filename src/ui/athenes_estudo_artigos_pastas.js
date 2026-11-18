@@ -17,7 +17,7 @@ import {
   removerPastaDriveLocal,
   buscarPastaNaArvore
 } from '../core/athenes_colaboracao.js';
-import { RAIZ_BIBLIOGRAFIA, artigoEstaNaPasta, caminhoDaPasta, pastasDoNivel, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
+import { RAIZ_BIBLIOGRAFIA, PASTA_BIBLIOGRAFIA_LOCAL, pastaDoEspelhoZotero, artigoEstaNaPasta, caminhoDaPasta, pastasDoNivel, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import {
   normalizarHexCor,
@@ -446,7 +446,7 @@ export function abrirModalNovaPasta(callback) {
       return;
     }
     const nova = adicionarSubpastaDriveLocal({
-      parentId: RAIZ_BIBLIOGRAFIA,
+      parentId: coletarPastasBibliografia().some(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL) ? PASTA_BIBLIOGRAFIA_LOCAL : RAIZ_BIBLIOGRAFIA,
       nome: nomeInput,
       tipo: 'bibliografia'
     });
@@ -784,6 +784,17 @@ export const metodosEstudoPastas = {
 
   moverArtigoParaPasta(livroId, pastaDestinoId) {
     const pastas = coletarPastasBibliografia();
+    const espelho = pastas.find(pasta => pasta.id === RAIZ_BIBLIOGRAFIA)?.zoteroEspelho;
+    const artigo = this.artigos.find(a => String(a.id) === String(livroId) || a.chaveZotero === livroId);
+    if (artigo?.zoteroBiblioteca && artigo.zoteroBiblioteca === espelho?.biblioteca) {
+      mostrarAviso('Para mudar as coleções desta referência, organize-a no Zotero e sincronize novamente.', { tipo: 'info' });
+      return;
+    }
+    if (espelho && (!pastaDestinoId || pastaDestinoId === 'todas' || pastaDestinoId === RAIZ_BIBLIOGRAFIA)) pastaDestinoId = PASTA_BIBLIOGRAFIA_LOCAL;
+    if (pastaDoEspelhoZotero(espelho, pastas.find(pasta => pasta.id === pastaDestinoId))) {
+      mostrarAviso('Adicione a referência à coleção no Zotero e sincronize. No Athenes, você pode organizá-la em “Só no Athenes”.', { tipo: 'info' });
+      return;
+    }
     const resultado = moverReferenciaEntrePastas(this.artigos, livroId, pastaDestinoId, { pastas });
     if (!resultado.sucesso) {
       if (resultado.erro) {
@@ -811,8 +822,11 @@ export const metodosEstudoPastas = {
   },
 
   abrirMenuOpcoesPasta(pastaId, anchorEl) {
-    const pasta = coletarPastasBibliografia().find(p => p && p.id === pastaId);
+    const pastas = coletarPastasBibliografia();
+    const pasta = pastas.find(p => p && p.id === pastaId);
     if (!pasta) return;
+    const espelho = pastas.find(p => p.id === RAIZ_BIBLIOGRAFIA)?.zoteroEspelho;
+    const nomeGerenciado = pastaDoEspelhoZotero(espelho, pasta) || pasta.id === PASTA_BIBLIOGRAFIA_LOCAL;
 
     // Remove menu anterior se houver
     document.querySelector('.ath-menu-pasta-contexto')?.remove();
@@ -824,9 +838,9 @@ export const metodosEstudoPastas = {
 
     menu.innerHTML = `
       <button type="button" data-acao="mudar-cor">${svgIcone('pincel', 15)}<span>Alterar cor</span></button>
-      <button type="button" data-acao="renomear">${svgIcone('lapis', 15)}<span>Renomear</span></button>
+      ${nomeGerenciado ? '' : `<button type="button" data-acao="renomear">${svgIcone('lapis', 15)}<span>Renomear</span></button>
       <hr>
-      <button type="button" data-acao="excluir" class="ath-menu-pasta-excluir">${svgIcone('lixeira', 15)}<span>Excluir pasta</span></button>
+      <button type="button" data-acao="excluir" class="ath-menu-pasta-excluir">${svgIcone('lixeira', 15)}<span>Excluir pasta</span></button>`}
     `;
 
     const fecharMenu = () => menu.remove();
@@ -866,8 +880,8 @@ export const metodosEstudoPastas = {
         // Atualiza obras que estavam nesta pasta para a raiz
         for (const art of this.artigos) {
           if (art && art.pastaId === pastaId) {
-            art.pastaId = RAIZ_BIBLIOGRAFIA;
-            art.pastasIds = [RAIZ_BIBLIOGRAFIA];
+            art.pastaId = espelho ? PASTA_BIBLIOGRAFIA_LOCAL : RAIZ_BIBLIOGRAFIA;
+            art.pastasIds = [art.pastaId];
           }
         }
         salvarArtigosEstudo(this.artigos);

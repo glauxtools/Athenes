@@ -31,6 +31,10 @@ function enriquecerItemMesclado(vencedor, outro) {
   let copia = vencedor;
   const clonar = () => { if (copia === vencedor) copia = { ...vencedor }; return copia; };
   if ((outro.ultimoAcessoEm || '') > (vencedor.ultimoAcessoEm || '')) clonar().ultimoAcessoEm = outro.ultimoAcessoEm;
+  if ((outro.zoteroColecoesEm || '') > (vencedor.zoteroColecoesEm || '')) {
+    const atual = clonar();
+    for (const campo of ['zoteroColecoesEm', 'zoteroBiblioteca', 'colecoesZotero', 'pastaId', 'pastasIds']) atual[campo] = outro[campo];
+  }
   if (!fichamentoTemDados(fVenc) && fichamentoTemDados(fOut) && !fVenc?.atualizadoEm) {
     clonar().fichamento = fOut;
   } else if (fVenc && fOut && (fOut.atualizadoEm || '') > (fVenc.atualizadoEm || '')) {

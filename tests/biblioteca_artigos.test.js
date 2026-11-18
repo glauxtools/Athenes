@@ -106,3 +106,11 @@ test('artigos de exemplo fictícios do legado não sobem ao servidor', () => {
   assert.deepEqual(bib.obterArtigos().map(a => a.id), ['real']);
   bib.definirFiltroDeExemplos(() => false);
 });
+
+test('uma anotação mais nova feita em outro aparelho preserva a última posição confirmada pelo Zotero', () => {
+  const publicado = art('a', { atualizadoEm: '2026-11-16', pastaId: 'zot_col_nova', pastasIds: ['zot_col_nova'], zoteroColecoesEm: '2026-11-16' });
+  const local = art('a', { atualizadoEm: '2026-11-17', pastaId: 'zot_col_antiga', pastasIds: ['zot_col_antiga'], notas: ['Leitura no tablet'] });
+  const { valor } = bib.mesclarBiblioteca({ artigos: [publicado] }, { artigos: [local] });
+  assert.equal(valor.artigos[0].pastaId, 'zot_col_nova');
+  assert.deepEqual(valor.artigos[0].notas, ['Leitura no tablet']);
+});

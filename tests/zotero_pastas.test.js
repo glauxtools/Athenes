@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { espelharColecoesNasPastas, ordenarColecoes, pastasDoItemZotero, artigoEstaNaPasta, caminhoDaPasta, pastasDoNivel, remapearPastasDosArtigos } from '../src/core/athenes_zotero_pastas.js';
+import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, PASTA_BIBLIOGRAFIA_LOCAL } from '../src/core/athenes_zotero_pastas.js';
 import {mesclarPerfil} from '../src/core/athenes_perfil_servidor.js';
 import {remapearSelecaoPastas,restaurarPastaAtiva} from '../src/ui/athenes_estudo_artigos_pastas.js';
 
@@ -11,6 +12,35 @@ const colecoes = [
   { key: 'A', nome: 'Arquitetura', parentCollection: false },
   { key: 'C', nome: 'Urbanismo', parentCollection: false }
 ];
+test('o espelho segue o Zotero e preserva pastas locais e coleções antigas fora dele', () => {
+  const antigo = espelharColecoesNasPastas(raiz(), colecoes).pastas;
+  antigo[0].subpastas.push({ id: 'manual', nome: 'Bibliografia HBIM', tipo: 'bibliografia', subpastas: [] });
+  const leitura = { biblioteca: 'users/1', versao: '20', sincronizadoEm: '2026-11-17', colecoes: [
+    { key: 'A', nome: 'Bibliografia HBIM', parentCollection: false },
+    { key: 'B', nome: 'Acústica', parentCollection: false }
+  ] };
+  const { pastas, mapa } = aplicarEspelhoZotero(antigo, leitura);
+  const filhos = pastas[0].subpastas;
+  assert.deepEqual(filhos.map(p => p.nome), ['Acústica', 'Bibliografia HBIM', 'Só no Athenes']);
+  assert.deepEqual(filhos[2].subpastas.map(p => p.id).sort(), ['manual', 'zot_col_C']);
+  assert.equal(aplicarEspelhoZotero(pastas, leitura).mudou, false);
+  const tablet = mesclarPerfil({ pastas, documentos: [] }, { pastas: antigo, documentos: [] });
+  assert.deepEqual(tablet.pastas, pastas);
+
+  const artigos = [
+    { id: 'r1', chaveZotero: 'R1', pastaId: 'manual', pastaEscolhidaNoAthenes: true, driveFileId: 'PDF' },
+    { id: 'r2', chaveZotero: 'R2', pastaId: 'zot_col_A', fichamento: { resumoPessoal: 'Preservar' } },
+    { id: 'r3', chaveZotero: 'R3', pastaId: 'pasta_bib_raiz' },
+    { id: 'r4', pastaId: 'manual' }
+  ];
+  aplicarColecoesZoteroAosArtigos(artigos, [{ chave: 'R1', colecoes: ['A', 'B'] }, { chave: 'R3', colecoes: [] }], mapa, leitura);
+  assert.deepEqual(artigos[0].pastasIds, ['zot_col_A', 'zot_col_B']);
+  assert.equal(artigos[0].driveFileId, 'PDF');
+  assert.equal(artigos[1].pastaId, PASTA_BIBLIOGRAFIA_LOCAL);
+  assert.equal(artigos[1].fichamento.resumoPessoal, 'Preservar');
+  assert.equal(artigos[2].pastaId, 'pasta_bib_raiz');
+  assert.equal(artigos[3].pastaId, 'manual');
+});
 test('movimentos conflitantes entre duas árvores válidas não criam ciclos nem duplicatas',()=>{
  const cols=colecoes.filter(c=>c.key!=='C').map(c=>({...c,parentCollection:false}));
  const original=espelharColecoesNasPastas(raiz(),cols,{agora:'2026-01-01'}).pastas;

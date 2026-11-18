@@ -37,7 +37,7 @@ import { svgIcone } from './athenes_icones.js';
 import {PainelConexoes} from './athenes_painel_conexoes.js';
 import {registrosReferencias,CAMPOS_RELACOES,inserirFiguraRelacoes} from '../core/athenes_relacoes.js';
 import * as documentosRelacoes from '../core/athenes_repositorio.js';
-import { espelharColecoesNasPastas, pastasDoItemZotero, artigoEstaNaPasta, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
+import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, escolherEspelhoZotero, artigoEstaNaPasta, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
 import { aplicarFilhosZoteroAoArtigo } from '../core/athenes_zotero_anexos_notas.js';
 import { tokenPodeLerTodoODrive, listarConteudoDoDrive, copiarPdfDoDriveParaAthenes, ESCOPOS_COM_LEITURA } from '../core/athenes_drive_navegar.js';
 import { mostrarAviso } from './athenes_aviso.js';
@@ -2132,70 +2132,70 @@ export class EstudoArtigosView {
       this.artigoAtivo = null;
     }
 
-    const itens = await this.zoteroClient.buscarItens();
+    const conta = obterContaAtiva();
+    let leitura;
+    try {
+      leitura = await this.zoteroClient.lerBibliotecaParaEspelho();
+    } catch (e) {
+      if (obterContaAtiva() === conta) mostrarAviso(e.message, { tipo: 'aviso' });
+      return;
+    }
+    if (obterContaAtiva() !== conta) return;
+    const { itens, ...espelho } = leitura;
     if (this.zoteroClient.userId) {
       this.salvarConfigZotero({ userId: this.zoteroClient.userId });
     }
 
-    // as coleções do Zotero viram pastas de bibliografia (mesmos nomes e hierarquia)
-    let mapaPastas = new Map();
-    let pastasNovas = 0;
-    let colecoesLidas = false;
-    try {
-      const colecoes = await this.zoteroClient.listarColecoes();
-      if (colecoes.length) {
-        for (const col of colecoes) {
-          if (col && col.key) removerPastaExcluida(`zot_col_${col.key}`);
-        }
-        const esp = espelharColecoesNasPastas(obterPastasDriveLocais(), colecoes);
-        mapaPastas = esp.mapa;
-        remapearPastasDosArtigos(carregarArtigosEstudo(), esp.idsUnificados);
-        this.pastaFiltroId=resolverAliasPasta(this.pastaFiltroId,esp.idsUnificados);
-        remapearSelecaoPastas(esp.idsUnificados);
-        pastasNovas = esp.criadas;
-        if (esp.mudou) salvarPastasDriveLocais(esp.pastas);
-      }
-      colecoesLidas = true;
-    } catch (e) { console.warn('[Athenes] Coleções do Zotero:', e.message); }
+    const pastas = obterPastasDriveLocais();
+    const anterior = escolherEspelhoZotero(pastas);
+    const vigente = anterior?.biblioteca === espelho.biblioteca
+      ? escolherEspelhoZotero(pastas, [{ id: 'pasta_bib_raiz', zoteroEspelho: espelho }]) : espelho;
+    if (vigente.biblioteca === espelho.biblioteca && Number(vigente.versao) > Number(espelho.versao)) return;
+    for (const col of vigente.colecoes) removerPastaExcluida(`zot_col_${col.key}`);
+    const esp = aplicarEspelhoZotero(pastas, vigente);
     // A biblioteca pode ter recebido artigos de outro dispositivo enquanto o Zotero respondia.
     this.artigos = carregarArtigosEstudo().filter(a => !ehArtigoExemploFicticio(a));
-    const naRaizOuZotero = (a) => !a.pastaId || a.pastaId === 'pasta_bib_raiz' || String(a.pastaId).startsWith('zot_col_'); // pasta escolhida à mão não é desfeita
+    remapearPastasDosArtigos(this.artigos, esp.idsUnificados);
+    this.pastaFiltroId = resolverAliasPasta(this.pastaFiltroId, esp.idsUnificados);
+    remapearSelecaoPastas(esp.idsUnificados);
+    if (esp.mudou) salvarPastasDriveLocais(esp.pastas);
 
     let novos = 0;
-    (itens || []).forEach(it => {
-      const colecoes = it.colecoes || [];
-      const ids = pastasDoItemZotero(colecoes, mapaPastas);
-      const existente = this.artigos.find(a => a.chaveZotero === it.chave || (!a.chaveZotero && a.titulo === it.titulo));
+    itens.forEach(it => {
+      const existente = this.artigos.find(a => !a.compartilhadoComigo && !a.proprietarioExterno &&
+        (!a.zoteroBiblioteca || a.zoteroBiblioteca === vigente.biblioteca) &&
+        (a.chaveZotero === it.chave || (!a.chaveZotero && a.titulo === it.titulo)));
       if (existente) {
-        existente.colecoesZotero = it.colecoes || [];
+        existente.chaveZotero = it.chave;
         existente.itemTypeZotero = it.itemTypeZotero || existente.itemTypeZotero || '';
         existente.camposZotero = it.camposZotero || existente.camposZotero || null; // informações do Zotero atualizadas a cada sincronização
         existente.criadores = it.criadores || existente.criadores || null;
         if (!existente.doi && it.doi) existente.doi = it.doi;
         if (!existente.isbn && it.isbn) existente.isbn = it.isbn;
         if (!existente.paginas && it.paginas) existente.paginas = it.paginas;
-        if (!existente.pastaEscolhidaNoAthenes && naRaizOuZotero(existente) && colecoesLidas && colecoes.every(key => mapaPastas.has(key))) {
-          existente.pastasIds = ids;
-          existente.pastaId = ids[0];
-        }
         return;
       }
-      const novo = this.converterItemZoteroParaEstudo(it, ids[0]);
-      novo.pastasIds = ids;
-      novo.colecoesZotero = it.colecoes || [];
+      const novo = this.converterItemZoteroParaEstudo(it);
+      if (this.artigos.some(a => a.id === novo.id)) novo.id = `${novo.id}_${vigente.biblioteca.split('/').slice(-2).join('_')}`;
       this.artigos.unshift(novo);
       novos++;
     });
+    aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
     salvarArtigosEstudo(this.artigos);
     // PDFs vinculados, notas e anotações de PDF do Zotero (só metadados: o arquivo é baixado sob demanda)
     try {
       const filhos = await this.zoteroClient.listarFilhos();
+      if (obterContaAtiva() !== conta) return;
       this.artigos = carregarArtigosEstudo();
-      this.artigos.forEach(a => { if (a.chaveZotero) aplicarFilhosZoteroAoArtigo(a, a.chaveZotero, filhos); });
+      this.artigos.forEach(a => { if (a.zoteroBiblioteca === vigente.biblioteca) aplicarFilhosZoteroAoArtigo(a, a.chaveZotero, filhos); });
       salvarArtigosEstudo(this.artigos);
     } catch (e) { console.warn('[Athenes] Anexos e notas do Zotero:', e.message); }
-    obterTokenDrive().then(tok => { if (tok) reconciliarArtigosComDrive(this.artigos, tok).catch(() => {}); });
-    if (typeof this.aoMudarPastas === 'function') this.aoMudarPastas({ pastasNovas });
+    obterTokenDrive().then(tok => {
+      if (tok && obterContaAtiva() === conta) {
+        reconciliarArtigosComDrive(this.artigos.filter(a => a.zoteroBiblioteca === vigente.biblioteca), tok).catch(() => {});
+      }
+    });
+    if (typeof this.aoMudarPastas === 'function') this.aoMudarPastas({ pastasNovas: esp.criadas });
     this.renderizar();
     if (!silencioso) {
       if (!itens || itens.length === 0) {

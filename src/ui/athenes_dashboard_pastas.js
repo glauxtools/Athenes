@@ -5,7 +5,7 @@
  */
 import { obterPastasDriveLocais, removerPastaDriveLocal, buscarPastaNaArvore } from '../core/athenes_colaboracao.js';
 import { registrarPastasExcluidas } from '../core/athenes_drive_sync.js';
-import { artigoEstaNaPasta } from '../core/athenes_zotero_pastas.js';
+import { artigoEstaNaPasta, PASTA_BIBLIOGRAFIA_LOCAL } from '../core/athenes_zotero_pastas.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { carregarArtigosEstudo } from './athenes_estudo_artigos.js';
 import { svgIcone } from './athenes_icones.js';
@@ -66,6 +66,7 @@ export const metodosDashboardPastas = {
     listaEl.innerHTML = '';
 
     const ehAbaBib = this.abaAtiva === 'artigos_zotero';
+    const raizEspelhada = ehAbaBib && this.pastasDrive.find(p => p.zoteroEspelho);
 
     // 1. Item Todas as Pastas (Visão Geral da Aba Ativa)
     const totalItens = ehAbaBib
@@ -84,7 +85,7 @@ export const metodosDashboardPastas = {
     const tituloMinhas = document.createElement('div');
     tituloMinhas.className = 'ath-dash-grupo-titulo';
     tituloMinhas.textContent = ehAbaBib
-      ? 'Pastas de Bibliografia (Drive)'
+      ? (raizEspelhada ? 'Coleções do Zotero' : 'Pastas de Bibliografia (Drive)')
       : 'Pastas de Documentos (Drive)';
     listaEl.appendChild(tituloMinhas);
 
@@ -104,6 +105,17 @@ export const metodosDashboardPastas = {
       listaEl.appendChild(avisoVazio);
     } else {
       for (const pasta of minhasPastas) {
+        const local = pasta.zoteroEspelho && pasta.subpastas?.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL);
+        if (local) {
+          const colecoes = pasta.subpastas.filter(p => p.id !== local.id);
+          this.montarItemPastaComSubpastas(listaEl, { ...pasta, subpastas: colecoes }, 0, false, revelarSelecao);
+          const tituloLocal = document.createElement('div');
+          tituloLocal.className = 'ath-dash-grupo-titulo';
+          tituloLocal.textContent = 'Bibliografia local';
+          listaEl.appendChild(tituloLocal);
+          this.montarItemPastaComSubpastas(listaEl, local, 0, false, revelarSelecao);
+          continue;
+        }
         this.montarItemPastaComSubpastas(listaEl, pasta, 0, false, revelarSelecao);
       }
     }
