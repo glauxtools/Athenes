@@ -640,6 +640,8 @@ export class DashboardView {
     });
 
     if (this.abaAtiva === 'escrita' && !estudioFullInicial) {
+      this.estudoView?.destruir?.();
+      this.estudoView = null;
       this.atualizarGrid();
     } else {
       const boxEstudo = root.querySelector('#athContainerEstudoArtigos');

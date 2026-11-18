@@ -19,7 +19,7 @@ import {podeEditarRelacoes as podeEditarRelacoesDestino} from '../core/athenes_r
  */
 
 import * as bib from '../core/athenes_biblioteca_artigos.js';
-import { gravarConfigZotero } from '../core/athenes_zotero_config.js';
+import { gravarConfigZotero, lerConfigZotero } from '../core/athenes_zotero_config.js';
 import { lerConta, gravarConta, obterContaAtiva } from '../core/athenes_conta.js';
 import { obterTokenOuConectar, obterTokenDrive, sincronizarZoteroComDrive, obterOuCriarPastaDoArtigoNoDrive, moverArquivosDoArtigoNoDrive, reconciliarArtigosComDrive, moverArquivoNoDrive, removerPastaExcluida } from '../core/athenes_drive_sync.js';
 import { ZoteroClient } from '../core/athenes_zotero.js';
@@ -78,7 +78,7 @@ export class EstudoArtigosView {
         if (!this.artigoAberto && typeof this.renderizar === 'function') this.renderizar();
       }
     });
-    bib.sincronizarBiblioteca().catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
+    this._bibliotecaInicial = bib.sincronizarBiblioteca().catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
     migrarPdfsLocaisParaODrive().catch(() => {}); // PDFs que ficaram só neste computador vão para o Drive
     this.artigoAberto = null;
     this.paginaAtual = 1;
@@ -120,6 +120,14 @@ export class EstudoArtigosView {
     this.restaurarArtigoAbertoSessao();
     if (!this.artigoAberto) this.renderizar();
     this.carregarCompartilhados();
+    if (containerEl && typeof window !== 'undefined') {
+      this._atualizarZoteroAoVoltar = () => this.sincronizarZoteroAutomaticamente();
+      document.addEventListener('visibilitychange', this._atualizarZoteroAoVoltar);
+      window.addEventListener('focus', this._atualizarZoteroAoVoltar);
+      window.addEventListener('online', this._atualizarZoteroAoVoltar);
+      this._intervaloZotero = setInterval(this._atualizarZoteroAoVoltar, 120_000);
+      queueMicrotask(this._atualizarZoteroAoVoltar);
+    }
   }
 
   abrirAnaliseRelacoes(){
@@ -225,16 +233,11 @@ export class EstudoArtigosView {
   }
 
   carregarConfigZotero() {
-    try {
-      const salvo = lerConta('athenes_zotero_cfg');
-      if (salvo) {
-        const cfg = JSON.parse(salvo);
-        this.zoteroClient.userId = cfg.userId ? String(cfg.userId).trim() : '';
-        this.zoteroClient.apiKey = cfg.apiKey ? String(cfg.apiKey).trim() : '';
-        this.zoteroClient.username = cfg.username || '';
-        this.zoteroClient.isGroup = Boolean(cfg.isGroup);
-      }
-    } catch (_) {}
+    const cfg = lerConfigZotero();
+    this.zoteroClient.userId = cfg.userId ? String(cfg.userId).trim() : '';
+    this.zoteroClient.apiKey = cfg.apiKey ? String(cfg.apiKey).trim() : '';
+    this.zoteroClient.username = cfg.username || '';
+    this.zoteroClient.isGroup = Boolean(cfg.isGroup);
   }
 
   salvarConfigZotero(cfg = {}) {
@@ -335,6 +338,13 @@ export class EstudoArtigosView {
   }
 
   destruir() {
+    this._estudioDestruido = true;
+    if (this._atualizarZoteroAoVoltar) {
+      clearInterval(this._intervaloZotero);
+      document.removeEventListener('visibilitychange', this._atualizarZoteroAoVoltar);
+      window.removeEventListener('focus', this._atualizarZoteroAoVoltar);
+      window.removeEventListener('online', this._atualizarZoteroAoVoltar);
+    }
     this._buscaArtigo?.destroy();this._buscaArtigo=null;
     this._fecharRelacoes?.();
     if (typeof window !== 'undefined') {
@@ -2121,7 +2131,23 @@ export class EstudoArtigosView {
     }
   }
 
-  async sincronizarComZoteroApi({ silencioso = false } = {}) {
+  async sincronizarZoteroAutomaticamente() {
+    if (this._estudioDestruido || !this.container?.isConnected || document.hidden || navigator.onLine === false) return;
+    await this._bibliotecaInicial;
+    if (this._estudioDestruido || !this.container?.isConnected || document.hidden) return;
+    this.carregarConfigZotero();
+    if (!this.zoteroClient.apiKey || this._sincronizacaoZotero || Date.now() - (this._ultimaConsultaAutomaticaZotero || 0) < 30_000) return;
+    this._ultimaConsultaAutomaticaZotero = Date.now();
+    try { await this.sincronizarComZoteroApi({ silencioso: true, automatico: true }); }
+    catch (e) { console.warn('[Athenes] Sincronização automática do Zotero:', e.message); }
+  }
+
+  sincronizarComZoteroApi(opcoes) {
+    this._sincronizacaoZotero ??= this._sincronizarBibliotecaZotero(opcoes).finally(() => { this._sincronizacaoZotero = null; });
+    return this._sincronizacaoZotero;
+  }
+
+  async _sincronizarBibliotecaZotero({ silencioso = false, automatico = false } = {}) {
     this.carregarConfigZotero();
     if (!this.zoteroClient.apiKey) {
       if (!silencioso) this.abrirModalCredenciaisZotero();
@@ -2133,14 +2159,16 @@ export class EstudoArtigosView {
     }
 
     const conta = obterContaAtiva();
+    const chaveApi = this.zoteroClient.apiKey;
     let leitura;
     try {
-      leitura = await this.zoteroClient.lerBibliotecaParaEspelho();
+      leitura = await this.zoteroClient.lerBibliotecaParaEspelho({ versaoConhecida: automatico ? this._zoteroVerificado : undefined });
     } catch (e) {
-      if (obterContaAtiva() === conta) mostrarAviso(e.message, { tipo: 'aviso' });
+      if (automatico) console.warn('[Athenes] Zotero:', e.message);
+      else if (obterContaAtiva() === conta) mostrarAviso(e.message, { tipo: 'aviso' });
       return;
     }
-    if (obterContaAtiva() !== conta) return;
+    if (!leitura || this._estudioDestruido || obterContaAtiva() !== conta || lerConfigZotero().apiKey !== chaveApi) return;
     const { itens, ...espelho } = leitura;
     if (this.zoteroClient.userId) {
       this.salvarConfigZotero({ userId: this.zoteroClient.userId });
@@ -2182,21 +2210,25 @@ export class EstudoArtigosView {
     });
     aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
     salvarArtigosEstudo(this.artigos);
+    if (automatico && !this.artigoAberto) this.renderizar();
+    if (automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });
     // PDFs vinculados, notas e anotações de PDF do Zotero (só metadados: o arquivo é baixado sob demanda)
     try {
       const filhos = await this.zoteroClient.listarFilhos();
-      if (obterContaAtiva() !== conta) return;
+      if (this._estudioDestruido || obterContaAtiva() !== conta) return;
       this.artigos = carregarArtigosEstudo();
       this.artigos.forEach(a => { if (a.zoteroBiblioteca === vigente.biblioteca) aplicarFilhosZoteroAoArtigo(a, a.chaveZotero, filhos); });
       salvarArtigosEstudo(this.artigos);
+      this._zoteroVerificado = espelho;
     } catch (e) { console.warn('[Athenes] Anexos e notas do Zotero:', e.message); }
-    obterTokenDrive().then(tok => {
+    if (this._estudioDestruido || obterContaAtiva() !== conta) return;
+    if (!automatico) obterTokenDrive().then(tok => {
       if (tok && obterContaAtiva() === conta) {
         reconciliarArtigosComDrive(this.artigos.filter(a => a.zoteroBiblioteca === vigente.biblioteca), tok).catch(() => {});
       }
     });
-    if (typeof this.aoMudarPastas === 'function') this.aoMudarPastas({ pastasNovas: esp.criadas });
-    this.renderizar();
+    if (!automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });
+    if (!automatico || !this.artigoAberto) this.renderizar();
     if (!silencioso) {
       if (!itens || itens.length === 0) {
         alert(

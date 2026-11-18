@@ -43,6 +43,7 @@ export const metodosDashboardSincronia = {
       let zotero = 'nada';
       // com o servidor, o Zotero já foi sincronizado por ele; o arquivo no Drive é só o reserva
       try { if (!perfilSrv) zotero = await sincronizarZoteroComDrive(token); } catch (e) { console.warn('[Athenes] Zotero pelo Drive:', e.message); }
+      if (zotero === 'baixou') this.estudoView?.sincronizarZoteroAutomaticamente();
       // 1) a estrutura de pastas do Drive (outro computador começa só com as padrão); 2) os documentos, já nas pastas certas
       let pastasNovas = { importadas: 0, vinculadas: 0, mapa: {} };
       // só no começo: depois a árvore de pastas vem do servidor (e pasta excluída não renasce)
@@ -156,6 +157,7 @@ export const metodosDashboardSincronia = {
       if (mudou) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
       sincronizarBiblioteca({ mapaPastas: r.mapaIds }).then(res => {
         if (res?.mudou && obterContaAtiva() === conta) { this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
+        if (r.aplicarZotero && obterContaAtiva() === conta) this.estudoView?.sincronizarZoteroAutomaticamente();
       }).catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
       this._aplicandoPerfil = false;
       return r;
