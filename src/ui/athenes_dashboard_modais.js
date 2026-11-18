@@ -5,6 +5,7 @@
  */
 import { lerConta, gravarConta } from '../core/athenes_conta.js';
 import { gravarConfigZotero, lerConfigZotero } from '../core/athenes_zotero_config.js';
+import { escolherEspelhoZotero, pastaDoEspelhoZotero } from '../core/athenes_zotero_pastas.js';
 import { obterPerfilColaborador, salvarPerfilColaborador, encerrarSessao, CORES_COLABORADORES, obterConfigGoogleDrive, entrarNaNuvemComGoogle, nuvemAutenticada, autenticarGoogleDrive, obterInfoUsuarioGoogle, obterOuCriarEstruturaPastasAthenes, obterPastasDriveLocais, adicionarSubpastaDriveLocal, adicionarPastaCompartilhadaDriveLocal, buscarPastaNaArvore, extrairIdPastaDrive } from '../core/athenes_colaboracao.js';
 import { salvarArtigosEstudo } from './athenes_estudo_artigos.js';
 import { svgIcone } from './athenes_icones.js';
@@ -258,11 +259,16 @@ export const metodosDashboardModais = {
 
     const ehAbaBib = this.abaAtiva === 'artigos_zotero';
     const tipoFiltro = ehAbaBib ? 'bibliografia' : 'relatorios';
+    const espelho = ehAbaBib ? escolherEspelhoZotero(this.pastasDrive) : null;
 
     const opcoesMae = [];
     function coletarPastas(lista, prefixo = '') {
       for (const p of lista) {
         if (p.tipo === tipoFiltro || (!p.tipo && (ehAbaBib ? p.id === 'pasta_bib_raiz' : p.id === 'pasta_rel_raiz'))) {
+          if (pastaDoEspelhoZotero(espelho, p)) {
+            if (p.id === 'pasta_bib_raiz') coletarPastas(p.subpastas || [], prefixo);
+            continue;
+          }
           opcoesMae.push({ id: p.id, nome: `${prefixo}${p.nome}`, tipo: p.tipo });
           if (p.subpastas && p.subpastas.length > 0) {
             coletarPastas(p.subpastas, `${prefixo}  ↳ `);

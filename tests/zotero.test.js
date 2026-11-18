@@ -5,6 +5,29 @@ import assert from 'node:assert/strict';
 import { ZoteroClient } from '../src/core/athenes_zotero.js';
 
 describe('Athenes — Cliente Zotero e Leitura', () => {
+  it('lê todas as coleções e itens da biblioteca conectada e recusa uma página parcial', async () => {
+    const client = new ZoteroClient({ userId: '1', apiKey: 'chave' });
+    const colecoes = Array.from({ length: 101 }, (_, i) => ({ key: `C${i}`, data: { name: `Coleção ${i}`, parentCollection: i ? 'C0' : false } }));
+    const itens = Array.from({ length: 103 }, (_, i) => ({ key: `I${i}`, data: { itemType: 'journalArticle', title: `Artigo ${i}`, collections: ['C100'] } }));
+    const chamadas = [];
+    const fetchImpl = async url => {
+      const u = new URL(url);
+      chamadas.push(u.pathname);
+      const lista = u.pathname.endsWith('/collections') ? colecoes : itens;
+      const inicio = Number(u.searchParams.get('start'));
+      return new Response(JSON.stringify(lista.slice(inicio, inicio + 100)), { headers: {
+        'Total-Results': String(lista.length), 'Last-Modified-Version': '40'
+      } });
+    };
+    const r = await client.lerBibliotecaParaEspelho({ fetchImpl });
+    assert.equal(r.colecoes.length, 101);
+    assert.equal(r.itens.length, 103);
+    assert.deepEqual(r.itens.at(-1).colecoes, ['C100']);
+    assert.deepEqual(chamadas, ['/users/1/collections', '/users/1/collections', '/users/1/items/top', '/users/1/items/top']);
+    await assert.rejects(client.lerBibliotecaParaEspelho({ fetchImpl: async url => {
+      return new URL(url).searchParams.get('start') === '100' ? new Response('falha', { status: 503 }) : fetchImpl(url);
+    } }), /503/);
+  });
   it('inicializa cliente com parâmetros corretos e gera URLs oficiais', () => {
     const client = new ZoteroClient({
       userId: '1234567',

@@ -4,6 +4,12 @@
  * pastas e a lista de coleções e devolvem a árvore nova e o mapa chave-da-coleção → id-da-pasta.
  */
 export const RAIZ_BIBLIOGRAFIA = 'pasta_bib_raiz';
+export const PASTA_BIBLIOGRAFIA_LOCAL = 'pasta_bib_so_athenes';
+
+export function pastaDoEspelhoZotero(espelho, pasta) {
+  return Boolean(espelho && pasta && pasta.origem !== 'compartilhada' &&
+    (pasta.id === RAIZ_BIBLIOGRAFIA || espelho.colecoes.some(c => c.key === pasta.zoteroKey)));
+}
 
 export function caminhoDaPasta(pastas,id){
   const mapa=new Map(pastas.map(p=>[p.id,p])),caminho=[],vistos=new Set();let atual=mapa.get(id);
@@ -110,6 +116,74 @@ export function espelharColecoesNasPastas(pastas, colecoes, {agora=new Date().to
     (pai.subpastas||=[]).push(pasta);mapa.set(c.key,pasta.id);
   }
   return {pastas:arvore,mapa,criadas,renomeadas,movidas,idsUnificados,mudou:JSON.stringify(arvore)!==JSON.stringify(pastas||[])};
+}
+
+/** A versão mais recente do Zotero prevalece sobre uma árvore antiga de outro dispositivo. */
+export function escolherEspelhoZotero(...arvores) {
+  return arvores.map(arvore => arvore?.find(p => p.id === RAIZ_BIBLIOGRAFIA)?.zoteroEspelho).filter(Boolean)
+    .reduce((atual, espelho) => {
+      if (!atual) return espelho;
+      if (atual.biblioteca === espelho.biblioteca && atual.versao && espelho.versao) {
+        return Number(espelho.versao) > Number(atual.versao) ? espelho : atual;
+      }
+      return espelho.sincronizadoEm > atual.sincronizadoEm ? espelho : atual;
+    }, null);
+}
+
+/** Mantém a árvore do Zotero fiel e guarda pastas locais ou antigas em um ramo próprio. */
+export function aplicarEspelhoZotero(pastas, espelho) {
+  const resultado = espelharColecoesNasPastas(pastas, espelho.colecoes, { agora: espelho.sincronizadoEm });
+  const raiz = resultado.pastas.find(p => p.id === RAIZ_BIBLIOGRAFIA);
+  const ativas = new Set(resultado.mapa.values());
+  const originais = raiz.subpastas || [];
+  const local = originais.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL) || {
+    id: PASTA_BIBLIOGRAFIA_LOCAL, parentId: raiz.id, nome: 'Só no Athenes', tipo: 'bibliografia', origem: 'minhas', icone: 'pasta', subpastas: []
+  };
+  local.subpastas ||= [];
+  const recolher = lista => lista.filter(pasta => {
+    if (pasta.id === PASTA_BIBLIOGRAFIA_LOCAL) return false;
+    if (ativas.has(pasta.id)) {
+      pasta.subpastas = recolher(pasta.subpastas || []);
+      return true;
+    }
+    unirFilhas(local.subpastas, [{ ...pasta, parentId: local.id }]);
+    return false;
+  });
+  raiz.subpastas = [...recolher(originais), local];
+  raiz.zoteroEspelho = espelho;
+  resultado.mudou = JSON.stringify(resultado.pastas) !== JSON.stringify(pastas || []);
+  return resultado;
+}
+
+/** As referências retornadas pelo Zotero seguem suas coleções. A biblioteca local permanece disponível. */
+export function aplicarColecoesZoteroAosArtigos(artigos, itens, mapa, { biblioteca, sincronizadoEm }) {
+  const porChave = new Map(itens.map(item => [item.chave, item]));
+  const pastasEspelhadas = new Set(mapa.values());
+  for (const artigo of artigos) {
+    if (artigo.compartilhadoComigo || artigo.proprietarioExterno) continue;
+    const item = porChave.get(artigo.chaveZotero);
+    if (item && (!artigo.zoteroBiblioteca || artigo.zoteroBiblioteca === biblioteca)) {
+      const ids = pastasDoItemZotero(item.colecoes, mapa);
+      artigo.pastaId = ids[0];
+      artigo.pastasIds = ids;
+      artigo.colecoesZotero = item.colecoes || [];
+      artigo.zoteroBiblioteca = biblioteca;
+      artigo.zoteroColecoesEm = sincronizadoEm;
+      porChave.delete(artigo.chaveZotero);
+    } else {
+      const anteriores = artigo.pastasIds?.length ? artigo.pastasIds : [artigo.pastaId || RAIZ_BIBLIOGRAFIA];
+      const ids = anteriores.filter(id => id !== RAIZ_BIBLIOGRAFIA && !pastasEspelhadas.has(id));
+      if (ids.length !== anteriores.length) {
+        artigo.pastasIds = ids.length ? ids : [PASTA_BIBLIOGRAFIA_LOCAL];
+        artigo.pastaId = artigo.pastasIds.includes(artigo.pastaId) ? artigo.pastaId : artigo.pastasIds[0];
+        artigo.zoteroColecoesEm = sincronizadoEm;
+      }
+      if (artigo.zoteroBiblioteca === biblioteca) {
+        artigo.zoteroBiblioteca = '';
+        artigo.zoteroColecoesEm = sincronizadoEm;
+      }
+    }
+  }
 }
 
 export function resolverAliasPasta(id,aliases={}){

@@ -10,7 +10,7 @@
  *
  * Funções puras (`mesclarPerfil`) separadas da rede, e a rede recebe `fetchImpl` (testável sem navegador).
  */
-import {espelharColecoesNasPastas,colecoesMaisRecentes,resolverAliasPasta} from './athenes_zotero_pastas.js';
+import {aplicarEspelhoZotero,escolherEspelhoZotero,espelharColecoesNasPastas,colecoesMaisRecentes,resolverAliasPasta} from './athenes_zotero_pastas.js';
 import { obterConfigSupabase } from './athenes_colaboracao.js';
 import { decidirConfigZotero } from './athenes_zotero_config.js';
 import { cabecalhosSupabase, lerSessaoSupabase } from './athenes_supabase_auth.js';
@@ -141,9 +141,20 @@ export function mesclarPerfil(servidor, local) {
   const pastasExcluidas = { ...(srv.pastasExcluidas || {}), ...(local.pastasExcluidas || {}) };
   const mapaIds = { ...srv.idsPastasUnificados };
   let pastas = mesclarArvore(srv.pastas || [], local.pastas || [], mapaIds, pastasExcluidas);
-  const keysAtivas=new Set(colecoesMaisRecentes(pastas).map(c=>c.key));
-  const colecoes=colecoesMaisRecentes(srv.pastas||[],local.pastas||[]).filter(c=>keysAtivas.has(c.key));
-  if(colecoes.length){const esp=espelharColecoesNasPastas(pastas,colecoes);pastas=esp.pastas;Object.assign(mapaIds,esp.idsUnificados);}
+  const espelho = escolherEspelhoZotero(srv.pastas, local.pastas);
+  if (espelho) {
+    const r = aplicarEspelhoZotero(pastas, espelho);
+    pastas = r.pastas;
+    Object.assign(mapaIds, r.idsUnificados);
+  } else {
+    const keysAtivas = new Set(colecoesMaisRecentes(pastas).map(c => c.key));
+    const colecoes = colecoesMaisRecentes(srv.pastas, local.pastas).filter(c => keysAtivas.has(c.key));
+    if (colecoes.length) {
+      const r = espelharColecoesNasPastas(pastas, colecoes);
+      pastas = r.pastas;
+      Object.assign(mapaIds, r.idsUnificados);
+    }
+  }
   for(const id of Object.keys(mapaIds))mapaIds[id]=resolverAliasPasta(id,mapaIds);
   // documentos: pasta duplicada descartada → a mantida; pasta excluída → volta à pasta padrão
   for (const e of documentos) {
