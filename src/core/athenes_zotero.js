@@ -122,7 +122,7 @@ export class ZoteroClient {
   }
 
   /** Leitura completa de uma única biblioteca, sem recorrer a cache ou grupos. */
-  async lerBibliotecaParaEspelho({ fetchImpl = globalThis.fetch } = {}) {
+  async lerBibliotecaParaEspelho({ fetchImpl = globalThis.fetch, versaoConhecida } = {}) {
     await this.garantirUserId();
     if (!this.userId) throw new Error('Conecte a biblioteca do Zotero.');
     const biblioteca = this.getBaseUrl();
@@ -131,7 +131,11 @@ export class ZoteroClient {
       const dados = [];
       const chaves = new Set();
       while (true) {
-        const res = await fetchImpl(`${biblioteca}/${caminho}?limit=100&start=${dados.length}`, { headers: this.getHeaders() });
+        const condicional = caminho === 'collections' && dados.length === 0 &&
+          versaoConhecida?.biblioteca === biblioteca && versaoConhecida.versao;
+        const headers = this.getHeaders(condicional ? { 'If-Modified-Since-Version': condicional } : {});
+        const res = await fetchImpl(`${biblioteca}/${caminho}?limit=100&start=${dados.length}`, { headers });
+        if (condicional && res.status === 304) return null;
         if (!res.ok) throw new Error(`O Zotero respondeu ${res.status} ao ler a biblioteca.`);
         const versaoPagina = res.headers?.get('Last-Modified-Version') || '';
         if (versao && versaoPagina && versao !== versaoPagina) throw new Error('A biblioteca do Zotero mudou durante a leitura. Sincronize novamente.');
@@ -151,7 +155,9 @@ export class ZoteroClient {
         }
       }
     };
-    const colecoes = (await ler('collections')).map(item => ({ key: item.key, nome: item.data?.name || 'Coleção sem nome', parentCollection: item.data?.parentCollection || false }));
+    const colecoesBrutas = await ler('collections');
+    if (!colecoesBrutas) return null;
+    const colecoes = colecoesBrutas.map(item => ({ key: item.key, nome: item.data?.name || 'Coleção sem nome', parentCollection: item.data?.parentCollection || false }));
     const itens = (await ler('items/top')).filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem)
       .map(item => this.normalizarItemZotero(item)).filter(Boolean);
     const chaves = new Set(colecoes.map(c => c.key));

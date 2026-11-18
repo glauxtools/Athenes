@@ -5,6 +5,18 @@ import assert from 'node:assert/strict';
 import { ZoteroClient } from '../src/core/athenes_zotero.js';
 
 describe('Athenes — Cliente Zotero e Leitura', () => {
+  it('evita ler os artigos novamente quando o Zotero confirma a versão da biblioteca', async () => {
+    const client = new ZoteroClient({ userId: '1' });
+    const leitura = await client.lerBibliotecaParaEspelho({
+      versaoConhecida: { biblioteca: client.getBaseUrl(), versao: '42' },
+      fetchImpl: async (url, opcoes) => {
+        assert.equal(new URL(url).pathname, '/users/1/collections');
+        assert.equal(opcoes.headers['If-Modified-Since-Version'], '42');
+        return new Response(null, { status: 304 });
+      }
+    });
+    assert.equal(leitura, null);
+  });
   it('lê todas as coleções e itens da biblioteca conectada e recusa uma página parcial', async () => {
     const client = new ZoteroClient({ userId: '1', apiKey: 'chave' });
     const colecoes = Array.from({ length: 101 }, (_, i) => ({ key: `C${i}`, data: { name: `Coleção ${i}`, parentCollection: i ? 'C0' : false } }));
