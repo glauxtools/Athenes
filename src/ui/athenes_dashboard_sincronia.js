@@ -6,8 +6,7 @@
 import { lerConta, gravarConta, obterContaAtiva } from '../core/athenes_conta.js';
 import { obterConfigGoogleDrive, salvarConfigGoogleDrive, nuvemAutenticada, obterOuCriarEstruturaPastasAthenes, obterPastasDriveLocais, salvarPastasDriveLocais } from '../core/athenes_colaboracao.js';
 import {remapearSelecaoPastas} from './athenes_estudo_artigos_pastas.js';
-import {remapearPastasDosArtigos} from '../core/athenes_zotero_pastas.js';
-import { sincronizarBiblioteca, obterArtigos, definirArtigos } from '../core/athenes_biblioteca_artigos.js';
+import { sincronizarBiblioteca } from '../core/athenes_biblioteca_artigos.js';
 import { sincronizarTemplatesUsuario } from '../core/athenes_templates.js';
 import { sincronizarPerfil } from '../core/athenes_perfil_servidor.js';
 import { montarEstadoLocal, chaveDoZotero } from '../core/athenes_perfil_local.js';
@@ -115,7 +114,6 @@ export const metodosDashboardSincronia = {
       const r = await sincronizarPerfil(montarEstadoLocal(this.documentos));
       if (obterContaAtiva() !== conta) return null;
       sincronizarTemplatesUsuario().catch(e => console.warn('[Athenes] Modelos no servidor:', e.message));
-      sincronizarBiblioteca().then(res => { if (res?.mudou) { this.renderizarPastasLateral(); this.renderizarBannerPasta(); } }).catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
       this._aplicandoPerfil = true;
       let mudou = false;
 
@@ -148,17 +146,17 @@ export const metodosDashboardSincronia = {
         if (r.mapaIds[doc.pastaId]) { doc.pastaId = r.mapaIds[doc.pastaId]; mudou = true; }
         else if (doc.pastaId && r.pastasExcluidas[doc.pastaId]) { doc.pastaId = undefined; mudou = true; }
       }
-      if(Object.keys(r.mapaIds).length){
-      remapearSelecaoPastas(r.mapaIds);
-      const artigos=structuredClone(obterArtigos());
-      if(remapearPastasDosArtigos(artigos,r.mapaIds)){definirArtigos(artigos);mudou=true;}
-      if(this.estudoView)remapearPastasDosArtigos(this.estudoView.artigos,r.mapaIds);
-      if(r.mapaIds[this.pastaAtivaId])this.pastaAtivaId=r.mapaIds[this.pastaAtivaId];
-      if(this.estudoView&&r.mapaIds[this.estudoView.pastaFiltroId])this.estudoView.pastaFiltroId=r.mapaIds[this.estudoView.pastaFiltroId];
+      if (Object.keys(r.mapaIds).length) {
+        remapearSelecaoPastas(r.mapaIds);
+        if (r.mapaIds[this.pastaAtivaId]) { this.pastaAtivaId = r.mapaIds[this.pastaAtivaId]; mudou = true; }
+        if (this.estudoView && r.mapaIds[this.estudoView.pastaFiltroId]) this.estudoView.pastaFiltroId = r.mapaIds[this.estudoView.pastaFiltroId];
       }
       const arvoreMudou = JSON.stringify(r.pastas) !== JSON.stringify(pastasAntes);
       if (arvoreMudou) { salvarPastasDriveLocais(r.pastas); this.pastasDrive = obterPastasDriveLocais(); mudou = true; }
-      if (mudou) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); }
+      if (mudou) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
+      sincronizarBiblioteca({ mapaPastas: r.mapaIds }).then(res => {
+        if (res?.mudou && obterContaAtiva() === conta) { this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
+      }).catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
       this._aplicandoPerfil = false;
       return r;
     } catch (e) {

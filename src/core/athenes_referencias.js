@@ -846,6 +846,7 @@ export function moverReferenciaEntrePastas(itens = [], livroId, pastaDestinoId, 
     ...original,
     pastaId: destinoId,
     pastasIds: [destinoId],
+    pastaEscolhidaNoAthenes: true,
     atualizadoEm: agora
   };
 

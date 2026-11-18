@@ -100,6 +100,34 @@ test('pasta excluída some em todos (com o que há dentro) e os documentos volta
   assert.ok('arq' in r.indice.pastasExcluidas, 'a exclusão vai para o servidor e vale nos outros computadores');
 });
 
+test('unifica a pasta importada do Drive com a coleção do Zotero e mantém o alias entre dispositivos', () => {
+  const copiaDrive = { ...pasta('drive_HBIM', [pasta('filha')]), nome: 'Bibliografia HBIM', tipo: 'bibliografia', driveId: 'HBIM' };
+  const colecao = { ...pasta('zot_col_C'), nome: 'Bibliografia HBIM', tipo: 'bibliografia', zoteroKey: 'C' };
+  const raiz = 'pasta_bib_raiz';
+  const antigo = { pastas: [pasta(raiz, [copiaDrive])], documentos: [] };
+  const novo = { pastas: [pasta(raiz, [colecao])], documentos: [] };
+  const r = mesclarPerfil(antigo, novo);
+  assert.deepEqual(r.mapaIds, { drive_HBIM: 'zot_col_C' });
+  assert.deepEqual(r.pastas[0].subpastas.map(p => [p.id, p.driveId]), [['zot_col_C', 'HBIM']]);
+  assert.equal(r.pastas[0].subpastas[0].subpastas[0].parentId, 'zot_col_C');
+  assert.deepEqual(mesclarPerfil(r.indice, { pastas: [], documentos: [] }).mapaIds, r.mapaIds);
+  const repetido = mesclarPerfil(r.indice, antigo);
+  assert.deepEqual(repetido.pastas, r.pastas);
+  assert.equal(repetido.mudouServidor, false);
+});
+
+test('o mesmo id do Drive unifica uma pasta legada, preservando pastas física e bibliograficamente distintas', () => {
+  const nome = 'Bibliografia HBIM';
+  const dados = (id, driveId, zoteroKey) => ({ ...pasta(id), nome, tipo: 'bibliografia', driveId, zoteroKey });
+  const mesma = dados('sub_antiga', 'F');
+  const distinta = dados('sub_distinta', 'G');
+  const colecao = dados('zot_col_A', 'F', 'A');
+  const homonima = dados('zot_col_B', 'H', 'B');
+  const result = mesclarPerfil(null, { pastas: [pasta('pasta_bib_raiz', [mesma, distinta, colecao, homonima])], documentos: [] });
+  assert.deepEqual(result.mapaIds, { sub_antiga: 'zot_col_A' });
+  assert.deepEqual(result.pastas[0].subpastas.map(p => p.id).sort(), ['sub_distinta', 'zot_col_A', 'zot_col_B']);
+});
+
 test('cor da pasta: a escolha mais recente vale e sobrevive à sincronização', () => {
   const srv = { pastas: [{ id: 'p1', nome: 'TCC', cor: '#314F79', subpastas: [] }], documentos: [], excluidos: {} };
   const local = { pastas: [{ id: 'p1', nome: 'TCC', cor: '#B45309', corEm: '2026-11-08T20:00:00.000Z', subpastas: [] }], documentos: [] };

@@ -139,14 +139,14 @@ export function criarListaSincronizada({ chave, legados = [], efemeros = [], fil
   }
 
   /** Sincroniza com o servidor. Devolve { mudou } ou null sem a nuvem confirmada (nesse caso nada é apagado do navegador). */
-  async function sincronizar({ fetchImpl = globalThis.fetch } = {}) {
+  async function sincronizar({ fetchImpl = globalThis.fetch, mesclar = mesclarLista } = {}) {
     garantirConta();
     const contaDaOperacao = memoria.conta;
     obter();
     if (!nuvemAutenticada()) return null;
-    if (memoria.promessaEmCurso) {
+    while (memoria.promessaEmCurso) {
       try { await memoria.promessaEmCurso; } catch (_) {}
-      if (!nuvemAutenticada()) return null;
+      if (obterContaAtiva() !== contaDaOperacao || !nuvemAutenticada()) return null;
     }
     clearTimeout(memoria.temporizador);
     memoria.temporizador = null;
@@ -155,7 +155,7 @@ export function criarListaSincronizada({ chave, legados = [], efemeros = [], fil
       try {
         const local = { itens: memoria.itens.map(semEfemeros), excluidos: { ...memoria.excluidos } };
         const sigEnviada = new Map(memoria.itens.map(a => [String(a.id), assinatura(a)]));
-        const r = await sincronizarDado(chave, local, mesclarLista, { fetchImpl });
+        const r = await sincronizarDado(chave, local, mesclar, { fetchImpl });
         if (obterContaAtiva() !== contaDaOperacao) return null;
         let mudou = false;
         let mudouDuranteEnvio = false;
