@@ -6,6 +6,7 @@
  * ficam no Google Drive. Detalhes da sincronização em `athenes_lista_sincronizada.js`.
  */
 import { criarListaSincronizada, mesclarLista } from './athenes_lista_sincronizada.js';
+import { remapearPastasDosArtigos } from './athenes_zotero_pastas.js';
 
 export const CHAVE_BIBLIOTECA = 'biblioteca_artigos';
 
@@ -16,9 +17,11 @@ const lista = criarListaSincronizada({
 });
 
 /** Junta a biblioteca do servidor com a local ({ artigos[], excluidos{} }). */
-export function mesclarBiblioteca(servidor, local) {
+export function mesclarBiblioteca(servidor, local, mapaPastas = {}) {
   const r = mesclarLista(servidor && { itens: servidor.artigos, excluidos: servidor.excluidos }, { itens: local.artigos, excluidos: local.excluidos });
-  return { valor: { artigos: r.valor.itens, excluidos: r.valor.excluidos }, mudouServidor: r.mudouServidor };
+  const artigos = Object.keys(mapaPastas).length ? r.valor.itens.map(artigo => ({ ...artigo })) : r.valor.itens;
+  const remapeou = remapearPastasDosArtigos(artigos, mapaPastas);
+  return { valor: { artigos, excluidos: r.valor.excluidos }, mudouServidor: r.mudouServidor || remapeou };
 }
 
 /** Registra como reconhecer os artigos de exemplo antigos (fictícios) para não os enviar ao servidor como se fossem reais. */
@@ -33,7 +36,14 @@ export const definirArtigos = (l) => {
 /** Separate from remote UI refreshes: local typing must not rebuild the study screen. */
 export const aoEditarBiblioteca = callback => {ouvintesLocais.add(callback);return ()=>ouvintesLocais.delete(callback);};
 export const aoMudarBiblioteca = (cb) => lista.aoMudar(cb);
-export const sincronizarBiblioteca = (opcoes) => lista.sincronizar(opcoes);
+export function sincronizarBiblioteca({ mapaPastas, ...opcoes } = {}) {
+  if (!Object.keys(mapaPastas || {}).length) return lista.sincronizar(opcoes);
+  return lista.sincronizar({ ...opcoes, mesclar(servidor, local) {
+    const r = mesclarBiblioteca(servidor && { artigos: servidor.itens || servidor.artigos, excluidos: servidor.excluidos },
+      { artigos: local.itens, excluidos: local.excluidos }, mapaPastas);
+    return { valor: { itens: r.valor.artigos, excluidos: r.valor.excluidos }, mudouServidor: r.mudouServidor };
+  } });
+}
 export const legadoDaBibliotecaPendente = () => lista.legadoPendente();
 export const temEnvioPendente = () => lista.temEnvioPendente();
 export const reiniciar = () => lista.reiniciar();

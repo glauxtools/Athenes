@@ -81,6 +81,24 @@ test('sem a nuvem confirmada nada é enviado e a cópia antiga permanece (nada s
   assert.equal(bib.legadoDaBibliotecaPendente(), true);
 });
 
+test('o tablet recebe referências com os IDs das pastas unificados, sem perder o PDF ou o fichamento', async () => {
+  ambiente();
+  const srv = servidorFalso();
+  const registro = art('hbim', {
+    atualizadoEm: '2026-11-03T10:00:00Z', pastaId: 'drive_HBIM', pastasIds: ['drive_HBIM', 'zot_col_C', 'outra'],
+    driveFileId: 'PDF_HBIM', fichamento: { resumoPessoal: 'Nota da pesquisa' }
+  });
+  srv.linha = { valor: { artigos: [registro], excluidos: {} } }; srv.v = 1;
+  const opcoes = { fetchImpl: srv.fetch, mapaPastas: { drive_HBIM: 'zot_col_C' } };
+  const esperado = { ...registro, pastaId: 'zot_col_C', pastasIds: ['zot_col_C', 'outra'] };
+  assert.equal((await bib.sincronizarBiblioteca(opcoes)).mudou, true);
+  const [recebido] = bib.obterArtigos();
+  assert.deepEqual({ ...recebido, pdfBlobUrl: undefined }, { ...esperado, pdfBlobUrl: undefined });
+  assert.deepEqual(srv.linha.valor.itens, [esperado]);
+  await bib.sincronizarBiblioteca(opcoes);
+  assert.equal(srv.gravacoes, 1);
+});
+
 test('artigos de exemplo fictícios do legado não sobem ao servidor', () => {
   ambiente();
   bib.definirFiltroDeExemplos((a) => a.exemplo === true);

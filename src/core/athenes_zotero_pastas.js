@@ -114,7 +114,7 @@ export function espelharColecoesNasPastas(pastas, colecoes, {agora=new Date().to
 
 export function resolverAliasPasta(id,aliases={}){
   const vistos=new Set();let atual=id;
-  while(aliases[atual]&&!vistos.has(atual)){vistos.add(atual);atual=aliases[atual];}
+  while(Object.hasOwn(aliases,atual)&&aliases[atual]&&!vistos.has(atual)){vistos.add(atual);atual=aliases[atual];}
   return atual;
 }
 export function remapearPastasDosArtigos(artigos,aliases={}){

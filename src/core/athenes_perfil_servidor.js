@@ -43,25 +43,41 @@ const nomeNorm = (n) => String(n || '').trim().toLowerCase();
  * criado/importado a mesma pasta com outro id: isso duplicava ARTIGOS e ARQ.CON). Fica o id de quem veio primeiro (servidor) e
  * `mapa` anota { idDescartado: idMantido } para religar documentos. Pastas excluídas (e o que há dentro delas) ficam de fora.
  */
-function mesclarArvore(base = [], extra = [], mapa = {}, excluidas = {}) {
+function mesclarArvore(base = [], extra = [], mapa = {}, excluidas = {}, paiId) {
   const saida = [];
-  const juntar = (p) => {
-    if (excluidas[p.id] || (p.driveId && excluidas[p.driveId])) return;
-    // Duas coleções do Zotero com chaves diferentes são entidades distintas e nunca se fundem mesmo se tiverem o mesmo nome
-    const distintas = (q) => (q.zoteroKey || p.zoteroKey) && q.zoteroKey !== p.zoteroKey;
-    const igual = saida.find(q => q.id === p.id || (!distintas(q) && ((p.driveId && q.driveId && p.driveId === q.driveId) || nomeNorm(q.nome) === nomeNorm(p.nome))));
+  const juntar = (entrada) => {
+    const id = resolverAliasPasta(entrada.id, mapa);
+    if (excluidas[entrada.id] || excluidas[id] || (entrada.driveId && excluidas[entrada.driveId])) return;
+    const p = { ...entrada, id, ...(paiId ? { parentId: paiId } : {}) };
+    const compartilhada = q => q.origem === 'compartilhada' || q.tipo === 'compartilhada';
+    const mesmaOrigem = q => compartilhada(q) === compartilhada(p);
+    const chavesCompativeis = q => !q.zoteroKey || !p.zoteroKey || q.zoteroKey === p.zoteroKey;
+    const mesmoDrive = q => p.driveId && q.driveId === p.driveId;
+    const nomesIguais = q => nomeNorm(q.nome) === nomeNorm(p.nome);
+    const importadaDoDrive = q => q.driveId && q.id === `drive_${q.driveId}`;
+    const irmas = [...base, ...extra].filter(q => mesmaOrigem(q) && nomesIguais(q) && q.id !== entrada.id);
+    const sombraDrive = q => !compartilhada(p) && nomesIguais(q) &&
+      (!p.driveId || !q.driveId) && new Set(irmas.map(i => i.id)).size === 1 &&
+      ((p.zoteroKey && importadaDoDrive(q)) || (q.zoteroKey && importadaDoDrive(p)));
+    const igual = saida.find(q => q.id === p.id) ||
+      saida.find(q => mesmaOrigem(q) && chavesCompativeis(q) && mesmoDrive(q)) ||
+      saida.find(q => mesmaOrigem(q) && ((q.zoteroKey === p.zoteroKey && nomesIguais(q) &&
+        (!(p.tipo === 'bibliografia' || q.tipo === 'bibliografia') || !p.driveId || !q.driveId)) || sombraDrive(q)));
     if (!igual) {
       const novo = { ...clone(p), subpastas: [] };
       saida.push(novo);
-      novo.subpastas = mesclarArvore([], p.subpastas || [], mapa, excluidas);
+      novo.subpastas = mesclarArvore([], p.subpastas || [], mapa, excluidas, novo.id);
       return;
     }
-    if (igual.id !== p.id) mapa[p.id] = igual.id;
-    if (!igual.zoteroKey && p.zoteroKey) { igual.zoteroKey=p.zoteroKey;igual.origemZotero=true; }
-    if (!igual.driveId && p.driveId) igual.driveId = p.driveId; // o servidor ainda não sabia o id da pasta no Drive
+    const manterColecao = !igual.zoteroKey && p.zoteroKey;
+    const mantida = manterColecao ? { ...clone(p), driveId: p.driveId || igual.driveId } : igual;
+    const outra = manterColecao ? igual : p;
+    if (mantida.id !== outra.id) mapa[outra.id] = mantida.id;
+    if (!mantida.driveId && outra.driveId) mantida.driveId = outra.driveId;
     // cor da pasta: vale a escolha mais recente (`corEm`); sem carimbo, a primeira cor conhecida
-    if (p.cor && (!igual.cor || (p.corEm || '') > (igual.corEm || ''))) { igual.cor = p.cor; if (p.corEm) igual.corEm = p.corEm; }
-    igual.subpastas = mesclarArvore(igual.subpastas || [], p.subpastas || [], mapa, excluidas);
+    if (outra.cor && (!mantida.cor || (outra.corEm || '') > (mantida.corEm || ''))) { mantida.cor = outra.cor; if (outra.corEm) mantida.corEm = outra.corEm; }
+    mantida.subpastas = mesclarArvore(mantida.subpastas || [], outra.subpastas || [], mapa, excluidas, mantida.id);
+    if (manterColecao) saida[saida.indexOf(igual)] = mantida;
   };
   for (const p of base) juntar(p);
   for (const p of extra) juntar(p);
@@ -123,7 +139,7 @@ export function mesclarPerfil(servidor, local) {
   }
 
   const pastasExcluidas = { ...(srv.pastasExcluidas || {}), ...(local.pastasExcluidas || {}) };
-  const mapaIds = {};
+  const mapaIds = { ...srv.idsPastasUnificados };
   let pastas = mesclarArvore(srv.pastas || [], local.pastas || [], mapaIds, pastasExcluidas);
   const keysAtivas=new Set(colecoesMaisRecentes(pastas).map(c=>c.key));
   const colecoes=colecoesMaisRecentes(srv.pastas||[],local.pastas||[]).filter(c=>keysAtivas.has(c.key));
@@ -150,9 +166,10 @@ export function mesclarPerfil(servidor, local) {
   if (temLocal && diferenteZ && vencedor === 'local') zotero = { cfg: cfgLocal, atualizadoEm: cfgLocal.alteradoEm || new Date().toISOString() };
   else if (zotero?.cfg?.apiKey && canonZ(zotero.cfg) !== canonZ(cfgLocal)) aplicarZotero = { ...zotero.cfg, ...(zotero.atualizadoEm ? { alteradoEm: zotero.atualizadoEm } : {}) };
 
-  const indice = { versao: (srv.versao || 0) + 1, pastas, documentos, excluidos, pastasExcluidas, drive, ...(zotero ? { zotero } : {}) };
+  const indice = { versao: (srv.versao || 0) + 1, pastas, documentos, excluidos, pastasExcluidas, drive, ...(zotero ? { zotero } : {}),
+    ...(Object.keys(mapaIds).length ? { idsPastasUnificados: mapaIds } : {}) };
   const canon = (o) => JSON.stringify(o, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v));
-  const resumo = (x) => canon({ p: x.pastas || [], d: [...(x.documentos || [])].sort((m, n) => String(m.id).localeCompare(String(n.id))), e: Object.keys(x.excluidos || {}).sort(), pe: Object.keys(x.pastasExcluidas || {}).sort(), dr: x.drive || {}, z: x.zotero?.cfg || null }); // o banco reordena as chaves do JSON
+  const resumo = (x) => canon({ p: x.pastas || [], d: [...(x.documentos || [])].sort((m, n) => String(m.id).localeCompare(String(n.id))), e: Object.keys(x.excluidos || {}).sort(), pe: Object.keys(x.pastasExcluidas || {}).sort(), dr: x.drive || {}, a: x.idsPastasUnificados || {}, z: x.zotero?.cfg || null }); // o banco reordena as chaves do JSON
   const igual = (a, b) => resumo(a) === resumo(b);
   return { indice, remover, adicionar, atualizar, recarregar, pastas, mapaIds, pastasExcluidas, aplicarDrive, aplicarZotero, mudouServidor: !servidor || !igual(servidor, indice) };
 }
