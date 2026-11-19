@@ -51,7 +51,7 @@ export function resolveInitialFolderScope({hasFolders=false,configuredFolderIds=
   return {folderScopeMode:hasFolders?'selected':'all',folderIds};
 }
 
-export function createRelationPanel(container,{sources=[],initial={},onSave,onInsert,onChange,onCreateVariable,onMutateRecordVariable,currentFolderId='todas',title='Análise de relações',readonly=false,autoRender=false}={}){
+export function createRelationPanel(container,{sources=[],initial={},onSave,onInsert,onChange,onCreateVariable,onMutateRecordVariable,onOpenRecord=null,onOpenBook=null,currentFolderId='todas',title='Análise de relações',readonly=false,autoRender=false}={}){
   if(readonly&&initial.linked===false&&initial.snapshot){
     sources=[{id:initial.sourceId,label:'Instantâneo salvo',fields:initial.snapshotFields||(initial.config?.stages||[]).map((id,index)=>({id,label:initial.snapshot.config.stageLabels?.[index]||id})),records:()=>initial.snapshotRecords||[]}];
   }
@@ -649,6 +649,10 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
             <div class="rel-record-sub">${[autores,ano,statusTxt].filter(Boolean).map(esc).join(' · ')}</div>
             ${pastasRec.length?`<div class="rel-record-folders">${pastasRec.map(p=>`<span class="rel-record-folder-tag" title="Pasta de origem: ${esc(p)}">${folderSmallIcon}<span>${esc(p)}</span></span>`).join('')}</div>`:''}
             ${varsEntries.length?`<div class="rel-record-vars">${varsEntries.map(([k,v])=>`<span><b>${esc(k)}:</b> ${esc(Array.isArray(v)?v.join(', '):v)}</span>`).join('')}</div>`:''}
+            ${(onOpenRecord||onOpenBook)&&r.id?`<div class="rel-record-actions">
+              ${onOpenRecord?`<button type="button" data-rel-open-record="${esc(r.id)}" title="Abrir artigo no estúdio de leitura">Abrir artigo</button>`:''}
+              ${onOpenBook?`<button type="button" data-rel-open-book="${esc(r.id)}" title="Abrir livrinho 3D desta referência">Abrir livrinho</button>`:''}
+            </div>`:''}
           </li>`;
         }).join('')}
       </ul>
@@ -907,6 +911,21 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   };
 
   root.addEventListener('click',async event=>{
+    const openRecBtn=event.target.closest('[data-rel-open-record]');
+    if(openRecBtn&&onOpenRecord){
+      const id=openRecBtn.dataset.relOpenRecord;
+      const rec=records.find(r=>String(r.id)===String(id))||allSourceRecords.find(r=>String(r.id)===String(id))||{id};
+      onOpenRecord(id,rec);
+      return;
+    }
+    const openBookBtn=event.target.closest('[data-rel-open-book]');
+    if(openBookBtn&&onOpenBook){
+      const id=openBookBtn.dataset.relOpenBook;
+      const rec=records.find(r=>String(r.id)===String(id))||allSourceRecords.find(r=>String(r.id)===String(id))||{id};
+      onOpenBook(id,rec);
+      return;
+    }
+
     const bridgeBtn=event.target.closest('[data-rel-select-node]');
     if(bridgeBtn){
       const id=bridgeBtn.dataset.relSelectNode;

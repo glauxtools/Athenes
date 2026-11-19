@@ -162,6 +162,7 @@ export class EstudoArtigosView {
       }
     ];
     if(this.pastaFiltroId==='compartilhados_comigo')sources.pop();
+    const acharArtigoPorId=recId=>this.artigosCatalogo().find(a=>String(a.id||a.chaveZotero||a.chave)===String(recId));
     const panel=new PainelConexoes(overlay.querySelector('[data-rel-body]'),{referencias:all,secoes:[]},{
       sources,
       pastas:pastasArvore,
@@ -169,6 +170,33 @@ export class EstudoArtigosView {
       currentFolderId:this.pastaFiltroId||'todas',
       initial:this.analiseRelacoes,
       onCreateVariable:def=>registrarVariavelNoCatalogo(def,this.artigos),
+      onOpenRecord:recId=>{
+        const art=acharArtigoPorId(recId);
+        if(!art)return;
+        this._fecharRelacoes?.();
+        if(art.compartilhadoComigo&&!this.artigos.includes(art))this.abrirArtigoCompartilhadoRecebido(art);
+        else this.abrirArtigoNoEstudio(art,1);
+      },
+      onOpenBook:recId=>{
+        const art=acharArtigoPorId(recId);
+        if(!art)return;
+        this._fecharRelacoes?.();
+        const seletor=`[data-livro-id="${CSS.escape(String(art.id||''))}"]`;
+        let livroEl=document.querySelector(seletor);
+        if(!livroEl){
+          this.filtroBusca='';
+          const inBusca=document.getElementById('athEstudoBuscaCatalogo');
+          if(inBusca)inBusca.value='';
+          this.pastaFiltroId=art.pastaId||'todas';
+          this.renderizarArvorePastas?.();
+          this.atualizarGridCatalogo();
+          livroEl=document.querySelector(seletor);
+        }
+        if(livroEl){
+          livroEl.scrollIntoView?.({behavior:'smooth',block:'center'});
+          if(!livroEl.classList?.contains('aberto'))livroEl.click();
+        }
+      },
       onMutateRecordVariable:(recordIds,varName,val)=>{
         const ids=new Set((recordIds||[]).map(String));
         let mudou=false;

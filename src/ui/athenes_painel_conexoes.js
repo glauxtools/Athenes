@@ -42,6 +42,8 @@ export class PainelConexoes {
       currentFolderId:this.opcoes.currentFolderId||'todas',
       initial:this.opcoes.initial||this.doc?.analise_relacoes||{style:{primary:'#314F79',font:'Nunito, sans-serif',...this.doc?.estilo_relacoes}},
       onCreateVariable:this.opcoes.onCreateVariable||(def=>registrarVariavelNoCatalogo(def,obterArtigos())),
+      onOpenRecord:this.opcoes.onOpenRecord,
+      onOpenBook:this.opcoes.onOpenBook,
       onMutateRecordVariable:this.opcoes.onMutateRecordVariable||((recordIds,varName,val)=>{
         const lista=obterArtigos();
         const ids=new Set((recordIds||[]).map(String));

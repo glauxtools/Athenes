@@ -167,6 +167,9 @@
 .rel-record-folder-tag span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rel-record-vars{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
 .rel-record-vars span{background:#eef4fb;color:#314f79;border-radius:6px;padding:1px 6px;font-size:10.5px}
+.rel-record-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;padding-top:4px;border-top:1px dashed #e2e8f2}
+.rel-record-actions button{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:7px;background:#f4f7fc;color:#315887;border-color:#d2dfef}
+.rel-record-actions button:hover{background:#315887;color:#fff;border-color:#315887}
 .rel-side-note{display:block;margin-top:6px;color:#64758c;font-size:11px}
 
 .rel-term-ranking{flex:none;max-height:170px;overflow:auto;border:1px solid #dce5f1;border-radius:10px;padding:10px 14px;background:#fff}
