@@ -79,12 +79,12 @@
 .rel-summary{margin:0;color:#617792;font-size:11.5px}
 .rel-viewport{flex:1 1 auto;min-height:360px;height:62vh;border:1px solid #dce5ef;border-radius:14px;overflow:hidden;background:radial-gradient(#c9d5e544 .7px,transparent .7px) 0 0/20px 20px,#fff;touch-action:none;position:relative;cursor:grab}
 .rel-viewport:active{cursor:grabbing}
-.rel-drawing{width:100%;height:100%;transform-origin:center;will-change:transform}
+.rel-drawing{width:100%;height:100%}
 .rel-drawing svg{display:block;width:100%;height:100%}
 .relation-block svg{display:block;width:100%;height:auto;max-height:760px}
 
 /* LOD progressivo de rótulos para legibilidade em zoom profundo */
-.rel-drawing .rel-label{font-size:calc(11.5px / var(--rel-label-damp, 1));paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}
+.rel-drawing .rel-label{font-size:calc(11.5px / var(--rel-label-damp, 1));paint-order:stroke;stroke:#fff;stroke-width:3px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 .rel-drawing .rel-label-detail{opacity:0;pointer-events:none;transition:opacity .12s}
 .rel-drawing.is-zoom-detail .rel-label-detail,.rel-drawing.is-zoom-deep .rel-label-detail{opacity:.95}
 .relation-map-svg [data-relation-node]:hover .rel-label-detail,.relation-map-svg [data-relation-node]:focus .rel-label-detail,.relation-map-svg [data-relation-node].is-chain .rel-label-detail,.relation-map-svg [data-relation-node].is-selected .rel-label-detail{opacity:1}

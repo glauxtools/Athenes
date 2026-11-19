@@ -17,8 +17,8 @@ import {
   registrarVariavelNoCatalogo
 } from '../core/athenes_variaveis_referencia.js';
 
-const ZOOM_MIN=.12;
-const ZOOM_MAX=25;
+const ZOOM_MIN=.2;
+const ZOOM_MAX=40;
 const clampZoom=z=>Math.min(ZOOM_MAX,Math.max(ZOOM_MIN,Number(z)||1));
 
 const icon=path=>`<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${path}</svg>`;
@@ -383,24 +383,41 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     };
   }
 
+  const getBaseViewBox=svg=>{
+    if(!svg)return {x:0,y:0,w:920,h:620};
+    if(!svg.dataset.baseViewBox){
+      const raw=svg.getAttribute('viewBox')||'0 0 920 620';
+      svg.dataset.baseViewBox=raw;
+    }
+    const [x=0,y=0,w=920,h=620]=svg.dataset.baseViewBox.split(/[ ,]+/).map(Number);
+    return {x,y,w:w||920,h:h||620};
+  };
+
   const transform=()=>{
-    drawing.style.transform=`translate(${pan.x}px,${pan.y}px) scale(${zoom})`;
-    drawing.style.setProperty('--rel-label-damp',String(Math.pow(Math.max(1,zoom),0.62)));
-    drawing.classList.toggle('is-zoom-detail',zoom>=1.55);
-    drawing.classList.toggle('is-zoom-deep',zoom>=3.1);
+    drawing.style.transform='';
+    const svg=drawing.querySelector('svg');
+    const rect=viewport.getBoundingClientRect();
+    let effScale=zoom;
+    if(svg&&rect.width>0&&rect.height>0){
+      const base=getBaseViewBox(svg);
+      const fitScale=Math.min(rect.width/base.w,rect.height/base.h);
+      effScale=fitScale*zoom;
+      const viewW=rect.width/effScale;
+      const viewH=rect.height/effScale;
+      const vx=base.x+base.w/2-viewW/2-pan.x/effScale;
+      const vy=base.y+base.h/2-viewH/2-pan.y/effScale;
+      svg.setAttribute('viewBox',`${vx.toFixed(2)} ${vy.toFixed(2)} ${viewW.toFixed(2)} ${viewH.toFixed(2)}`);
+    }
+    const damp=Math.pow(Math.max(1,effScale/1.15),0.72);
+    drawing.style.setProperty('--rel-label-damp',String(damp));
+    drawing.classList.toggle('is-zoom-detail',zoom>=1.55||effScale>=0.85);
+    drawing.classList.toggle('is-zoom-deep',zoom>=3.1||effScale>=1.5);
     const pctEl=root.querySelector('[data-rel-zoom-pct]');
     if(pctEl)pctEl.textContent=`${Math.round(zoom*100)}%`;
   };
 
   function fitToViewport(){
-    const svg=drawing.querySelector('svg');
-    const rect=viewport.getBoundingClientRect();
-    if(!svg||!rect.width||!rect.height){zoom=1;pan={x:0,y:0};transform();return;}
-    const vb=svg.getAttribute('viewBox')?.split(/[ ,]+/).map(Number);
-    const vbW=vb?.[2]||920,vbH=vb?.[3]||620;
-    const scaleX=rect.width/vbW,scaleY=rect.height/vbH;
-    // Mantém leitura nítida sem microescala excessiva em Sankeys muito altos
-    zoom=clampZoom(Math.min(1,Math.max(0.28,Math.min(scaleX,scaleY)*0.96)));
+    zoom=1;
     pan={x:0,y:0};
     transform();
   }
@@ -566,6 +583,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     graph.config.stageLabels=config.stages.map(id=>source.fields.find(f=>f.id===id)?.label||id);
 
     drawing.innerHTML=renderRelations(graph,style);
+    transform();
     nodeDrag.apply();
 
     const activeFilterCount=config.filters.length;
@@ -870,11 +888,18 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
         if(root.querySelector('[data-rel-error]').textContent)return;
         button.closest('details')?.removeAttribute('open');
       }
+      const cloneFullSvg=()=>{
+        const svgEl=root.querySelector('.rel-drawing svg');
+        if(!svgEl)return null;
+        const clone=svgEl.cloneNode(true);
+        if(svgEl.dataset.baseViewBox)clone.setAttribute('viewBox',svgEl.dataset.baseViewBox);
+        return clone;
+      };
       if(action==='save'||action==='insert'){
         if(action==='save')await onSave?.(read(),graph);
-        else await onInsert?.({...read(),graph,svg:root.querySelector('.rel-drawing svg').outerHTML,linked:form.elements.namedItem('linked').checked});
+        else await onInsert?.({...read(),graph,svg:cloneFullSvg()?.outerHTML||'',linked:form.elements.namedItem('linked').checked});
       }else if(action==='svg'||action==='png'){
-        await downloadSvg(root.querySelector('.rel-drawing svg'),title,action);
+        await downloadSvg(cloneFullSvg(),title,action);
       }else if(action==='json'){
         downloadBlob(new Blob([JSON.stringify({configuration:read(),graph},null,2)],{type:'application/json'}),'analise-relacoes.json');
       }
