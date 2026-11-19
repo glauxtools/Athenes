@@ -23,6 +23,7 @@ const ZOOM_MAX=40;
 const clampZoom=z=>Math.min(ZOOM_MAX,Math.max(ZOOM_MIN,Number(z)||1));
 
 const icon=path=>`<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${path}</svg>`;
+const folderSmallIcon='<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.3 1.5h4.7A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7z"/></svg>';
 const plus=icon('<path d="M10 4v12M4 10h12"/>'),close=icon('<path d="m5 5 10 10M15 5 5 15"/>');
 const filterAddIcon=icon('<path d="M3 4.5h12l-4.5 5.2V15l-3 1.5V9.7L3 4.5z"/><path d="M15.5 11.5v5M13 14h5"/>');
 const colorIcon=icon('<path d="M10 3a7 7 0 1 0 0 14c1.1 0 1.8-.8 1.5-1.8-.2-.7.3-1.4 1-1.4h1.3A3.2 3.2 0 0 0 17 10.6C17 6.4 13.9 3 10 3z"/><circle cx="7" cy="9" r=".9" fill="currentColor"/><circle cx="10" cy="7" r=".9" fill="currentColor"/><circle cx="13" cy="9" r=".9" fill="currentColor"/>');
@@ -525,6 +526,18 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     const stageField=selection.type==='node'?graph.config?.stages?.[item.stage]:'';
     const canQuickFilter=Boolean(selection.type==='node'&&stageField&&item.label);
 
+    const recMap=new Map(records.map(r=>[String(r.id),r]));
+    const recItems=item.records.map(id=>recMap.get(String(id))||{id,label:id,fields:{},meta:{}});
+    const pastasDoRegistro=r=>{
+      if(Array.isArray(r?.meta?.folderPaths)&&r.meta.folderPaths.length)return r.meta.folderPaths;
+      if(Array.isArray(r?.fields?.folder))return r.fields.folder;
+      return r?.fields?.folder?[r.fields.folder]:[];
+    };
+    const pastasOrigemDistintas=[...new Set(recItems.flatMap(pastasDoRegistro).filter(Boolean))];
+    const pastasSummaryHtml=pastasOrigemDistintas.length
+      ?`<div class="rel-inspect-folders">${pastasOrigemDistintas.slice(0,4).map(p=>`<span class="rel-record-folder-tag" title="Pasta de origem: ${esc(p)}">${folderSmallIcon}<span>${esc(p)}</span></span>`).join('')}${pastasOrigemDistintas.length>4?`<span class="rel-record-folder-tag">+${pastasOrigemDistintas.length-4} pasta(s)</span>`:''}</div>`
+      :'';
+
     const betweennessHtml=selection.type==='node'
       ?`<div class="rel-inspect-meta">Intermediação (Betweenness): <strong>${Number(item.betweenness||0).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})}</strong> ${(item.betweenness||0)>=0.10?'<span class="rel-metric-pill is-good">Nó ponte (≥ 0,10)</span>':''}</div>`
       :'';
@@ -539,6 +552,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       </div>
       <div class="rel-inspect-meta">Peso acumulado: ${Number(item.value).toLocaleString('pt-BR',{maximumFractionDigits:2})}</div>
       ${betweennessHtml}
+      ${pastasSummaryHtml}
       <div class="rel-mini-actions">
         ${canQuickFilter?`<button type="button" data-rel-action="filter-from-node" data-filter-field="${esc(stageField)}" data-filter-val="${esc(item.label)}">Filtrar por este item</button>`:''}
         <button type="button" data-rel-action="clear-selection">Limpar seleção</button>
@@ -578,8 +592,6 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       chainBox.hidden=true;chainBox.innerHTML='';
     }
 
-    const recMap=new Map(records.map(r=>[String(r.id),r]));
-    const recItems=item.records.map(id=>recMap.get(String(id))||{id,label:id,fields:{},meta:{}});
     const varsCatalogo=source.fields.filter(f=>f.group==='variavel');
     recBox.hidden=false;
     recBox.innerHTML=`
@@ -601,6 +613,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
           const statusTxt=r.fields?.statusLeitura||'';
           const autores=(meta.authors||r.fields?.author||[]).slice(0,2).join(', ');
           const ano=meta.year||r.fields?.year||'';
+          const pastasRec=pastasDoRegistro(r);
           const varsEntries=Object.entries(meta.variaveis||{});
           return `<li class="rel-record-card">
             <div class="rel-record-top">
@@ -608,6 +621,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
               <strong title="${esc(r.label)}">${esc(r.label||r.id)}</strong>
             </div>
             <div class="rel-record-sub">${[autores,ano,statusTxt].filter(Boolean).map(esc).join(' · ')}</div>
+            ${pastasRec.length?`<div class="rel-record-folders">${pastasRec.map(p=>`<span class="rel-record-folder-tag" title="Pasta de origem: ${esc(p)}">${folderSmallIcon}<span>${esc(p)}</span></span>`).join('')}</div>`:''}
             ${varsEntries.length?`<div class="rel-record-vars">${varsEntries.map(([k,v])=>`<span><b>${esc(k)}:</b> ${esc(Array.isArray(v)?v.join(', '):v)}</span>`).join('')}</div>`:''}
           </li>`;
         }).join('')}

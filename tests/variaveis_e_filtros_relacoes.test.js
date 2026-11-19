@@ -407,24 +407,59 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.ok(g.links.length > 0, 'Ligações do registro grande devem ser geradas');
   });
 
-  it('10. Expansão conectada preserva autores ligados a temas mesmo acima de LIMITS.nodes', () => {
-    // Cria 700 registros com autores A001..A700 e um registro com tema frequente conectado a "Zebra, Autor"
+  it('10. Expansão conectada recursiva (Ano -> Tema -> Autor) e zero temas órfãos acima de LIMITS.nodes', () => {
+    // 1800 registros -> >3600 nós únicos (> LIMITS.nodes = 3000)
     const rows = [];
-    for (let i = 0; i < 700; i++) {
+    for (let i = 0; i < 1800; i++) {
       rows.push({
         id: `r_${i}`,
-        fields: { author: `Autor A${String(i).padStart(3, '0')}`, theme: `Tema T${String(i).padStart(3, '0')}`, year: '2025' }
+        fields: { author: `Autor A${String(i).padStart(4, '0')}`, theme: `Tema T${String(i).padStart(4, '0')}`, year: i % 2 === 0 ? '2025' : '2023' }
       });
     }
     rows.push(
-      { id: 'r_z1', fields: { author: 'Zebra Autor', theme: 'Active force control', year: '2018' } },
-      { id: 'r_z2', fields: { author: 'Xiaojun Wang', theme: 'Active force control', year: '2018' } }
+      { id: 'r_z1', fields: { author: 'Siyi Yin', theme: 'Artificial intelligence technologies', year: '2024' } },
+      { id: 'r_z2', fields: { author: 'Jinrong Wu', theme: 'Artificial intelligence technologies', year: '2024' } }
     );
     const g = analyzeRelations(rows, { mode: 'fields', stages: ['author', 'theme', 'year'] });
-    const hasTema = g.nodes.some(n => n.stage === 1 && n.label === 'Active force control');
-    const hasZebra = g.nodes.some(n => n.stage === 0 && n.label === 'Zebra Autor');
-    const hasXiaojun = g.nodes.some(n => n.stage === 0 && n.label === 'Xiaojun Wang');
-    assert.ok(hasTema, 'Tema frequente deve entrar no gráfico');
-    assert.ok(hasZebra && hasXiaojun, 'Autores ligados ao tema devem ser puxados juntos pela expansão conectada');
+    const aiNode = g.nodes.find(n => n.stage === 1 && n.label === 'Artificial intelligence technologies');
+    const syNode = g.nodes.find(n => n.stage === 0 && n.label === 'Siyi Yin');
+    const jwNode = g.nodes.find(n => n.stage === 0 && n.label === 'Jinrong Wu');
+    assert.ok(aiNode, 'Tema conectado ao ano 2024 deve entrar no gráfico');
+    assert.ok(syNode && jwNode, 'Autores do tema devem ser puxados recursivamente até stage 0');
+    // Nenhum nó de tema selecionado pode ficar sem ligação upstream com autor selecionado
+    const incomingToStage1 = new Set(g.links.map(l => l.target));
+    for (const n of g.nodes) {
+      if (n.stage === 1) {
+        assert.ok(incomingToStage1.has(n.id), `Tema "${n.label}" não pode ficar órfão sem autor conectado`);
+      }
+    }
+  });
+
+  it('11. meta.folderPaths hierárquico e computeNetworkMetrics escalável (>800 nós)', () => {
+    const pastas = [{
+      id: 'p_mestrado',
+      nome: 'MESTRADO',
+      subpastas: [{ id: 'p_sd', nome: 'SCIENCEDIRECT', subpastas: [] }]
+    }];
+    const recs = registrosReferencias([
+      { id: 'art_1', titulo: 'Green Buildings', autores: [{ sobrenome: 'Yin', prenome: 'Siyi' }], ano: 2024, pastaId: 'p_sd' }
+    ], { pastas });
+    assert.deepEqual(recs[0].meta.folderPaths, ['MESTRADO / SCIENCEDIRECT']);
+    assert.deepEqual(recs[0].fields.folder, ['SCIENCEDIRECT']);
+
+    // Rede grande (> 800 nós): 900 nós em 3 componentes ligados por pontes
+    const nodes = Array.from({ length: 900 }, (_, i) => ({ id: `n_${i}`, label: `N${i}`, value: 1 }));
+    const links = [];
+    for (let i = 0; i < 899; i++) {
+      links.push({ source: `n_${i}`, target: `n_${i + 1}`, value: 1 });
+    }
+    const groups = new Map(nodes.map((n, i) => [n.id, Math.floor(i / 300)]));
+    const t0 = Date.now();
+    const metrics = computeNetworkMetrics({ nodes, links }, groups);
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed < 1000, `computeNetworkMetrics para 900 nós demorou ${elapsed}ms`);
+    assert.ok(metrics.modularityQ > 0.3, `Esperava Q > 0.3, obteve ${metrics.modularityQ}`);
+    assert.ok(metrics.silhouetteS > 0.5, `Esperava S > 0.5, obteve ${metrics.silhouetteS}`);
+    assert.ok(metrics.maxBetweenness > 0.1, `Esperava bridge node com betweenness > 0.1, obteve ${metrics.maxBetweenness}`);
   });
 });

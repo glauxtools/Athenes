@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Portable, deterministic relation analysis. Records remain in their owning application.
-export const LIMITS={records:2000,nodes:1200,links:6000,terms:45,paths:2048,filters:30};
+export const LIMITS={records:2000,nodes:3000,links:12000,terms:45,paths:2048,filters:30};
 export const clean=v=>String(v??'').normalize('NFC').trim();
 const key=v=>clean(v).toLocaleLowerCase('pt-BR');
 const ignored=new Set('a o as os um uma uns umas de da do das dos em no na nos nas por para com sem e ou que se ao aos às é foi são ser como mais menos the and of in to for on with an is are by from'.split(' '));
@@ -138,8 +138,8 @@ export function analyzeRelations(input=[],configuration={}){
   const config=normalizeAnalysis(configuration),nodes=new Map(),links=new Map(),warnings=[],chosen=new Set(config.selectedIds),ids=new Set();let processed=0,missing=0,omitted=Number(input.sourceOmitted)||0,filteredOut=0,totalInput=0,recordWeight=0,textBudget=2000000;
   const values=(row,field)=>{const raw=row.fields?.[field];return [...new Set((Array.isArray(raw)?raw:[raw]).map(clean).filter(Boolean))];};
   let limited=false,recordGroup='';
-  const addNode=(id,label,stage,recordId,group)=>{if(!nodes.has(id)){if(nodes.size>=3000){limited=true;return null;}nodes.set(id,{id,label,stage,group:group||'',value:0,records:[],seen:new Set(),groups:new Map()});}const n=nodes.get(id);if(!n.seen.has(recordId)){n.seen.add(recordId);n.value++;if(recordGroup)n.groups.set(recordGroup,(n.groups.get(recordGroup)||0)+1);if(n.records.length<100)n.records.push(recordId);}return n;};
-  const addLink=(source,target,value,recordId)=>{if(!nodes.has(source)||!nodes.has(target))return;const id=JSON.stringify([source,target]);if(!links.has(id)){if(links.size>=20000){limited=true;return;}links.set(id,{source,target,value:0,records:[],recordCount:0,seen:new Set()});}const l=links.get(id);l.value+=value;if(!l.seen.has(recordId)){l.seen.add(recordId);l.recordCount++;if(l.records.length<100)l.records.push(recordId);}};
+  const addNode=(id,label,stage,recordId,group)=>{if(!nodes.has(id)){if(nodes.size>=8000){limited=true;return null;}nodes.set(id,{id,label,stage,group:group||'',value:0,records:[],seen:new Set(),groups:new Map()});}const n=nodes.get(id);if(!n.seen.has(recordId)){n.seen.add(recordId);n.value++;if(recordGroup)n.groups.set(recordGroup,(n.groups.get(recordGroup)||0)+1);if(n.records.length<100)n.records.push(recordId);}return n;};
+  const addLink=(source,target,value,recordId)=>{if(!nodes.has(source)||!nodes.has(target))return;const id=JSON.stringify([source,target]);if(!links.has(id)){if(links.size>=50000){limited=true;return;}links.set(id,{source,target,value:0,records:[],recordCount:0,seen:new Set()});}const l=links.get(id);l.value+=value;if(!l.seen.has(recordId)){l.seen.add(recordId);l.recordCount++;if(l.records.length<100)l.records.push(recordId);}};
   for(const row of Array.isArray(input)?input:[]){
     const id=clean(row.id);if(!id||ids.has(id)||chosen.size&&!chosen.has(id))continue;ids.add(id);totalInput++;
     if(config.yearField&&(config.startYear||config.endYear)){const rawYear=values(row,config.yearField)[0]||'',year=Number(rawYear.match(/\b\d{4}\b/)?.[0]||rawYear);if(!year||config.startYear&&year<config.startYear||config.endYear&&year>config.endYear){filteredOut++;continue;}}
@@ -172,7 +172,7 @@ export function analyzeRelations(input=[],configuration={}){
   if(eligible.length<=LIMITS.nodes||config.mode!=='fields'){
     selected=eligible.slice(0,LIMITS.nodes);
   }else{
-    // Seleção conectada por frequência: cada nó incluído puxa seus vizinhos da etapa anterior (ex.: Tema -> Autores)
+    // Seleção conectada recursiva: puxa cadeias completas (ex.: Ano -> Tema -> Autores) sem deixar órfãos
     const eligibleById=new Map(eligible.map(n=>[n.id,n]));
     const upstream=new Map();
     for(const l of links.values()){
@@ -194,17 +194,35 @@ export function analyzeRelations(input=[],configuration={}){
       selected.push(node);
       return true;
     };
+    const pullUpstream=node=>{
+      if(!node||node.stage<=0||selected.length>=LIMITS.nodes)return;
+      const nbs=upstream.get(node.id)||[];
+      if(node.stage>=2&&nbs.length>25)return;
+      for(const nb of nbs){
+        if(selected.length>=LIMITS.nodes)break;
+        const nbNode=eligibleById.get(nb.id);
+        if(tryAdd(nbNode))pullUpstream(nbNode);
+      }
+    };
     for(const seed of eligible){
       if(selected.length>=LIMITS.nodes)break;
       tryAdd(seed);
-      // Para nós de colunas intermediárias/finais (exceto hubs muito grandes como Ano), garante autores/etapas anteriores conectados
-      if(seed.stage>0&&seed.value<=25){
-        for(const nb of (upstream.get(seed.id)||[])){
-          if(selected.length>=LIMITS.nodes)break;
-          tryAdd(eligibleById.get(nb.id));
+      pullUpstream(seed);
+    }
+    // Salvaguarda pós-seleção: remove nós (stage > 0) que ficaram sem nenhum vizinho upstream selecionado
+    let removedOrphan=true;
+    while(removedOrphan){
+      removedOrphan=false;
+      for(const n of selected){
+        if(n.stage<=0||!picked.has(n.id))continue;
+        const nbs=upstream.get(n.id);
+        if(nbs?.length&&!nbs.some(nb=>picked.has(nb.id))){
+          picked.delete(n.id);
+          removedOrphan=true;
         }
       }
     }
+    selected=selected.filter(n=>picked.has(n.id));
   }
   const keep=new Set(selected.map(n=>n.id));
   const visible=[...links.values()].filter(l=>keep.has(l.source)&&keep.has(l.target)&&l.value>=config.minLink).sort((a,b)=>b.value-a.value||a.source.localeCompare(b.source)).slice(0,LIMITS.links);
@@ -369,45 +387,86 @@ export function computeNetworkMetrics(graph, groupsMap=null){
     twoM+=2*w;
   }
 
-  // Comunidades: usa mapa fornecido (ex.: render.js communities) ou detecção gulosa por modularidade
+  // Comunidades: usa mapa fornecido (ex.: render.js communities) ou detecção gulosa O(n+m)
   const clusterOf=new Int32Array(n);
   if(groupsMap&&typeof groupsMap.get==='function'){
     for(let i=0;i<n;i++)clusterOf[i]=Number(groupsMap.get(nodes[i].id)??0);
   }else{
-    for(let i=0;i<n;i++)clusterOf[i]=i;
+    const totDeg=new Map();
+    for(let i=0;i<n;i++){clusterOf[i]=i;totDeg.set(i,degree[i]);}
     const mDen=twoM||1;
     for(let pass=0;pass<15;pass++){
       let changed=false;
       for(let i=0;i<n;i++){
-        const totals=new Map();
-        for(let j=0;j<n;j++)if(j!==i)totals.set(clusterOf[j],(totals.get(clusterOf[j])||0)+degree[j]);
+        const curC=clusterOf[i];
+        totDeg.set(curC,(totDeg.get(curC)||0)-degree[i]);
         const weights=new Map();
         for(const [nb,w]of adj[i])weights.set(clusterOf[nb],(weights.get(clusterOf[nb])||0)+w);
-        let best=clusterOf[i],bestScore=0;
+        let best=curC,bestScore=0;
         for(const [g,w]of weights){
-          const q=w-degree[i]*(totals.get(g)||0)/mDen;
+          const q=w-degree[i]*(totDeg.get(g)||0)/mDen;
           if(q>bestScore+1e-10){bestScore=q;best=g;}
         }
-        if(best!==clusterOf[i]){clusterOf[i]=best;changed=true;}
+        clusterOf[i]=best;
+        totDeg.set(best,(totDeg.get(best)||0)+degree[i]);
+        if(best!==curC)changed=true;
       }
       if(!changed)break;
     }
   }
 
-  // 1. Centralidade de Intermediação (Brandes) + matriz de distâncias mínimas para Silhueta S
+  // Indexação compacta de agrupamentos para Modularidade Q e Silhueta Média Ponderada S em O(n) memória
+  const clusterIdToIdx=new Map();
+  const clusterIdxOf=new Int32Array(n);
+  for(let i=0;i<n;i++){
+    const c=clusterOf[i];
+    let idx=clusterIdToIdx.get(c);
+    if(idx===undefined){idx=clusterIdToIdx.size;clusterIdToIdx.set(c,idx);}
+    clusterIdxOf[i]=idx;
+  }
+  const numClusters=clusterIdToIdx.size;
+  const clusterSizes=new Int32Array(numClusters);
+  for(let i=0;i<n;i++)clusterSizes[clusterIdxOf[i]]++;
+
+  // 2. Modularidade Q (exata em O(n + m))
+  let modularityQ=0;
+  if(twoM>0){
+    const inWeights=new Float64Array(numClusters);
+    const totWeights=new Float64Array(numClusters);
+    for(let i=0;i<n;i++){
+      const ci=clusterIdxOf[i];
+      totWeights[ci]+=degree[i];
+      for(const [j,w]of adj[i]){
+        if(clusterIdxOf[j]===ci)inWeights[ci]+=w;
+      }
+    }
+    for(let c=0;c<numClusters;c++){
+      modularityQ+=(inWeights[c]/twoM)-Math.pow(totWeights[c]/twoM,2);
+    }
+  }
+
+  // 1 & 3. Centralidade de Intermediação (Brandes exato <=800 nós; pivôs determinísticos >800 nós) + Silhueta S em O(n) espaço
   const cb=new Float64Array(n);
-  const distMatrix=Array.from({length:n},()=>new Int32Array(n).fill(-1));
+  const dist=new Int32Array(n);
   const pred=Array.from({length:n},()=>[]);
   const sigma=new Float64Array(n);
   const delta=new Float64Array(n);
   const stack=[];
   const queue=[];
+  const clusterDistSums=new Float64Array(numClusters);
+  const fallbackDist=n;
+  let silSum=0;
+  let silWeight=0;
 
-  for(let s=0;s<n;s++){
+  const pivotCount=n<=800?n:400;
+  const scale=n/pivotCount;
+
+  for(let p=0;p<pivotCount;p++){
+    const s=n<=800?p:Math.min(n-1,Math.floor(p*n/pivotCount));
     stack.length=0;
     queue.length=0;
+    dist.fill(-1);
     for(let i=0;i<n;i++){pred[i].length=0;sigma[i]=0;delta[i]=0;}
-    const dist=distMatrix[s];
     dist[s]=0;
     sigma[s]=1;
     queue.push(s);
@@ -433,7 +492,33 @@ export function computeNetworkMetrics(graph, groupsMap=null){
       for(const v of pred[w]){
         delta[v]+=sigma[v]*coeff;
       }
-      if(w!==s)cb[w]+=delta[w];
+      if(w!==s)cb[w]+=delta[w]*scale;
+    }
+
+    if(numClusters>=2&&n>=2){
+      const ci=clusterIdxOf[s];
+      if(clusterSizes[ci]>1){
+        clusterDistSums.fill(0);
+        for(let j=0;j<n;j++){
+          if(j===s)continue;
+          const d=dist[j];
+          clusterDistSums[clusterIdxOf[j]]+=d>=0?d:fallbackDist;
+        }
+        const a=clusterDistSums[ci]/(clusterSizes[ci]-1);
+        let b=Infinity;
+        for(let c=0;c<numClusters;c++){
+          if(c===ci)continue;
+          const sz=clusterSizes[c];
+          if(sz>0){
+            const meanB=clusterDistSums[c]/sz;
+            if(meanB<b)b=meanB;
+          }
+        }
+        const denom=Math.max(a,b);
+        const si=denom>0&&Number.isFinite(b)?(b-a)/denom:0;
+        silSum+=si;
+        silWeight+=1;
+      }
     }
   }
 
@@ -445,70 +530,7 @@ export function computeNetworkMetrics(graph, groupsMap=null){
     if(val>maxBetweenness)maxBetweenness=val;
   }
 
-  // 2. Modularidade Q
-  let modularityQ=0;
-  const clustersMap=new Map();
-  for(let i=0;i<n;i++){
-    const c=clusterOf[i];
-    if(!clustersMap.has(c))clustersMap.set(c,[]);
-    clustersMap.get(c).push(i);
-  }
-  if(twoM>0){
-    const inWeights=new Map();
-    const totWeights=new Map();
-    for(let i=0;i<n;i++){
-      const ci=clusterOf[i];
-      totWeights.set(ci,(totWeights.get(ci)||0)+degree[i]);
-      for(const [j,w]of adj[i]){
-        if(clusterOf[j]===ci)inWeights.set(ci,(inWeights.get(ci)||0)+w);
-      }
-    }
-    for(const c of clustersMap.keys()){
-      const inC=inWeights.get(c)||0;
-      const totC=totWeights.get(c)||0;
-      modularityQ+=(inC/twoM)-Math.pow(totC/twoM,2);
-    }
-  }
-
-  // 3. Silhueta Média Ponderada S
-  let silhouetteS=0;
-  const clusterEntries=[...clustersMap.entries()].filter(([,members])=>members.length>0);
-  if(clusterEntries.length>=2&&n>=2){
-    const fallbackDist=n;
-    let silSum=0;
-    let silWeight=0;
-    for(const [cid,members]of clusterEntries){
-      if(members.length<=1)continue;
-      let clusterSil=0;
-      for(const i of members){
-        let sumA=0;
-        for(const j of members){
-          if(i===j)continue;
-          const d=distMatrix[i][j];
-          sumA+=d>=0?d:fallbackDist;
-        }
-        const a=sumA/(members.length-1);
-        let b=Infinity;
-        for(const [otherCid,otherMembers]of clusterEntries){
-          if(otherCid===cid)continue;
-          let sumB=0;
-          for(const j of otherMembers){
-            const d=distMatrix[i][j];
-            sumB+=d>=0?d:fallbackDist;
-          }
-          const meanB=sumB/otherMembers.length;
-          if(meanB<b)b=meanB;
-        }
-        const denom=Math.max(a,b);
-        const si=denom>0&&Number.isFinite(b)?(b-a)/denom:0;
-        clusterSil+=si;
-      }
-      // Média ponderada pelo tamanho do agrupamento (equivalente à soma dos s(i) sobre os nós em agrupamentos > 1)
-      silSum+=clusterSil;
-      silWeight+=members.length;
-    }
-    silhouetteS=silWeight>0?silSum/silWeight:0;
-  }
+  const silhouetteS=silWeight>0?silSum/silWeight:0;
 
   const ranked=nodes
     .map(node=>({id:node.id,label:node.label,stage:node.stage,value:node.value,betweenness:betweenness.get(node.id)||0}))
@@ -522,7 +544,7 @@ export function computeNetworkMetrics(graph, groupsMap=null){
     silhouetteS,
     bridgeNodes,
     topNodes,
-    clusterCount:clusterEntries.length,
+    clusterCount:numClusters,
     maxBetweenness
   };
 }

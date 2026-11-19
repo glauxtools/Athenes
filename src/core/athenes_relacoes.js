@@ -57,14 +57,16 @@ export function camposRelacoesComVariaveis(referencias=[],catalogo=null){
 
 function mapearPastasPorId(pastas=[]){
   const mapa=new Map();
-  const visitar=itens=>{
+  const visitar=(itens,prefixo=[])=>{
     for(const p of list(itens)){
       if(!p?.id)continue;
-      mapa.set(String(p.id),p);
-      if(Array.isArray(p.subpastas))visitar(p.subpastas);
+      const nome=String(p.nome||'Pasta').trim();
+      const caminhoAtual=[...prefixo,nome].filter(Boolean);
+      mapa.set(String(p.id),{...p,caminho:caminhoAtual.join(' / ')});
+      if(Array.isArray(p.subpastas))visitar(p.subpastas,caminhoAtual);
     }
   };
-  visitar(pastas);
+  visitar(pastas,[]);
   return mapa;
 }
 
@@ -87,6 +89,7 @@ export function registrosReferencias(referencias=[],opcoes={}){
     const notes=plain([r.quickSummary,r.fichamento?.resumoPessoal,r.fichamento?.metodologiaNotas,...list(r.fichamento?.notas),...Object.values(r.fichamento?.notasPagina||{}).flatMap(list),...list(r.fichamento?.citacoesMarcadas),...list(r.notasZotero)].filter(Boolean).map(annotation).join('\n\n'));
     const folderIds=[...new Set((Array.isArray(r.pastasIds)&&r.pastasIds.length?r.pastasIds:[r.pastaId||RAIZ_BIBLIOGRAFIA]).map(String))];
     const folderNames=folderIds.map(pid=>mapaPastas.get(pid)?.nome||(pid===RAIZ_BIBLIOGRAFIA?'Coleção Principal':'')).filter(Boolean);
+    const folderPaths=[...new Set(folderIds.map(pid=>mapaPastas.get(pid)?.caminho||(pid===RAIZ_BIBLIOGRAFIA?'Coleção Principal':'')).filter(Boolean))];
     const statusRotulo=obterRotuloStatusLeitura(r.statusLeitura||r.status);
     const lidoRotulo=ehArtigoLidoSimNao(r);
     const corHex=r.corCapa||'#314F79';
@@ -126,6 +129,7 @@ export function registrosReferencias(referencias=[],opcoes={}){
       },
       meta:{
         folderIds,
+        folderPaths,
         corCapaHex:corHex,
         statusLeitura:r.statusLeitura||'nao_lido',
         variaveis,
