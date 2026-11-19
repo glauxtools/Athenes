@@ -395,8 +395,9 @@ function timelineSvg(graph,style){
     const midX=(coords[0][0]+coords[coords.length-1][0])/2;
     const pillTxt=`${per.label}: ${fmt(mean)}`;
     const pillW=Math.max(72,pillTxt.length*6.2+14);
-    parts.push(`<rect x="${(midX-pillW/2).toFixed(1)}" y="${yBot-22}" width="${pillW.toFixed(1)}" height="18" rx="4" fill="${col}"/>`);
-    parts.push(`<text x="${midX.toFixed(1)}" y="${yBot-9}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">${esc(pillTxt)}</text>`);
+    const pillX=clamp(midX,xLeft+pillW/2,xRight-pillW/2);
+    parts.push(`<rect x="${(pillX-pillW/2).toFixed(1)}" y="${yBot-22}" width="${pillW.toFixed(1)}" height="18" rx="4" fill="${col}"/>`);
+    parts.push(`<text x="${pillX.toFixed(1)}" y="${yBot-9}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">${esc(pillTxt)}</text>`);
 
     // Pontos interativos dos anos com registros
     for(const p of pts){
@@ -444,12 +445,24 @@ function timelineSvg(graph,style){
     parts.push(`<path d="${areaD}" fill="${col}" fill-opacity="0.28" pointer-events="none"/>`);
     parts.push(`<path d="${lineD}" fill="none" stroke="${col}" stroke-width="1.6" opacity="0.85"/>`);
 
-    // Rótulo do pico sem sobreposição
-    let ly=kBot-(c.peakD/maxD)*(kH-24)-8;
-    while(placedKdeLabels.some(prev=>Math.abs(prev.x-c.peakX)<75&&Math.abs(prev.y-ly)<16))ly-=15;
-    ly=Math.max(kTop+12,ly);
-    placedKdeLabels.push({x:c.peakX,y:ly});
-    parts.push(`<text x="${c.peakX.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="${col}">${esc(c.per.label)}</text>`);
+    // Rótulo do pico sem sobreposição (busca em 2D dentro da área útil do KDE)
+    const lblW=Math.max(66,c.per.label.length*7.4),lblH=15;
+    const minLx=xLeft+lblW/2+2,maxLx=xRight-lblW/2-2;
+    const baseY=kBot-(c.peakD/maxD)*(kH-24)-8;
+    let bestLx=clamp(c.peakX,minLx,maxLx),bestLy=clamp(baseY,kTop+10,kBot-6),placed=false;
+    for(const dy of [0,-16,18,34,-32,50]){
+      for(const dx of [0,84,-84,168,-168,252]){
+        const candX=clamp(c.peakX+dx,minLx,maxLx);
+        const candY=clamp(baseY+dy,kTop+10,kBot-6);
+        const x1=candX-lblW/2-3,x2=candX+lblW/2+3,y1=candY-lblH,y2=candY+2;
+        if(!placedKdeLabels.some(b=>x1<b.x2&&x2>b.x1&&y1<b.y2&&y2>b.y1)){
+          bestLx=candX;bestLy=candY;placed=true;break;
+        }
+      }
+      if(placed)break;
+    }
+    placedKdeLabels.push({x1:bestLx-lblW/2-3,x2:bestLx+lblW/2+3,y1:bestLy-lblH,y2:bestLy+2});
+    parts.push(`<text class="rel-label" x="${bestLx.toFixed(1)}" y="${bestLy.toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="${col}">${esc(c.per.label)}</text>`);
 
     // Rug ticks na base
     for(const p of c.per.pts){
