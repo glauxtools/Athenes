@@ -358,11 +358,6 @@ export function renderRelations(graph,rawStyle={}){
 
   if(!graph.nodes.length)parts=[text(30,80,'Nenhuma relação com os filtros selecionados.')];
   const networkHeight=height;
-  if(!flow){
-    const labels=[...new Set(graph.nodes.map(n=>n.group).filter(Boolean))].sort();
-    labels.slice(0,12).forEach((label,i)=>parts.push(`<circle cx="${25+i%4*225}" cy="${height+15+Math.floor(i/4)*20}" r="4" fill="${i===0?style.primary:palette[i%palette.length]}"/>`+text(35+i%4*225,height+19+Math.floor(i/4)*20,label)));
-    if(labels.length)height+=20*Math.ceil(Math.min(12,labels.length)/4)+25;
-  }
 
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" class="relation-map-svg" data-relation-layout="${esc(style.layout)}" data-relation-height="${networkHeight}" data-relation-width="${width}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Mapa de relações" style="color:#243a59;font-family:${esc(style.font)}">${parts.join('')}</svg>`;
   if(cache.size>=8)cache.delete(cache.keys().next().value);
