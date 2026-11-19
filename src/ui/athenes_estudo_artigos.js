@@ -38,7 +38,7 @@ import {PainelConexoes,construirListaPastasRelacoes} from './athenes_painel_cone
 import {registrosReferencias,CAMPOS_RELACOES,camposRelacoesComVariaveis,inserirFiguraRelacoes} from '../core/athenes_relacoes.js';
 import * as documentosRelacoes from '../core/athenes_repositorio.js';
 import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, escolherEspelhoZotero, artigoEstaNaPasta, artigoEstaNasPastas, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
-import { obterCatalogoVariaveis, registrarVariavelNoCatalogo, definirVariavelNoArtigo } from '../core/athenes_variaveis_referencia.js';
+import { obterCatalogoVariaveis, registrarVariavelNoCatalogo, definirVariavelNoArtigo, removerVariavelDoArtigo } from '../core/athenes_variaveis_referencia.js';
 import { aplicarFilhosZoteroAoArtigo } from '../core/athenes_zotero_anexos_notas.js';
 import { tokenPodeLerTodoODrive, listarConteudoDoDrive, copiarPdfDoDriveParaAthenes, ESCOPOS_COM_LEITURA } from '../core/athenes_drive_navegar.js';
 import { mostrarAviso } from './athenes_aviso.js';
@@ -1087,11 +1087,47 @@ export class EstudoArtigosView {
             this.registrarSnapshotCatalogo();
           }
         },
-        onAtualizarVariaveis: (art) => {
+        onAtualizarVariaveis: (art, meta = {}) => {
+          const escopo = meta?.escopo || 'artigo';
+          if (escopo !== 'artigo' && meta?.nome) {
+            const pastasArvore = obterPastasDriveLocais();
+            let alvos = [];
+            if (escopo === 'todas') {
+              alvos = this.artigos;
+            } else if (escopo === 'pasta_atual') {
+              const pAlvo = (this.pastaFiltroId && this.pastaFiltroId !== 'todas') ? this.pastaFiltroId : (art?.pastaId || '');
+              alvos = pAlvo && pAlvo !== 'todas'
+                ? this.artigos.filter(a => artigoEstaNasPastas(a, [pAlvo], { pastas: pastasArvore, incluirSubpastas: true }))
+                : this.artigos;
+            } else if (escopo === 'pastas') {
+              const ids = Array.isArray(meta.pastaIds) ? meta.pastaIds : [];
+              if (!ids.length) {
+                mostrarAviso('Selecione ao menos uma pasta para aplicar a variável.', { tipo: 'aviso' });
+                return;
+              }
+              alvos = this.artigos.filter(a => artigoEstaNasPastas(a, ids, { pastas: pastasArvore, incluirSubpastas: true }));
+            }
+            for (const alvo of alvos) {
+              if (meta.remover) removerVariavelDoArtigo(alvo, meta.nome);
+              else if (meta.valor) definirVariavelNoArtigo(alvo, meta.nome, meta.valor);
+            }
+            salvarArtigosEstudo(this.artigos, art);
+            this.registrarSnapshotCatalogo();
+            if (meta.remover) {
+              mostrarAviso(`Variável "${meta.nome}" removida de ${alvos.length} artigo(s).`, { tipo: 'ok' });
+            } else if (meta.valor) {
+              mostrarAviso(`Variável "${meta.nome}" aplicada a ${alvos.length} artigo(s).`, { tipo: 'ok' });
+            } else {
+              mostrarAviso(`Variável "${meta.nome}" adicionada ao catálogo.`, { tipo: 'ok' });
+            }
+            return;
+          }
           salvarArtigosEstudo(this.artigos, art);
           this.registrarSnapshotCatalogo();
         },
-        obterCatalogoVariaveisFn: () => obterCatalogoVariaveis(this.artigos)
+        obterCatalogoVariaveisFn: () => obterCatalogoVariaveis(this.artigos),
+        obterPastasFn: () => construirListaPastasRelacoes(this.artigos),
+        pastaAtualId: this.pastaFiltroId || 'todas'
       }
     });
 

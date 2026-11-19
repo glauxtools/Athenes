@@ -762,6 +762,15 @@
 .ath-folha-var-add-tit { font-size: 11px; font-weight: 800; color: #314F79; }
 .ath-folha-var-presets { display: flex; flex-wrap: wrap; gap: 4px; }
 .ath-folha-var-preset-btn { border: 1px solid #C8D7E6; background: #EEF4FA; color: #314F79; font-size: 10px; font-weight: 750; padding: 2px 7px; border-radius: 999px; cursor: pointer; }
+.ath-folha-var-escopo-box { display: flex; flex-direction: column; gap: 5px; }
+.ath-folha-var-escopo-lbl { font-size: 10px; font-weight: 800; color: #475569; }
+.ath-folha-var-pastas { max-height: 96px; overflow-y: auto; border: 1px solid #E2E8F0; border-radius: 6px; padding: 4px 2px; background: #F8FAFC; display: flex; flex-direction: column; gap: 2px; }
+.ath-folha-var-pasta-item { display: flex; align-items: center; gap: 5px; padding: 2px 6px; font-size: 10.5px; color: #1E293B; border-radius: 4px; cursor: pointer; }
+.ath-folha-var-pasta-item:hover { background: #EEF4FA; }
+.ath-folha-var-pasta-item input { margin: 0; accent-color: #314F79; flex: none; }
+.ath-folha-var-pasta-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ath-folha-var-pasta-qtd { color: #64748B; font-size: 10px; }
+.ath-folha-var-pastas-vazio { font-size: 10.5px; color: #64748B; padding: 4px 6px; }
 .ath-folha-var-btn-add { width: 100%; font-size: 11px; padding: 6px 10px; }
 
 .ath-livro-folha-interna::-webkit-scrollbar {

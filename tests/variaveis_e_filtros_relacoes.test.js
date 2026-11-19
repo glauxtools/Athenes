@@ -306,4 +306,51 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.equal(pagVars.style.display, 'none');
     salvarCatalogoVariaveis([]);
   });
+
+  it('7. Livrinho 3D: aplicar variável para pasta atual ou pastas escolhidas', () => {
+    salvarCatalogoVariaveis([]);
+    const ref = { id: 'livro_p1', titulo: 'Artigo 1', pastaId: 'pasta_b' };
+    const chamadas = [];
+    const folha = renderizarFolhaInterna(ref, {
+      pastaAtualId: 'pasta_a',
+      obterPastasFn: () => [
+        { id: 'pasta_a', nome: 'MESTRADO', nivel: 0, count: 10 },
+        { id: 'pasta_b', nome: 'SCOPUS', nivel: 1, count: 4 }
+      ],
+      onAtualizarVariaveis: (_art, meta) => { chamadas.push(meta); }
+    });
+
+    folha.querySelector('.ath-folha-pag-btn-prox').dispatchEvent({ type: 'click', stopPropagation() {} });
+    const selEscopo = folha.querySelector('.ath-folha-var-escopo');
+    assert.ok(selEscopo, 'Seletor de escopo deve existir');
+
+    // Escolher pasta atual
+    selEscopo.value = 'pasta_atual';
+    selEscopo.dispatchEvent({ type: 'change' });
+    const inputs = folha.querySelectorAll('.ath-folha-var-input');
+    inputs[0].value = 'Triagem';
+    inputs[1].value = 'Pendente';
+    folha.querySelector('.ath-folha-var-btn-add').dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(chamadas.length, 1);
+    assert.equal(chamadas[0].escopo, 'pasta_atual');
+    assert.deepEqual(chamadas[0].pastaIds, ['pasta_a']);
+    assert.equal(chamadas[0].nome, 'Triagem');
+    assert.equal(chamadas[0].valor, 'Pendente');
+
+    // Escolher pastas específicas
+    selEscopo.value = 'pastas';
+    selEscopo.dispatchEvent({ type: 'change' });
+    const checkboxes = folha.querySelectorAll('.ath-folha-var-pasta-item input');
+    assert.equal(checkboxes.length, 2);
+    assert.equal(checkboxes[0].checked, true); // pastaAtualId pré-marcada
+    checkboxes[1].checked = true;
+    inputs[0].value = 'Relevância';
+    inputs[1].value = 'Alta';
+    folha.querySelector('.ath-folha-var-btn-add').dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(chamadas.length, 2);
+    assert.equal(chamadas[1].escopo, 'pastas');
+    assert.deepEqual(chamadas[1].pastaIds, ['pasta_a', 'pasta_b']);
+    assert.equal(chamadas[1].valor, 'Alta');
+    salvarCatalogoVariaveis([]);
+  });
 });

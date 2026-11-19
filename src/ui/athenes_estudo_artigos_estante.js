@@ -967,7 +967,9 @@ export function renderizarFolhaInterna(ref = {}, {
   onEditarMetadados = null,
   onAlterarCorCapa = null,
   onAtualizarVariaveis = null,
-  obterCatalogoVariaveisFn = null
+  obterCatalogoVariaveisFn = null,
+  obterPastasFn = null,
+  pastaAtualId = 'todas'
 } = {}) {
   const fnEditarMeta = onEditarMetadados || onEditarMeta;
   const fnMudarCor = onAlterarCorCapa || onMudarCor;
@@ -1307,13 +1309,87 @@ export function renderizarFolhaInterna(ref = {}, {
   const inOpsVar = criarElemento('input', 'ath-folha-var-input');
   inOpsVar.setAttribute('type', 'text');
   inOpsVar.setAttribute('placeholder', 'Opções (ex.: Incluído, Excluído, Talvez)');
+
+  const escopoBox = criarElemento('div', 'ath-folha-var-escopo-box');
+  const escopoLbl = criarElemento('label', 'ath-folha-var-escopo-lbl');
+  escopoLbl.textContent = 'Aplicar em';
+  const selEscopo = criarElemento('select', 'ath-folha-var-input ath-folha-var-escopo');
+  selEscopo.setAttribute('aria-label', 'Aplicar variável em');
+  const opcoesEscopo = [
+    ['artigo', 'Somente este artigo'],
+    ['pasta_atual', 'Todos os artigos desta pasta'],
+    ['pastas', 'Escolher pastas...'],
+    ['todas', 'Todos os artigos da biblioteca']
+  ];
+  for (const [valOp, txtOp] of opcoesEscopo) {
+    const opt = criarElemento('option');
+    opt.value = valOp;
+    opt.textContent = txtOp;
+    selEscopo.appendChild(opt);
+  }
+  const pastasBox = criarElemento('div', 'ath-folha-var-pastas');
+  pastasBox.style.display = 'none';
+  const pastasChecks = [];
+
+  const renderizarPastasEscopo = () => {
+    limparFilhosElemento(pastasBox);
+    pastasChecks.length = 0;
+    const pastas = typeof obterPastasFn === 'function' ? (obterPastasFn() || []) : [];
+    if (!pastas.length) {
+      const semPastas = criarElemento('span', 'ath-folha-var-pastas-vazio');
+      semPastas.textContent = 'Nenhuma pasta disponível.';
+      pastasBox.appendChild(semPastas);
+      return;
+    }
+    for (const p of pastas) {
+      const item = criarElemento('label', 'ath-folha-var-pasta-item');
+      item.style.paddingLeft = `${6 + (p.nivel || 0) * 10}px`;
+      const cb = criarElemento('input');
+      cb.setAttribute('type', 'checkbox');
+      cb.value = String(p.id || '');
+      if (pastaAtualId && pastaAtualId !== 'todas' && String(p.id) === String(pastaAtualId)) {
+        cb.checked = true;
+      }
+      const txt = criarElemento('span', 'ath-folha-var-pasta-nome');
+      txt.textContent = p.nome || 'Pasta';
+      const qtd = criarElemento('small', 'ath-folha-var-pasta-qtd');
+      qtd.textContent = String(p.count ?? '');
+      item.appendChild(cb);
+      item.appendChild(txt);
+      if (p.count !== undefined) item.appendChild(qtd);
+      pastasBox.appendChild(item);
+      pastasChecks.push(cb);
+    }
+  };
+
+  selEscopo.addEventListener('change', () => {
+    if (selEscopo.value === 'pastas') {
+      renderizarPastasEscopo();
+      pastasBox.style.display = '';
+    } else {
+      pastasBox.style.display = 'none';
+    }
+  });
+  escopoBox.appendChild(escopoLbl);
+  escopoBox.appendChild(selEscopo);
+  escopoBox.appendChild(pastasBox);
+
   const btnCriarVar = criarElemento('button', 'ath-btn ath-btn-sm ath-btn-primary ath-folha-var-btn-add');
   btnCriarVar.setAttribute('type', 'button');
   btnCriarVar.textContent = '+ Salvar variável';
 
-  const notificarVar = () => {
+  const lerEscopoSelecionado = () => {
+    const escopo = selEscopo.value || 'artigo';
+    const pastaIds = escopo === 'pastas'
+      ? pastasChecks.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean)
+      : (escopo === 'pasta_atual' && pastaAtualId && pastaAtualId !== 'todas' ? [String(pastaAtualId)] : []);
+    return { escopo, pastaIds };
+  };
+
+  const notificarVar = (meta = null) => {
+    if (typeof onAtualizarVariaveis === 'function') onAtualizarVariaveis(ref, meta || { escopo: 'artigo' });
+    if (meta?.escopo && meta.escopo !== 'artigo') renderizarListaVariaveis();
     atualizarPaginacaoUI();
-    if (typeof onAtualizarVariaveis === 'function') onAtualizarVariaveis(ref);
   };
 
   for (const preset of PRESETS_VARIAVEIS_REFERENCIA.slice(0, 3)) {
@@ -1332,6 +1408,7 @@ export function renderizarFolhaInterna(ref = {}, {
   varAddBox.appendChild(inNomeVar);
   varAddBox.appendChild(inValVar);
   varAddBox.appendChild(inOpsVar);
+  varAddBox.appendChild(escopoBox);
   varAddBox.appendChild(btnCriarVar);
   pagVars.appendChild(varAddBox);
 
@@ -1410,10 +1487,11 @@ export function renderizarFolhaInterna(ref = {}, {
           chip.textContent = op;
           chip.addEventListener('click', (ev) => {
             if (ev?.stopPropagation) ev.stopPropagation();
+            const { escopo, pastaIds } = lerEscopoSelecionado();
             if (ativo) removerVariavelDoArtigo(ref, def.nome);
             else definirVariavelNoArtigo(ref, def.nome, op);
             renderizarListaVariaveis();
-            notificarVar();
+            notificarVar({ escopo, pastaIds, nome: def.nome, valor: ativo ? '' : op, remover: Boolean(ativo) });
           });
           chipsBox.appendChild(chip);
         }
@@ -1449,13 +1527,14 @@ export function renderizarFolhaInterna(ref = {}, {
     if (val && !opcoes.some(o => o.toLocaleLowerCase('pt-BR') === val.toLocaleLowerCase('pt-BR')) && opcoes.length) {
       opcoes.push(val);
     }
+    const { escopo, pastaIds } = lerEscopoSelecionado();
     registrarVariavelNoCatalogo({ nome, opcoes }, [ref]);
-    if (val) definirVariavelNoArtigo(ref, nome, val);
+    if (val && escopo === 'artigo') definirVariavelNoArtigo(ref, nome, val);
     inNomeVar.value = '';
     inValVar.value = '';
     inOpsVar.value = '';
     renderizarListaVariaveis();
-    notificarVar();
+    notificarVar({ escopo, pastaIds, nome, valor: val, opcoes });
   });
 
   palcoPaginas.appendChild(pagFicha);
