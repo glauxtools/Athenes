@@ -406,4 +406,25 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.ok(g.nodes.some(n => n.stage === 0 && n.label === 'Autor 1'), 'Autor do registro grande deve ser preservado');
     assert.ok(g.links.length > 0, 'Ligações do registro grande devem ser geradas');
   });
+
+  it('10. Expansão conectada preserva autores ligados a temas mesmo acima de LIMITS.nodes', () => {
+    // Cria 700 registros com autores A001..A700 e um registro com tema frequente conectado a "Zebra, Autor"
+    const rows = [];
+    for (let i = 0; i < 700; i++) {
+      rows.push({
+        id: `r_${i}`,
+        fields: { author: `Autor A${String(i).padStart(3, '0')}`, theme: `Tema T${String(i).padStart(3, '0')}`, year: '2025' }
+      });
+    }
+    rows.push(
+      { id: 'r_z1', fields: { author: 'Zebra Autor', theme: 'Active force control', year: '2018' } },
+      { id: 'r_z2', fields: { author: 'Xiaojun Wang', theme: 'Active force control', year: '2018' } }
+    );
+    const g = analyzeRelations(rows, { mode: 'fields', stages: ['author', 'theme', 'year'] });
+    const hasTema = g.nodes.some(n => n.stage === 1 && n.label === 'Active force control');
+    const hasZebra = g.nodes.some(n => n.stage === 0 && n.label === 'Zebra Autor');
+    const hasXiaojun = g.nodes.some(n => n.stage === 0 && n.label === 'Xiaojun Wang');
+    assert.ok(hasTema, 'Tema frequente deve entrar no gráfico');
+    assert.ok(hasZebra && hasXiaojun, 'Autores ligados ao tema devem ser puxados juntos pela expansão conectada');
+  });
 });

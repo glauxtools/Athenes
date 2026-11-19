@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Portable, deterministic relation analysis. Records remain in their owning application.
-export const LIMITS={records:2000,nodes:450,links:2500,terms:45,paths:2048,filters:30};
+export const LIMITS={records:2000,nodes:1200,links:6000,terms:45,paths:2048,filters:30};
 export const clean=v=>String(v??'').normalize('NFC').trim();
 const key=v=>clean(v).toLocaleLowerCase('pt-BR');
 const ignored=new Set('a o as os um uma uns umas de da do das dos em no na nos nas por para com sem e ou que se ao aos às é foi são ser como mais menos the and of in to for on with an is are by from'.split(' '));
@@ -172,21 +172,38 @@ export function analyzeRelations(input=[],configuration={}){
   if(eligible.length<=LIMITS.nodes||config.mode!=='fields'){
     selected=eligible.slice(0,LIMITS.nodes);
   }else{
-    const byStage=new Map();
-    for(const n of eligible){
-      const s=Number(n.stage)||0;
-      if(!byStage.has(s))byStage.set(s,[]);
-      byStage.get(s).push(n);
+    // Seleção conectada por frequência: cada nó incluído puxa seus vizinhos da etapa anterior (ex.: Tema -> Autores)
+    const eligibleById=new Map(eligible.map(n=>[n.id,n]));
+    const upstream=new Map();
+    for(const l of links.values()){
+      if(l.value<config.minLink||!eligibleById.has(l.source)||!eligibleById.has(l.target))continue;
+      const src=eligibleById.get(l.source),tgt=eligibleById.get(l.target);
+      if(tgt.stage>src.stage){
+        if(!upstream.has(tgt.id))upstream.set(tgt.id,[]);
+        upstream.get(tgt.id).push({id:src.id,w:l.value});
+      }
     }
-    const quota=Math.max(1,Math.floor(LIMITS.nodes/Math.max(1,byStage.size)));
+    for(const list of upstream.values()){
+      list.sort((a,b)=>b.w-a.w||(eligibleById.get(b.id).value-eligibleById.get(a.id).value));
+    }
     const picked=new Set();
     selected=[];
-    for(const list of byStage.values()){
-      for(const n of list.slice(0,quota)){picked.add(n.id);selected.push(n);}
-    }
-    for(const n of eligible){
+    const tryAdd=node=>{
+      if(!node||picked.has(node.id)||selected.length>=LIMITS.nodes)return false;
+      picked.add(node.id);
+      selected.push(node);
+      return true;
+    };
+    for(const seed of eligible){
       if(selected.length>=LIMITS.nodes)break;
-      if(!picked.has(n.id)){picked.add(n.id);selected.push(n);}
+      tryAdd(seed);
+      // Para nós de colunas intermediárias/finais (exceto hubs muito grandes como Ano), garante autores/etapas anteriores conectados
+      if(seed.stage>0&&seed.value<=25){
+        for(const nb of (upstream.get(seed.id)||[])){
+          if(selected.length>=LIMITS.nodes)break;
+          tryAdd(eligibleById.get(nb.id));
+        }
+      }
     }
   }
   const keep=new Set(selected.map(n=>n.id));
