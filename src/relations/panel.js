@@ -23,6 +23,10 @@ const clampZoom=z=>Math.min(ZOOM_MAX,Math.max(ZOOM_MIN,Number(z)||1));
 
 const icon=path=>`<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${path}</svg>`;
 const plus=icon('<path d="M10 4v12M4 10h12"/>'),close=icon('<path d="m5 5 10 10M15 5 5 15"/>');
+const filterAddIcon=icon('<path d="M3 4.5h12l-4.5 5.2V15l-3 1.5V9.7L3 4.5z"/><path d="M15.5 11.5v5M13 14h5"/>');
+const colorIcon=icon('<path d="M10 3a7 7 0 1 0 0 14c1.1 0 1.8-.8 1.5-1.8-.2-.7.3-1.4 1-1.4h1.3A3.2 3.2 0 0 0 17 10.6C17 6.4 13.9 3 10 3z"/><circle cx="7" cy="9" r=".9" fill="currentColor"/><circle cx="10" cy="7" r=".9" fill="currentColor"/><circle cx="13" cy="9" r=".9" fill="currentColor"/>');
+const readIcon=icon('<circle cx="10" cy="10" r="7"/><path d="m7 10.2 2 2 4.2-4.4"/>');
+const varIcon=icon('<path d="M10.5 3H4.5A1.5 1.5 0 0 0 3 4.5v6l6.8 6.8a1.5 1.5 0 0 0 2.1 0l4.9-4.9a1.5 1.5 0 0 0 0-2.1L10.5 3z"/><circle cx="6.8" cy="6.8" r="1" fill="currentColor"/>');
 const layoutIcon=id=>icon(['sankey','temporal'].includes(id)?'<path d="M3 3v14M17 3v14M4 5c6 0 6 10 12 10M4 15c6 0 6-10 12-10"/>':id==='arc'?'<path d="M3 15c0-13 14-13 14 0M7 15c0-7 6-7 6 0"/>':id==='clusters'?'<circle cx="5" cy="5" r="3"/><circle cx="15" cy="15" r="3"/><path d="m7 7 6 6"/>':'<circle cx="10" cy="10" r="2"/><circle cx="3" cy="4" r="1.5"/><circle cx="17" cy="4" r="1.5"/><circle cx="15" cy="17" r="1.5"/><path d="m4 5 5 4m2 0 5-4m-5 7 3 4"/>');
 const opts=(values,selected)=>values.map(([id,label])=>`<option value="${esc(id)}" ${String(id)===String(selected)?'selected':''}>${esc(label)}</option>`).join('');
 
@@ -131,11 +135,11 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
             <select name="filterCombinator">${opts([['and','Todas as regras (E)'],['or','Qualquer regra (OU)']],config.filterCombinator)}</select>
           </label>
         </div>
-        <div class="rel-mini-actions">
-          <button type="button" data-rel-action="filter-add">${plus} Regra</button>
-          <button type="button" data-rel-action="filter-quick-color">+ Cor</button>
-          <button type="button" data-rel-action="filter-quick-read">+ Lido</button>
-          <button type="button" data-rel-action="filter-quick-var">+ Variável</button>
+        <div class="rel-mini-actions rel-filter-actions">
+          <button type="button" data-rel-action="filter-add" title="Adicionar regra de filtro" aria-label="Adicionar regra de filtro">${filterAddIcon}</button>
+          <button type="button" data-rel-action="filter-quick-color" title="Filtrar por cor" aria-label="Filtrar por cor">${colorIcon}</button>
+          <button type="button" data-rel-action="filter-quick-read" title="Filtrar por status de leitura (Lido / Não lido)" aria-label="Filtrar por status de leitura">${readIcon}</button>
+          <button type="button" data-rel-action="filter-quick-var" title="Filtrar por variável personalizada" aria-label="Filtrar por variável personalizada">${varIcon}</button>
         </div>
         <div class="rel-filter-chain" data-rel-filter-chain></div>
         <div class="rel-compact-2col">

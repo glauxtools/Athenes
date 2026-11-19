@@ -35,6 +35,7 @@
 
 /* Pastas / diretórios */
 .rel-folder-mode{display:flex;gap:12px;flex-wrap:wrap}
+.rel-controls [data-rel-folders-picker]{display:grid;gap:8px;margin-top:2px}
 .rel-folder-list{max-height:175px;overflow-y:auto;border:1px solid #e4eaf3;border-radius:8px;padding:4px 0;background:#fcfdff;display:grid;gap:2px}
 .rel-folder-item{display:flex!important;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px!important;font-weight:500!important;border-radius:6px}
 .rel-folder-item:hover{background:#f0f5fc}
@@ -45,6 +46,8 @@
 /* Variáveis + Cadeia de filtros */
 .rel-var-creator{display:grid;gap:8px;padding:10px;border:1px dashed #c8d7e6;border-radius:9px;background:#f8fafd}
 .rel-btn-primary{background:#315887!important;color:#fff!important;border-color:#315887!important}
+.rel-filter-actions{gap:8px}
+.rel-filter-actions button{width:34px;height:34px;padding:0;flex:none}
 .rel-filter-chain{display:grid;gap:6px}
 .rel-filter-joiner{display:flex;justify-content:center}
 .rel-filter-joiner span{background:#eaf1fa;color:#315887;border:1px solid #cddcf0;border-radius:999px;font-size:10px;font-weight:800;padding:1px 9px}
