@@ -111,6 +111,23 @@
 
 /* Coluna 3: Barra direita de informações, cadeia e registros */
 .rel-sidebar-info{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;overflow-y:auto;padding:12px;background:#f7f9fc;border:1px solid #e5ebf4;border-radius:14px;scrollbar-width:thin}
+.rel-metrics-card{border:1px solid #dce5f1;border-radius:11px;padding:11px;background:#fff;display:grid;gap:8px;flex:none}
+.rel-metrics-card:empty{display:none}
+.rel-metrics-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#294869}
+.rel-metrics-head small{color:#64758c;font-size:11px}
+.rel-metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rel-metric-tile{border:1px solid #e4ebf4;border-radius:9px;padding:7px 8px;background:#f8fafd;display:grid;gap:2px}
+.rel-metric-tile span{font-size:10.5px;font-weight:700;color:#526b8a}
+.rel-metric-tile strong{font-size:15px;font-weight:800;color:#1e3a5f;line-height:1.2}
+.rel-metric-pill{font-style:normal;font-size:10px;font-weight:750;padding:1px 6px;border-radius:999px;background:#edf2f7;color:#475569;justify-self:start}
+.rel-metric-pill.is-good{background:#e6f6ef;color:#146c43}
+.rel-metric-pill.is-mid{background:#fef5e7;color:#9a5b13}
+.rel-bridges-block{display:grid;gap:5px}
+.rel-bridges-title{font-size:11px;font-weight:750;color:#475569}
+.rel-bridges-list{display:flex;flex-wrap:wrap;gap:4px}
+.rel-bridge-chip{font-size:10.5px!important;padding:3px 7px!important;border-radius:999px!important;background:#f8fafd!important;max-width:100%}
+.rel-bridge-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.rel-bridge-chip.is-bridge{border-color:#93c5fd!important;background:#eff6ff!important;color:#1e40af!important}
 .rel-inspect{border:1px solid #dce5f1;border-radius:11px;padding:11px;font-size:12px;background:#fff;display:grid;gap:7px;flex:none}
 .rel-inspect-empty p{margin:4px 0 0;color:#64758c;font-size:11.5px}
 .rel-inspect-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}

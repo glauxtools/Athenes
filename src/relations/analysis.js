@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Portable, deterministic relation analysis. Records remain in their owning application.
-export const LIMITS={records:2000,nodes:180,links:900,terms:45,paths:256,filters:30};
+export const LIMITS={records:2000,nodes:450,links:2500,terms:45,paths:2048,filters:30};
 export const clean=v=>String(v??'').normalize('NFC').trim();
 const key=v=>clean(v).toLocaleLowerCase('pt-BR');
 const ignored=new Set('a o as os um uma uns umas de da do das dos em no na nos nas por para com sem e ou que se ao aos às é foi são ser como mais menos the and of in to for on with an is are by from'.split(' '));
@@ -150,14 +150,46 @@ export function analyzeRelations(input=[],configuration={}){
       for(const context of contexts.slice(0,300)){const terms=extractTerms(context,config);for(const t of terms)addNode('term:'+t,t,0,id);for(let i=0;i<terms.length;i++)for(let j=i+1;j<terms.length;j++){const pair=[terms[i],terms[j]].sort(),k=JSON.stringify(pair);if(!perRecord.has(k)){perRecord.add(k);addLink('term:'+pair[0],'term:'+pair[1],1,id);}}}
     }else{
       if(config.stages.length<2)continue;
-      const stages=config.stages.map(f=>{const list=values(row,f);if(!list.length){missing++;return row.omitEmptyFields?.includes(f)?[null]:['Não informado'];}return list;});const combinations=stages.reduce((n,a)=>n*a.length,1);
-      if(combinations>LIMITS.paths){warnings.push(`Registro ${id}: mais de ${LIMITS.paths} combinações; refine os campos.`);continue;}
+      const stages=config.stages.map(f=>{const list=values(row,f);if(!list.length){missing++;return row.omitEmptyFields?.includes(f)?[null]:['Não informado'];}return list;});
+      let combinations=stages.reduce((n,a)=>n*a.length,1);
+      if(combinations>LIMITS.paths){
+        warnings.push(`Registro ${id}: mais de ${LIMITS.paths} combinações; parte dos itens foi limitada para preservar o registro.`);
+        while(combinations>LIMITS.paths){
+          let maxIdx=-1,maxLen=1;
+          for(let s=0;s<stages.length;s++)if(stages[s].length>maxLen){maxLen=stages[s].length;maxIdx=s;}
+          if(maxIdx<0)break;
+          stages[maxIdx]=stages[maxIdx].slice(0,Math.max(1,Math.floor(stages[maxIdx].length/2)));
+          combinations=stages.reduce((n,a)=>n*a.length,1);
+        }
+      }
       let weight=config.measure?Number(values(row,config.measure)[0]):1;if(!Number.isFinite(weight)||weight<=0||weight>1e12){omitted++;continue;}recordWeight+=weight;
       const unit=config.counting==='fractional'?weight/combinations:weight;let paths=[[]];for(const stage of stages)paths=paths.flatMap(p=>stage.map(v=>[...p,v]));
       for(const p of paths){const chain=p.map((v,s)=>v===null?null:addNode(JSON.stringify([s,key(v)]),v,s,id));for(let i=0;i<chain.length-1;i++)if(chain[i]&&chain[i+1])addLink(chain[i].id,chain[i+1].id,unit,id);}
     }
   }
-  const selected=[...nodes.values()].filter(n=>n.value>=config.minimum).sort((a,b)=>b.value-a.value||a.id.localeCompare(b.id)).slice(0,LIMITS.nodes),keep=new Set(selected.map(n=>n.id));
+  const eligible=[...nodes.values()].filter(n=>n.value>=config.minimum).sort((a,b)=>b.value-a.value||a.id.localeCompare(b.id));
+  let selected;
+  if(eligible.length<=LIMITS.nodes||config.mode!=='fields'){
+    selected=eligible.slice(0,LIMITS.nodes);
+  }else{
+    const byStage=new Map();
+    for(const n of eligible){
+      const s=Number(n.stage)||0;
+      if(!byStage.has(s))byStage.set(s,[]);
+      byStage.get(s).push(n);
+    }
+    const quota=Math.max(1,Math.floor(LIMITS.nodes/Math.max(1,byStage.size)));
+    const picked=new Set();
+    selected=[];
+    for(const list of byStage.values()){
+      for(const n of list.slice(0,quota)){picked.add(n.id);selected.push(n);}
+    }
+    for(const n of eligible){
+      if(selected.length>=LIMITS.nodes)break;
+      if(!picked.has(n.id)){picked.add(n.id);selected.push(n);}
+    }
+  }
+  const keep=new Set(selected.map(n=>n.id));
   const visible=[...links.values()].filter(l=>keep.has(l.source)&&keep.has(l.target)&&l.value>=config.minLink).sort((a,b)=>b.value-a.value||a.source.localeCompare(b.source)).slice(0,LIMITS.links);
   if(nodes.size>selected.length)warnings.push(`${nodes.size-selected.length} itens omitidos por frequência mínima ou limite de ${LIMITS.nodes} nós.`);
   if(links.size>visible.length)warnings.push(`${links.size-visible.length} conexões omitidas por filtros ou limites.`);
@@ -287,4 +319,193 @@ export function computeConnectionChain(graph,selection){
   const connectedNodes=graph.nodes.filter(n=>nodeIds.has(n.id)).sort((a,b)=>(a.stage-b.stage)||(b.value-a.value));
   const connectedLinks=graph.links.filter(l=>edgeKeys.has(edgeKey(l)));
   return {nodeIds,directNodeIds,edgeKeys,directEdgeKeys,upstreamStages,downstreamStages,connectedNodes,connectedLinks};
+}
+
+/**
+ * Calcula métricas cienciométricas e topológicas da rede:
+ * 1. Centralidade de Intermediação (Betweenness Centrality, algoritmo de Brandes normalizado em [0, 1])
+ * 2. Modularidade Q (Newman-Girvan ponderada)
+ * 3. Silhueta Média Ponderada S (coerência interna dos agrupamentos)
+ */
+export function computeNetworkMetrics(graph, groupsMap=null){
+  const nodes=Array.isArray(graph?.nodes)?graph.nodes:[];
+  const links=Array.isArray(graph?.links)?graph.links:[];
+  const n=nodes.length;
+  const betweenness=new Map(nodes.map(node=>[node.id,0]));
+  if(!n){
+    return {betweenness,modularityQ:0,silhouetteS:0,bridgeNodes:[],topNodes:[],clusterCount:0,maxBetweenness:0};
+  }
+
+  const idxById=new Map(nodes.map((node,i)=>[node.id,i]));
+  const adj=Array.from({length:n},()=>new Map());
+  const degree=new Float64Array(n);
+  let twoM=0;
+
+  for(const l of links){
+    const u=idxById.get(l.source),v=idxById.get(l.target);
+    if(u===undefined||v===undefined||u===v)continue;
+    const w=Math.max(1e-9,Number(l.value)||1);
+    adj[u].set(v,(adj[u].get(v)||0)+w);
+    adj[v].set(u,(adj[v].get(u)||0)+w);
+    degree[u]+=w;
+    degree[v]+=w;
+    twoM+=2*w;
+  }
+
+  // Comunidades: usa mapa fornecido (ex.: render.js communities) ou detecção gulosa por modularidade
+  const clusterOf=new Int32Array(n);
+  if(groupsMap&&typeof groupsMap.get==='function'){
+    for(let i=0;i<n;i++)clusterOf[i]=Number(groupsMap.get(nodes[i].id)??0);
+  }else{
+    for(let i=0;i<n;i++)clusterOf[i]=i;
+    const mDen=twoM||1;
+    for(let pass=0;pass<15;pass++){
+      let changed=false;
+      for(let i=0;i<n;i++){
+        const totals=new Map();
+        for(let j=0;j<n;j++)if(j!==i)totals.set(clusterOf[j],(totals.get(clusterOf[j])||0)+degree[j]);
+        const weights=new Map();
+        for(const [nb,w]of adj[i])weights.set(clusterOf[nb],(weights.get(clusterOf[nb])||0)+w);
+        let best=clusterOf[i],bestScore=0;
+        for(const [g,w]of weights){
+          const q=w-degree[i]*(totals.get(g)||0)/mDen;
+          if(q>bestScore+1e-10){bestScore=q;best=g;}
+        }
+        if(best!==clusterOf[i]){clusterOf[i]=best;changed=true;}
+      }
+      if(!changed)break;
+    }
+  }
+
+  // 1. Centralidade de Intermediação (Brandes) + matriz de distâncias mínimas para Silhueta S
+  const cb=new Float64Array(n);
+  const distMatrix=Array.from({length:n},()=>new Int32Array(n).fill(-1));
+  const pred=Array.from({length:n},()=>[]);
+  const sigma=new Float64Array(n);
+  const delta=new Float64Array(n);
+  const stack=[];
+  const queue=[];
+
+  for(let s=0;s<n;s++){
+    stack.length=0;
+    queue.length=0;
+    for(let i=0;i<n;i++){pred[i].length=0;sigma[i]=0;delta[i]=0;}
+    const dist=distMatrix[s];
+    dist[s]=0;
+    sigma[s]=1;
+    queue.push(s);
+    let head=0;
+    while(head<queue.length){
+      const v=queue[head++];
+      stack.push(v);
+      const dv=dist[v];
+      for(const [w]of adj[v]){
+        if(dist[w]<0){
+          queue.push(w);
+          dist[w]=dv+1;
+        }
+        if(dist[w]===dv+1){
+          sigma[w]+=sigma[v];
+          pred[w].push(v);
+        }
+      }
+    }
+    while(stack.length){
+      const w=stack.pop();
+      const coeff=(1+delta[w])/(sigma[w]||1);
+      for(const v of pred[w]){
+        delta[v]+=sigma[v]*coeff;
+      }
+      if(w!==s)cb[w]+=delta[w];
+    }
+  }
+
+  const norm=n>2?(n-1)*(n-2):1;
+  let maxBetweenness=0;
+  for(let i=0;i<n;i++){
+    const val=n>2?cb[i]/norm:0;
+    betweenness.set(nodes[i].id,val);
+    if(val>maxBetweenness)maxBetweenness=val;
+  }
+
+  // 2. Modularidade Q
+  let modularityQ=0;
+  const clustersMap=new Map();
+  for(let i=0;i<n;i++){
+    const c=clusterOf[i];
+    if(!clustersMap.has(c))clustersMap.set(c,[]);
+    clustersMap.get(c).push(i);
+  }
+  if(twoM>0){
+    const inWeights=new Map();
+    const totWeights=new Map();
+    for(let i=0;i<n;i++){
+      const ci=clusterOf[i];
+      totWeights.set(ci,(totWeights.get(ci)||0)+degree[i]);
+      for(const [j,w]of adj[i]){
+        if(clusterOf[j]===ci)inWeights.set(ci,(inWeights.get(ci)||0)+w);
+      }
+    }
+    for(const c of clustersMap.keys()){
+      const inC=inWeights.get(c)||0;
+      const totC=totWeights.get(c)||0;
+      modularityQ+=(inC/twoM)-Math.pow(totC/twoM,2);
+    }
+  }
+
+  // 3. Silhueta Média Ponderada S
+  let silhouetteS=0;
+  const clusterEntries=[...clustersMap.entries()].filter(([,members])=>members.length>0);
+  if(clusterEntries.length>=2&&n>=2){
+    const fallbackDist=n;
+    let silSum=0;
+    let silWeight=0;
+    for(const [cid,members]of clusterEntries){
+      if(members.length<=1)continue;
+      let clusterSil=0;
+      for(const i of members){
+        let sumA=0;
+        for(const j of members){
+          if(i===j)continue;
+          const d=distMatrix[i][j];
+          sumA+=d>=0?d:fallbackDist;
+        }
+        const a=sumA/(members.length-1);
+        let b=Infinity;
+        for(const [otherCid,otherMembers]of clusterEntries){
+          if(otherCid===cid)continue;
+          let sumB=0;
+          for(const j of otherMembers){
+            const d=distMatrix[i][j];
+            sumB+=d>=0?d:fallbackDist;
+          }
+          const meanB=sumB/otherMembers.length;
+          if(meanB<b)b=meanB;
+        }
+        const denom=Math.max(a,b);
+        const si=denom>0&&Number.isFinite(b)?(b-a)/denom:0;
+        clusterSil+=si;
+      }
+      // Média ponderada pelo tamanho do agrupamento (equivalente à soma dos s(i) sobre os nós em agrupamentos > 1)
+      silSum+=clusterSil;
+      silWeight+=members.length;
+    }
+    silhouetteS=silWeight>0?silSum/silWeight:0;
+  }
+
+  const ranked=nodes
+    .map(node=>({id:node.id,label:node.label,stage:node.stage,value:node.value,betweenness:betweenness.get(node.id)||0}))
+    .sort((a,b)=>b.betweenness-a.betweenness||b.value-a.value);
+  const bridgeNodes=ranked.filter(item=>item.betweenness>=0.10);
+  const topNodes=ranked.filter(item=>item.betweenness>0).slice(0,6);
+
+  return {
+    betweenness,
+    modularityQ,
+    silhouetteS,
+    bridgeNodes,
+    topNodes,
+    clusterCount:clusterEntries.length,
+    maxBetweenness
+  };
 }

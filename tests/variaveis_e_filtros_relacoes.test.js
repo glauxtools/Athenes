@@ -22,7 +22,8 @@ import { registrosReferencias, camposRelacoesComVariaveis } from '../src/core/at
 import {
   analyzeRelations,
   evaluateFilterChain,
-  computeConnectionChain
+  computeConnectionChain,
+  computeNetworkMetrics
 } from '../src/relations/analysis.js';
 import {
   renderRelations,
@@ -352,5 +353,57 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.deepEqual(chamadas[1].pastaIds, ['pasta_a', 'pasta_b']);
     assert.equal(chamadas[1].valor, 'Alta');
     salvarCatalogoVariaveis([]);
+  });
+
+  it('8. Métricas cienciométricas: Centralidade de Intermediação, Modularidade Q e Silhueta S', () => {
+    // Dois cliques densos (A e B) conectados via nó ponte P
+    const nodes = [
+      { id: 'A1', label: 'A1', value: 5 },
+      { id: 'A2', label: 'A2', value: 5 },
+      { id: 'A3', label: 'A3', value: 5 },
+      { id: 'P', label: 'Ponte', value: 4 },
+      { id: 'B1', label: 'B1', value: 5 },
+      { id: 'B2', label: 'B2', value: 5 },
+      { id: 'B3', label: 'B3', value: 5 }
+    ];
+    const links = [
+      { source: 'A1', target: 'A2', value: 4 },
+      { source: 'A2', target: 'A3', value: 4 },
+      { source: 'A1', target: 'A3', value: 4 },
+      { source: 'A3', target: 'P', value: 1 },
+      { source: 'P', target: 'B1', value: 1 },
+      { source: 'B1', target: 'B2', value: 4 },
+      { source: 'B2', target: 'B3', value: 4 },
+      { source: 'B1', target: 'B3', value: 4 }
+    ];
+    const groups = new Map([
+      ['A1', 0], ['A2', 0], ['A3', 0], ['P', 0],
+      ['B1', 1], ['B2', 1], ['B3', 1]
+    ]);
+    const metrics = computeNetworkMetrics({ nodes, links }, groups);
+
+    // P está em todos os caminhos entre o clique A e o clique B (betweenness >= 0.10)
+    const cbP = metrics.betweenness.get('P');
+    assert.ok(cbP >= 0.10, `Esperava betweenness de P >= 0.10, obteve ${cbP}`);
+    assert.ok(metrics.bridgeNodes.some(b => b.id === 'P'), 'P deve aparecer como nó ponte');
+
+    // Modularidade Q > 0.3 para estrutura modular clara
+    assert.ok(metrics.modularityQ > 0.3, `Esperava Q > 0.3, obteve ${metrics.modularityQ}`);
+
+    // Silhueta Média Ponderada S positiva e alta para dois agrupamentos separados
+    assert.ok(metrics.silhouetteS > 0.5, `Esperava S > 0.5, obteve ${metrics.silhouetteS}`);
+  });
+
+  it('9. Preserva registros com >256 combinações e balanceia colunas de Autores/Temas', () => {
+    const autores = Array.from({ length: 12 }, (_, i) => `Autor ${i + 1}`);
+    const temas = Array.from({ length: 30 }, (_, i) => `Tema ${i + 1}`);
+    // 12 * 30 = 360 combinações (> antigo limite de 256)
+    const g = analyzeRelations(
+      [{ id: 'r_big', fields: { author: autores, theme: temas, year: '2025' } }],
+      { mode: 'fields', stages: ['author', 'theme', 'year'] }
+    );
+    assert.equal(g.stats.processed, 1);
+    assert.ok(g.nodes.some(n => n.stage === 0 && n.label === 'Autor 1'), 'Autor do registro grande deve ser preservado');
+    assert.ok(g.links.length > 0, 'Ligações do registro grande devem ser geradas');
   });
 });

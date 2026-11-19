@@ -4,10 +4,11 @@ import {
   analyzeRelations,
   normalizeAnalysis,
   computeConnectionChain,
+  computeNetworkMetrics,
   STAGE_ORDER_OPTIONS,
   FILTER_OPERATORS
 } from './analysis.js';
-import {renderRelations,RELATION_LAYOUTS,normalizeRelationStyle,isFixedLayout,esc} from './render.js';
+import {renderRelations,RELATION_LAYOUTS,normalizeRelationStyle,isFixedLayout,communities,esc} from './render.js';
 import {downloadSvg,downloadBlob} from './download.js';
 import {downloadMenuMarkup,databaseIcon} from './controls.js';
 import {
@@ -186,6 +187,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     </section>
 
     <aside class="rel-sidebar-info" aria-label="Inspetor de conexões e registros">
+      <div class="rel-metrics-card" data-rel-metrics></div>
       <div class="rel-inspect" aria-live="polite">
         <div class="rel-inspect-empty">
           <strong>Inspetor de cadeia e registros</strong>
@@ -457,6 +459,45 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     return chain;
   }
 
+  function renderNetworkMetrics(metrics){
+    const box=root.querySelector('[data-rel-metrics]');
+    if(!box)return;
+    if(!metrics||!graph?.nodes?.length){box.innerHTML='';return;}
+    const fmtDec=v=>Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3});
+    const qVal=metrics.modularityQ||0;
+    const sVal=metrics.silhouetteS||0;
+    const qOk=qVal>0.3;
+    const sOk=sVal>0.7;
+    const sMid=!sOk&&sVal>=0.5;
+    const qStatus=qOk?'Significativa (Q > 0,3)':'Moderada (Q ≤ 0,3)';
+    const sStatus=sOk?'Alta coerência (S > 0,7)':(sMid?'Razoável (0,5–0,7)':'Baixa (S < 0,5)');
+    const pontes=metrics.bridgeNodes?.length?metrics.bridgeNodes.slice(0,5):(metrics.topNodes||[]).slice(0,4);
+    const pontesTitulo=metrics.bridgeNodes?.length
+      ?`Nós ponte (Intermediação ≥ 0,10): ${metrics.bridgeNodes.length}`
+      :`Maior intermediação (máx. ${fmtDec(metrics.maxBetweenness||0)})`;
+    box.innerHTML=`
+      <div class="rel-metrics-head">
+        <strong>Métricas da rede</strong>
+        <small>${metrics.clusterCount||0} agrupamento(s)</small>
+      </div>
+      <div class="rel-metrics-grid">
+        <div class="rel-metric-tile" title="Modularidade Q: valores > 0,3 indicam agrupamentos estatisticamente bem definidos.">
+          <span>Modularidade Q</span>
+          <strong>${fmtDec(qVal)}</strong>
+          <em class="rel-metric-pill ${qOk?'is-good':''}">${qStatus}</em>
+        </div>
+        <div class="rel-metric-tile" title="Silhueta Média Ponderada S: valores > 0,7 indicam alta coerência interna e confiabilidade.">
+          <span>Silhueta Média S</span>
+          <strong>${fmtDec(sVal)}</strong>
+          <em class="rel-metric-pill ${sOk?'is-good':(sMid?'is-mid':'')}">${sStatus}</em>
+        </div>
+      </div>
+      <div class="rel-bridges-block">
+        <div class="rel-bridges-title">${esc(pontesTitulo)}</div>
+        ${pontes.length?`<div class="rel-bridges-list">${pontes.map(b=>`<button type="button" class="rel-bridge-chip ${b.betweenness>=0.10?'is-bridge':''}" data-rel-select-node="${esc(b.id)}" title="Selecionar nó na rede · Intermediação: ${fmtDec(b.betweenness)}"><span>${esc(b.label)}</span><strong>${fmtDec(b.betweenness)}</strong></button>`).join('')}</div>`:'<small>Sem pontes detectadas na rede atual.</small>'}
+      </div>`;
+  }
+
   function renderInspector(selection,chain){
     const inspectBox=root.querySelector('.rel-inspect');
     const chainBox=root.querySelector('[data-rel-chain]');
@@ -484,6 +525,10 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     const stageField=selection.type==='node'?graph.config?.stages?.[item.stage]:'';
     const canQuickFilter=Boolean(selection.type==='node'&&stageField&&item.label);
 
+    const betweennessHtml=selection.type==='node'
+      ?`<div class="rel-inspect-meta">Intermediação (Betweenness): <strong>${Number(item.betweenness||0).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})}</strong> ${(item.betweenness||0)>=0.10?'<span class="rel-metric-pill is-good">Nó ponte (≥ 0,10)</span>':''}</div>`
+      :'';
+
     inspectBox.innerHTML=`
       <div class="rel-inspect-head">
         <div>
@@ -493,6 +538,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
         <span class="rel-inspect-badge">${item.recordCount??item.value} reg.</span>
       </div>
       <div class="rel-inspect-meta">Peso acumulado: ${Number(item.value).toLocaleString('pt-BR',{maximumFractionDigits:2})}</div>
+      ${betweennessHtml}
       <div class="rel-mini-actions">
         ${canQuickFilter?`<button type="button" data-rel-action="filter-from-node" data-filter-field="${esc(stageField)}" data-filter-val="${esc(item.label)}">Filtrar por este item</button>`:''}
         <button type="button" data-rel-action="clear-selection">Limpar seleção</button>
@@ -581,6 +627,10 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     if(value('scope')==='selected'&&!config.selectedIds.length){error('Selecione ao menos um registro.');return;}
 
     graph=readonly&&initial.linked===false&&initial.snapshot?structuredClone(initial.snapshot):analyzeRelations(records,config);
+    const metrics=computeNetworkMetrics(graph,communities(graph));
+    graph.metrics=metrics;
+    for(const n of graph.nodes)n.betweenness=metrics.betweenness.get(n.id)||0;
+    renderNetworkMetrics(metrics);
     const ranking=root.querySelector('.rel-term-ranking');
     ranking.hidden=config.mode!=='terms';
     ranking.querySelector('ol').innerHTML=graph.nodes.slice().sort((a,b)=>b.value-a.value).slice(0,30).map(n=>`<li><span>${esc(n.label)}</span><strong>${n.value}</strong></li>`).join('');
@@ -736,6 +786,13 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   };
 
   root.addEventListener('click',async event=>{
+    const bridgeBtn=event.target.closest('[data-rel-select-node]');
+    if(bridgeBtn){
+      const id=bridgeBtn.dataset.relSelectNode;
+      if(id)selectItem({type:'node',id});
+      return;
+    }
+
     const chip=event.target.closest('[data-rel-filter-chip]');
     if(chip){
       const card=chip.closest('.rel-filter-rule');
