@@ -155,11 +155,13 @@ export function aplicarEspelhoZotero(pastas, espelho) {
   return resultado;
 }
 
-/** As referências retornadas pelo Zotero seguem suas coleções. A biblioteca local permanece disponível. */
+/** As referências retornadas pelo Zotero seguem suas coleções; itens excluídos no Zotero são removidos, preservando os locais. */
 export function aplicarColecoesZoteroAosArtigos(artigos, itens, mapa, { biblioteca, sincronizadoEm }) {
   const porChave = new Map(itens.map(item => [item.chave, item]));
   const pastasEspelhadas = new Set(mapa.values());
-  for (const artigo of artigos) {
+  const removidos = [];
+  for (let i = artigos.length - 1; i >= 0; i--) {
+    const artigo = artigos[i];
     if (artigo.compartilhadoComigo || artigo.proprietarioExterno) continue;
     const item = porChave.get(artigo.chaveZotero);
     if (item && (!artigo.zoteroBiblioteca || artigo.zoteroBiblioteca === biblioteca)) {
@@ -171,6 +173,16 @@ export function aplicarColecoesZoteroAosArtigos(artigos, itens, mapa, { bibliote
       artigo.zoteroColecoesEm = sincronizadoEm;
       porChave.delete(artigo.chaveZotero);
     } else {
+      const veioDoZotero = Boolean(
+        (artigo.chaveZotero && artigo.chaveZotero !== 'ZOTLOCAL')
+        || String(artigo.id || '').startsWith('zot_')
+        || (biblioteca && artigo.zoteroBiblioteca === biblioteca)
+      );
+      if (veioDoZotero && (!artigo.zoteroBiblioteca || artigo.zoteroBiblioteca === biblioteca)) {
+        artigos.splice(i, 1);
+        removidos.push(artigo);
+        continue;
+      }
       const anteriores = artigo.pastasIds?.length ? artigo.pastasIds : [artigo.pastaId || RAIZ_BIBLIOGRAFIA];
       const ids = anteriores.filter(id => id !== RAIZ_BIBLIOGRAFIA && !pastasEspelhadas.has(id));
       if (ids.length !== anteriores.length) {
@@ -178,12 +190,9 @@ export function aplicarColecoesZoteroAosArtigos(artigos, itens, mapa, { bibliote
         artigo.pastaId = artigo.pastasIds.includes(artigo.pastaId) ? artigo.pastaId : artigo.pastasIds[0];
         artigo.zoteroColecoesEm = sincronizadoEm;
       }
-      if (artigo.zoteroBiblioteca === biblioteca) {
-        artigo.zoteroBiblioteca = '';
-        artigo.zoteroColecoesEm = sincronizadoEm;
-      }
     }
   }
+  return { removidos };
 }
 
 export function resolverAliasPasta(id,aliases={}){

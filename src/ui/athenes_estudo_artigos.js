@@ -2333,7 +2333,7 @@ export class EstudoArtigosView {
       this.artigos.unshift(novo);
       novos++;
     });
-    aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
+    const { removidos } = aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
     salvarArtigosEstudo(this.artigos);
     if (automatico && !this.artigoAberto) this.renderizar();
     if (automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });
@@ -2363,7 +2363,7 @@ export class EstudoArtigosView {
           `• Ou use o botão "Importar .bib" no topo para carregar sua coleção instantaneamente!`
         );
       } else {
-        alert(`Sincronização Zotero concluída! ${novos} novo(s) artigo(s) trazido(s) da sua biblioteca (${itens.length} itens lidos).`);
+        alert(`Sincronização Zotero concluída! ${novos} novo(s) artigo(s) trazido(s)${removidos?.length ? `, ${removidos.length} excluído(s) removido(s)` : ''} (${itens.length} itens lidos).`);
       }
     }
   }

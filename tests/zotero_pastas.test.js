@@ -31,15 +31,18 @@ test('o espelho segue o Zotero e preserva pastas locais e coleções antigas for
     { id: 'r1', chaveZotero: 'R1', pastaId: 'manual', pastaEscolhidaNoAthenes: true, driveFileId: 'PDF' },
     { id: 'r2', chaveZotero: 'R2', pastaId: 'zot_col_A', fichamento: { resumoPessoal: 'Preservar' } },
     { id: 'r3', chaveZotero: 'R3', pastaId: 'pasta_bib_raiz' },
-    { id: 'r4', pastaId: 'manual' }
+    { id: 'r4', pastaId: 'manual' },
+    { id: 'r5', chaveZotero: 'ZOTLOCAL', pastaId: PASTA_BIBLIOGRAFIA_LOCAL }
   ];
-  aplicarColecoesZoteroAosArtigos(artigos, [{ chave: 'R1', colecoes: ['A', 'B'] }, { chave: 'R3', colecoes: [] }], mapa, leitura);
+  const { removidos } = aplicarColecoesZoteroAosArtigos(artigos, [{ chave: 'R1', colecoes: ['A', 'B'] }, { chave: 'R3', colecoes: [] }], mapa, leitura);
+  assert.equal(removidos.length, 1);
+  assert.equal(removidos[0].id, 'r2');
+  assert.equal(artigos.some(a => a.id === 'r2'), false, 'Artigo excluído no Zotero deve ser removido do Athenes');
   assert.deepEqual(artigos[0].pastasIds, ['zot_col_A', 'zot_col_B']);
   assert.equal(artigos[0].driveFileId, 'PDF');
-  assert.equal(artigos[1].pastaId, PASTA_BIBLIOGRAFIA_LOCAL);
-  assert.equal(artigos[1].fichamento.resumoPessoal, 'Preservar');
-  assert.equal(artigos[2].pastaId, 'pasta_bib_raiz');
-  assert.equal(artigos[3].pastaId, 'manual');
+  assert.equal(artigos.find(a => a.id === 'r3').pastaId, 'pasta_bib_raiz');
+  assert.equal(artigos.find(a => a.id === 'r4').pastaId, 'manual');
+  assert.equal(artigos.find(a => a.id === 'r5').pastaId, PASTA_BIBLIOGRAFIA_LOCAL);
 });
 test('movimentos conflitantes entre duas árvores válidas não criam ciclos nem duplicatas',()=>{
  const cols=colecoes.filter(c=>c.key!=='C').map(c=>({...c,parentCollection:false}));
