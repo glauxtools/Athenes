@@ -135,7 +135,7 @@ export function extractTerms(text,config={}){
 }
 
 export function analyzeRelations(input=[],configuration={}){
-  const config=normalizeAnalysis(configuration),nodes=new Map(),links=new Map(),warnings=[],chosen=new Set(config.selectedIds),ids=new Set();let processed=0,missing=0,omitted=Number(input.sourceOmitted)||0,filteredOut=0,totalInput=0,recordWeight=0,textBudget=2000000;
+  const config=normalizeAnalysis(configuration),nodes=new Map(),links=new Map(),yearBuckets=new Map(),warnings=[],chosen=new Set(config.selectedIds),ids=new Set();let processed=0,missing=0,omitted=Number(input.sourceOmitted)||0,filteredOut=0,totalInput=0,recordWeight=0,textBudget=2000000;
   const values=(row,field)=>{const raw=row.fields?.[field];return [...new Set((Array.isArray(raw)?raw:[raw]).map(clean).filter(Boolean))];};
   let limited=false,recordGroup='';
   const addNode=(id,label,stage,recordId,group)=>{if(!nodes.has(id)){if(nodes.size>=8000){limited=true;return null;}nodes.set(id,{id,label,stage,group:group||'',value:0,records:[],seen:new Set(),groups:new Map()});}const n=nodes.get(id);if(!n.seen.has(recordId)){n.seen.add(recordId);n.value++;if(recordGroup)n.groups.set(recordGroup,(n.groups.get(recordGroup)||0)+1);if(n.records.length<100)n.records.push(recordId);}return n;};
@@ -145,6 +145,16 @@ export function analyzeRelations(input=[],configuration={}){
     if(config.yearField&&(config.startYear||config.endYear)){const rawYear=values(row,config.yearField)[0]||'',year=Number(rawYear.match(/\b\d{4}\b/)?.[0]||rawYear);if(!year||config.startYear&&year<config.startYear||config.endYear&&year>config.endYear){filteredOut++;continue;}}
     if(!evaluateFilterChain(row,config.filters,config.filterCombinator)){filteredOut++;continue;}
     if(processed>=LIMITS.records){omitted++;continue;}processed++;recordGroup=config.colorField?values(row,config.colorField).sort().join(' / ')||(row.omitEmptyFields?.includes(config.colorField)?'':'Não informado'):'';
+    const rawYearBucket=values(row,config.yearField||'year')[0]||values(row,'year')[0]||'';
+    const yearNum=Number(String(rawYearBucket).match(/\b(1\d{3}|20\d{2}|21\d{2})\b/)?.[1]);
+    if(Number.isInteger(yearNum)&&yearNum>=1500&&yearNum<=2199){
+      if(!yearBuckets.has(yearNum))yearBuckets.set(yearNum,{year:yearNum,count:0,weight:0,records:[]});
+      const yb=yearBuckets.get(yearNum);
+      const mw=config.measure?Number(values(row,config.measure)[0]):1;
+      yb.count++;
+      yb.weight+=Number.isFinite(mw)&&mw>0?mw:1;
+      if(yb.records.length<100)yb.records.push(id);
+    }
     if(config.mode==='terms'){
       if(textBudget<=0){omitted++;continue;}const rawContent=config.textFields.map(f=>row.text?.[f]??values(row,f).join(' ')).join('\n'),content=rawContent.slice(0,Math.min(40000,textBudget));textBudget-=content.length;if(content.length<rawContent.length)warnings.push('O texto foi limitado a 40 mil caracteres por registro e 2 milhões por análise. Refine os registros para analisar o restante.');const contexts=config.context==='paragraph'?content.split(/\n\s*\n/):[content];const perRecord=new Set();if(contexts.length>300)warnings.push('O contexto foi limitado aos primeiros 300 parágrafos do registro.');
       for(const context of contexts.slice(0,300)){const terms=extractTerms(context,config);for(const t of terms)addNode('term:'+t,t,0,id);for(let i=0;i<terms.length;i++)for(let j=i+1;j<terms.length;j++){const pair=[terms[i],terms[j]].sort(),k=JSON.stringify(pair);if(!perRecord.has(k)){perRecord.add(k);addLink('term:'+pair[0],'term:'+pair[1],1,id);}}}
@@ -230,7 +240,7 @@ export function analyzeRelations(input=[],configuration={}){
   if(links.size>visible.length)warnings.push(`${links.size-visible.length} conexões omitidas por filtros ou limites.`);
   if(omitted)warnings.push(`${omitted} registros omitidos por limites ou medida inválida.`);
   if(limited)warnings.push('Limite de processamento atingido. Refine os campos ou os termos para analisar todas as relações.');
-  return {version:1,nodes:selected.map(({seen,groups,...n})=>({...n,group:[...groups].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0]||n.group})),links:visible.map(({seen,...l})=>l),config,stats:{processed,missing,omitted,filteredOut,totalInput,recordWeight,totalNodes:nodes.size,totalLinks:links.size},warnings:[...new Set(warnings)].slice(0,20)};
+  return {version:1,nodes:selected.map(({seen,groups,...n})=>({...n,group:[...groups].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0]||n.group})),links:visible.map(({seen,...l})=>l),timeline:[...yearBuckets.values()].sort((a,b)=>a.year-b.year),config,stats:{processed,missing,omitted,filteredOut,totalInput,recordWeight,totalNodes:nodes.size,totalLinks:links.size},warnings:[...new Set(warnings)].slice(0,20)};
 }
 
 export function computeConnectionChain(graph,selection){

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 export const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#315887','#288a79','#d57c37','#8459a6','#bd5271','#47a4ae','#b6a03f','#677c98'];
-export const RELATION_LAYOUTS=[['force','Rede orgânica'],['clusters','Comunidades'],['radial','Radial'],['star','Centro e anéis'],['circle','Circular'],['ellipse','Elíptica'],['bundled','Feixes radiais'],['tree','Ramificações'],['sphere','Esfera · projeção'],['arc','Arcos'],['sankey','Sankey / aluvial'],['temporal','Fluxo temporal']];
-export const FIXED_LAYOUTS=new Set(['sankey','temporal','arc']);
+export const RELATION_LAYOUTS=[['force','Rede orgânica'],['clusters','Comunidades'],['radial','Radial'],['star','Centro e anéis'],['circle','Circular'],['ellipse','Elíptica'],['bundled','Feixes radiais'],['tree','Ramificações'],['sphere','Esfera · projeção'],['arc','Arcos'],['sankey','Sankey / aluvial'],['temporal','Fluxo temporal'],['timeline','Série temporal']];
+export const FIXED_LAYOUTS=new Set(['sankey','temporal','arc','timeline']);
+const FLOW_LAYOUTS=new Set(['sankey','temporal']);
 export const isFixedLayout=layout=>FIXED_LAYOUTS.has(layout);
 
 const ORDER_LABELS={
@@ -290,16 +291,196 @@ function flowSvg(graph,style){
   return {parts:parts.join(''),height,width:viewWidth};
 }
 
+function timelineSvg(graph,style){
+  const width=920,height=640;
+  const rawPts=Array.isArray(graph.timeline)&&graph.timeline.length
+    ?graph.timeline.map(p=>({year:Number(p.year),val:Number(graph.config?.measure?p.weight:p.count)||0,count:Number(p.count)||0}))
+    :graph.nodes
+      .map(n=>({year:Number(String(n.label||'').match(/^(1\d{3}|20\d{2}|21\d{2})$/)?.[1]),val:Number(n.value)||0,count:Number(n.value)||0}))
+      .filter(p=>Number.isInteger(p.year));
+
+  if(!rawPts.length){
+    return {parts:text(30,90,'Nenhum dado temporal com ano válido encontrado nos registros selecionados.'),height:220,width};
+  }
+
+  const nodeByYear=new Map();
+  for(const n of graph.nodes){
+    const yMatch=String(n.label||'').match(/^(1\d{3}|20\d{2}|21\d{2})$/);
+    if(yMatch)nodeByYear.set(Number(yMatch[1]),n.id);
+  }
+
+  const byYear=new Map();
+  for(const p of rawPts){
+    if(!Number.isInteger(p.year))continue;
+    const prev=byYear.get(p.year)||{year:p.year,val:0,count:0};
+    byYear.set(p.year,{year:p.year,val:prev.val+p.val,count:prev.count+p.count});
+  }
+  const yearsSorted=[...byYear.keys()].sort((a,b)=>a-b);
+  const minY=yearsSorted[0],maxY=yearsSorted[yearsSorted.length-1];
+  const span=maxY-minY+1;
+  const series=[];
+  if(span<=120){
+    for(let y=minY;y<=maxY;y++)series.push(byYear.get(y)||{year:y,val:0,count:0});
+  }else{
+    for(const y of yearsSorted)series.push(byYear.get(y));
+  }
+
+  const maxVal=Math.max(1,...series.map(s=>s.val));
+  const yTop=58,yBot=296,xLeft=58,xRight=892;
+  const plotW=xRight-xLeft,plotH=yBot-yTop;
+  const xAt=y=>series.length<=1?(xLeft+xRight)/2:xLeft+((y-minY)/Math.max(1,maxY-minY))*plotW;
+  const yAt=v=>yBot-(Math.max(0,v)/maxVal)*plotH;
+
+  // Segmentação em períodos (décadas ou subperíodos equilibrados)
+  const periodColors=['#0284c7','#16a34a','#eab308','#ea580c','#dc2626','#7c3aed'];
+  const periods=[];
+  if(span>20){
+    let pStart=Math.floor((minY-1)/10)*10+1;
+    while(pStart<=maxY){
+      const pEnd=pStart+9;
+      const pts=series.filter(s=>s.year>=pStart&&s.year<=pEnd);
+      if(pts.length)periods.push({label:`${Math.max(minY,pStart)}–${Math.min(maxY,pEnd)}`,pts});
+      pStart+=10;
+    }
+  }else{
+    const groups=span<=4?1:(span<=9?2:(span<=14?3:4));
+    const step=Math.ceil(series.length/groups);
+    for(let i=0;i<series.length;i+=step){
+      const pts=series.slice(i,i+step);
+      if(pts.length)periods.push({label:pts.length>1?`${pts[0].year}–${pts[pts.length-1].year}`:String(pts[0].year),pts});
+    }
+  }
+
+  const parts=[];
+  const titleMetric=graph.config?.measure?'Valor acumulado por ano':'Publicações por ano';
+  parts.push(`<text x="${xLeft}" y="26" font-size="14" font-weight="800" fill="#1e3a5f">Evolução temporal por períodos (${minY}–${maxY})</text>`);
+  parts.push(`<text x="${xLeft}" y="42" font-size="11" fill="#64758c">${esc(titleMetric)} · linha anual, área sombreada em torno da média do período</text>`);
+
+  // Grade horizontal e eixos
+  const yTicks=4;
+  for(let t=0;t<=yTicks;t++){
+    const v=(maxVal/yTicks)*t,yy=yAt(v);
+    parts.push(`<line x1="${xLeft}" y1="${yy.toFixed(1)}" x2="${xRight}" y2="${yy.toFixed(1)}" stroke="#e9eff6" stroke-width="1"/>`);
+    parts.push(`<text x="${xLeft-8}" y="${(yy+3.5).toFixed(1)}" font-size="10" text-anchor="end" fill="#64758c">${fmt(v)}</text>`);
+  }
+  const xStep=Math.max(1,Math.ceil(series.length/8));
+  for(let i=0;i<series.length;i+=xStep){
+    const xx=xAt(series[i].year);
+    parts.push(`<line x1="${xx.toFixed(1)}" y1="${yTop}" x2="${xx.toFixed(1)}" y2="${yBot}" stroke="#f1f5f9" stroke-width="1"/>`);
+    parts.push(`<text x="${xx.toFixed(1)}" y="${yBot+16}" font-size="10" text-anchor="middle" fill="#64758c">${series[i].year}</text>`);
+  }
+
+  // Linha tracejada de referência (valor mais recente)
+  const lastVal=series[series.length-1]?.val||0;
+  const yRef=yAt(lastVal);
+  parts.push(`<line x1="${xLeft}" y1="${yRef.toFixed(1)}" x2="${xRight}" y2="${yRef.toFixed(1)}" stroke="#334155" stroke-width="1.2" stroke-dasharray="5 4"/>`);
+
+  // Curvas e áreas por período
+  periods.forEach((per,idx)=>{
+    const col=periodColors[idx%periodColors.length];
+    const pts=per.pts;
+    const mean=pts.reduce((s,p)=>s+p.val,0)/Math.max(1,pts.length);
+    const yMean=yAt(mean);
+    const coords=pts.map(p=>[xAt(p.year),yAt(p.val)]);
+    const lineD=coords.map(([x,y],k)=>`${k===0?'M':'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+    const baseD=`${lineD} L${coords[coords.length-1][0].toFixed(1)} ${yBot} L${coords[0][0].toFixed(1)} ${yBot} Z`;
+    const meanD=`${lineD} L${coords[coords.length-1][0].toFixed(1)} ${yMean.toFixed(1)} L${coords[0][0].toFixed(1)} ${yMean.toFixed(1)} Z`;
+
+    parts.push(`<path d="${baseD}" fill="${col}" fill-opacity="0.12" pointer-events="none"/>`);
+    parts.push(`<path d="${meanD}" fill="${col}" fill-opacity="0.32" pointer-events="none"/>`);
+    parts.push(`<line x1="${coords[0][0].toFixed(1)}" y1="${yMean.toFixed(1)}" x2="${coords[coords.length-1][0].toFixed(1)}" y2="${yMean.toFixed(1)}" stroke="${col}" stroke-width="1" stroke-dasharray="2 2" opacity="0.7"/>`);
+    parts.push(`<path d="${lineD}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`);
+
+    // Pílula com média do período
+    const midX=(coords[0][0]+coords[coords.length-1][0])/2;
+    const pillTxt=`${per.label}: ${fmt(mean)}`;
+    const pillW=Math.max(72,pillTxt.length*6.2+14);
+    parts.push(`<rect x="${(midX-pillW/2).toFixed(1)}" y="${yBot-22}" width="${pillW.toFixed(1)}" height="18" rx="4" fill="${col}"/>`);
+    parts.push(`<text x="${midX.toFixed(1)}" y="${yBot-9}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">${esc(pillTxt)}</text>`);
+
+    // Pontos interativos dos anos com registros
+    for(const p of pts){
+      if(p.count<=0)continue;
+      const cx=xAt(p.year),cy=yAt(p.val),nid=nodeByYear.get(p.year);
+      const attrs=nid?`data-relation-node="${esc(nid)}" tabindex="0" role="button"`:'';
+      parts.push(`<g ${attrs}><title>${p.year}: ${fmt(p.val)} (${p.count} reg.)</title><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="${col}" stroke="#fff" stroke-width="1.3"/></g>`);
+    }
+  });
+
+  // Painel inferior: Densidade estimada (KDE) por período + rug ticks
+  const kTop=378,kBot=576,kH=kBot-kTop;
+  parts.push(`<text x="${xLeft}" y="352" font-size="13.5" font-weight="800" fill="#1e3a5f">Densidade estimada dos valores anuais</text>`);
+  parts.push(`<text x="${xLeft}" y="368" font-size="11" fill="#64758c">Distribuição por período e marcas individuais na base (rug plot)</text>`);
+  parts.push(`<line x1="${xLeft}" y1="${kBot}" x2="${xRight}" y2="${kBot}" stroke="#cbd5e1" stroke-width="1"/>`);
+
+  const samples=64;
+  const bw=Math.max(0.5,maxVal*0.09);
+  const densityCurves=periods.map((per,idx)=>{
+    const vals=per.pts.map(p=>p.val);
+    const pts=[];
+    let peakD=0,peakX=xLeft;
+    for(let s=0;s<=samples;s++){
+      const xv=(s/samples)*maxVal;
+      let sum=0;
+      for(const v of vals){
+        const z=(xv-v)/bw;
+        sum+=Math.exp(-0.5*z*z);
+      }
+      const d=sum/(Math.max(1,vals.length)*bw*Math.sqrt(2*Math.PI));
+      const px=xLeft+(s/samples)*plotW;
+      if(d>peakD){peakD=d;peakX=px;}
+      pts.push({px,d});
+    }
+    return {per,idx,pts,peakD,peakX};
+  });
+  const maxD=Math.max(1e-6,...densityCurves.map(c=>c.peakD));
+  const placedKdeLabels=[];
+
+  for(const c of densityCurves){
+    const col=periodColors[c.idx%periodColors.length];
+    const coords=c.pts.map(p=>[p.px,kBot-(p.d/maxD)*(kH-24)]);
+    const lineD=coords.map(([x,y],k)=>`${k===0?'M':'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+    const areaD=`${lineD} L${xRight} ${kBot} L${xLeft} ${kBot} Z`;
+    parts.push(`<path d="${areaD}" fill="${col}" fill-opacity="0.28" pointer-events="none"/>`);
+    parts.push(`<path d="${lineD}" fill="none" stroke="${col}" stroke-width="1.6" opacity="0.85"/>`);
+
+    // Rótulo do pico sem sobreposição
+    let ly=kBot-(c.peakD/maxD)*(kH-24)-8;
+    while(placedKdeLabels.some(prev=>Math.abs(prev.x-c.peakX)<75&&Math.abs(prev.y-ly)<16))ly-=15;
+    ly=Math.max(kTop+12,ly);
+    placedKdeLabels.push({x:c.peakX,y:ly});
+    parts.push(`<text x="${c.peakX.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="${col}">${esc(c.per.label)}</text>`);
+
+    // Rug ticks na base
+    for(const p of c.per.pts){
+      const rx=xLeft+(p.val/maxVal)*plotW;
+      parts.push(`<line x1="${rx.toFixed(1)}" y1="${kBot+3}" x2="${rx.toFixed(1)}" y2="${kBot+13}" stroke="${col}" stroke-width="1.4" opacity="0.7"/>`);
+    }
+  }
+  for(let t=0;t<=yTicks;t++){
+    const v=(maxVal/yTicks)*t,rx=xLeft+(v/maxVal)*plotW;
+    parts.push(`<text x="${rx.toFixed(1)}" y="${kBot+27}" font-size="10" text-anchor="middle" fill="#64758c">${fmt(v)}</text>`);
+  }
+
+  return {parts:parts.join(''),height,width};
+}
+
 const cache=new Map();
 export function renderRelations(graph,rawStyle={}){
   const style=normalizeRelationStyle(rawStyle),cacheKey=JSON.stringify([graph,style]);
   if(cache.has(cacheKey))return cache.get(cacheKey);
 
   let parts=[],height=620,width=920;
-  const flow=isFixedLayout(style.layout);
-  if(flow&&graph.config?.mode==='terms')return `<svg xmlns="http://www.w3.org/2000/svg" class="relation-map-svg" data-relation-layout="${esc(style.layout)}" data-relation-height="200" data-relation-width="920" viewBox="0 0 920 200">${text(25,80,'Selecione relações entre campos para gerar um fluxo.')}</svg>`;
+  const isTimeline=style.layout==='timeline';
+  const flow=FLOW_LAYOUTS.has(style.layout);
+  if((flow||isTimeline)&&graph.config?.mode==='terms'&&!graph.timeline?.length)return `<svg xmlns="http://www.w3.org/2000/svg" class="relation-map-svg" data-relation-layout="${esc(style.layout)}" data-relation-height="200" data-relation-width="920" viewBox="0 0 920 200">${text(25,80,'Selecione relações entre campos para gerar um fluxo.')}</svg>`;
 
-  if(flow){
+  if(isTimeline){
+    const tl=timelineSvg(graph,style);
+    parts=[tl.parts];
+    height=tl.height;
+    width=tl.width;
+  }else if(flow){
     const f=flowSvg(graph,style);
     parts=[f.parts];
     height=f.height;
@@ -349,7 +530,15 @@ export function renderRelations(graph,rawStyle={}){
         }
         if(!placedPrimary){
           const detailLabel=fullLabel.length>34?fullLabel.slice(0,32)+'…':fullLabel;
-          caption=`<text class="rel-label rel-label-detail" x="${n.x.toFixed(1)}" y="${(n.y+radius+13).toFixed(1)}" font-size="11" text-anchor="middle" fill="currentColor">${esc(detailLabel)}</text>`;
+          const dw=Math.min(130,detailLabel.length*4.6);
+          const dx=n.x-dw/2,dy=n.y+radius+2;
+          const collides=boxes.some(b=>dx<b.x+b.w&&dx+dw>b.x&&dy<b.y+b.h&&dy+12>b.y);
+          if(!collides){
+            boxes.push({x:dx,y:dy,w:dw,h:12});
+            caption=`<text class="rel-label rel-label-detail" x="${n.x.toFixed(1)}" y="${(n.y+radius+13).toFixed(1)}" font-size="11" text-anchor="middle" fill="currentColor">${esc(detailLabel)}</text>`;
+          }else{
+            caption=`<text class="rel-label rel-label-hover" x="${n.x.toFixed(1)}" y="${(n.y+radius+13).toFixed(1)}" font-size="11" text-anchor="middle" fill="currentColor">${esc(detailLabel)}</text>`;
+          }
         }
       }
       parts.push(`<g data-relation-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(fullLabel)}: ${n.value} registros"><title>${esc(fullLabel)} · ${n.value} registros · comunidade ${n.group+1}</title><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${n.group===0?style.primary:palette[n.group%palette.length]}" stroke="white" stroke-width="1.5"/>${caption}</g>`);

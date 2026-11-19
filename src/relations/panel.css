@@ -92,20 +92,20 @@
 .rel-idle-card strong{font-size:15px;color:#1e3a5f}
 .rel-idle-card p{margin:0;font-size:12.5px;color:#526b8a;line-height:1.5}
 .rel-idle-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:4px}
-.rel-drawing svg{display:block;width:100%;height:100%}
+.rel-drawing svg{display:block;width:100%;height:100%;shape-rendering:geometricPrecision}
 .relation-block svg{display:block;width:100%;height:auto;max-height:760px}
 
 /* LOD progressivo de rótulos para legibilidade em zoom profundo */
-.rel-drawing .rel-label{font-size:calc(11.5px / var(--rel-label-damp, 1));paint-order:stroke;stroke:#fff;stroke-width:3px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
-.rel-drawing .rel-label-detail{opacity:0;pointer-events:none;transition:opacity .12s}
+.rel-drawing .rel-label{font-size:calc(11.5px / var(--rel-label-damp, 1));paint-order:stroke fill;stroke:#fff;stroke-width:2.5px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.rel-drawing .rel-label-detail,.rel-drawing .rel-label-hover{opacity:0;pointer-events:none;transition:opacity .12s}
 .rel-drawing.is-zoom-detail .rel-label-detail,.rel-drawing.is-zoom-deep .rel-label-detail{opacity:.95}
-.relation-map-svg [data-relation-node]:hover .rel-label-detail,.relation-map-svg [data-relation-node]:focus .rel-label-detail,.relation-map-svg [data-relation-node].is-chain .rel-label-detail,.relation-map-svg [data-relation-node].is-selected .rel-label-detail{opacity:1}
+.relation-map-svg [data-relation-node]:hover .rel-label-detail,.relation-map-svg [data-relation-node]:focus .rel-label-detail,.relation-map-svg [data-relation-node].is-chain .rel-label-detail,.relation-map-svg [data-relation-node].is-selected .rel-label-detail,.relation-map-svg [data-relation-node]:hover .rel-label-hover,.relation-map-svg [data-relation-node]:focus .rel-label-hover,.relation-map-svg [data-relation-node].is-chain .rel-label-hover,.relation-map-svg [data-relation-node].is-selected .rel-label-hover{opacity:1}
 
 /* Estados de seleção e cadeia completa */
 .relation-map-svg [data-relation-node]{cursor:grab;touch-action:none}
-.relation-map-svg[data-relation-layout="sankey"] [data-relation-node],.relation-map-svg[data-relation-layout="temporal"] [data-relation-node]{cursor:pointer}
+.relation-map-svg[data-relation-layout="sankey"] [data-relation-node],.relation-map-svg[data-relation-layout="temporal"] [data-relation-node],.relation-map-svg[data-relation-layout="timeline"] [data-relation-node]{cursor:pointer}
 .relation-map-svg [data-relation-node]:active{cursor:grabbing}
-.relation-map-svg[data-relation-layout="sankey"] [data-relation-node]:active,.relation-map-svg[data-relation-layout="temporal"] [data-relation-node]:active{cursor:pointer}
+.relation-map-svg[data-relation-layout="sankey"] [data-relation-node]:active,.relation-map-svg[data-relation-layout="temporal"] [data-relation-node]:active,.relation-map-svg[data-relation-layout="timeline"] [data-relation-node]:active{cursor:pointer}
 .relation-map-svg [data-relation-edge]{cursor:pointer;pointer-events:stroke}
 .relation-map-svg [data-relation-edge].rel-ribbon{pointer-events:all}
 .relation-map-svg.has-selection [data-relation-node]{opacity:.15;transition:opacity .15s}

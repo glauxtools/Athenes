@@ -487,4 +487,21 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.equal(semPastas.folderScopeMode, 'all');
     assert.deepEqual(semPastas.folderIds, []);
   });
+
+  it('13. Layout timeline (Série temporal + KDE) renderiza períodos e densidade sem NaN', () => {
+    const rows = [
+      { id: '1', fields: { author: 'A', theme: 'T1', year: '1995' } },
+      { id: '2', fields: { author: 'B', theme: 'T1', year: '2005' } },
+      { id: '3', fields: { author: 'C', theme: 'T2', year: '2018' } },
+      { id: '4', fields: { author: 'D', theme: 'T2', year: '2024' } },
+      { id: '5', fields: { author: 'E', theme: 'T2', year: '2024' } }
+    ];
+    const g = analyzeRelations(rows, { stages: ['author', 'theme', 'year'] });
+    assert.ok(Array.isArray(g.timeline) && g.timeline.length === 4);
+    assert.equal(isFixedLayout('timeline'), true);
+    const svg = renderRelations(g, { layout: 'timeline' });
+    assert.match(svg, /Evolução temporal por períodos/);
+    assert.match(svg, /Densidade estimada dos valores anuais/);
+    assert.doesNotMatch(svg, /NaN|Infinity|undefined/);
+  });
 });
