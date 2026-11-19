@@ -682,16 +682,87 @@
   border: 1px solid #E2E8F0;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #AAB6C5 transparent;
-  scrollbar-gutter: stable;
+  padding: 14px 14px 10px;
+  overflow: hidden;
   box-sizing: border-box;
   z-index: 10;
   transform: translateZ(6px);
   transition: transform 0.5s 0.08s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.4s ease;
 }
+
+.ath-folha-paginas-palco {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #AAB6C5 transparent;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+
+.ath-folha-paginas-palco::-webkit-scrollbar { width: 6px; }
+.ath-folha-paginas-palco::-webkit-scrollbar-track { background: transparent; }
+.ath-folha-paginas-palco::-webkit-scrollbar-thumb { background: #AAB6C5; border-radius: 8px; }
+
+.ath-folha-pagina.ativa {
+  animation: athFolhaVirar 0.22s ease-out;
+}
+@keyframes athFolhaVirar {
+  from { opacity: 0.45; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.ath-folha-paginacao {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid #E2E8F0;
+  background: linear-gradient(135deg, #FFF 86%, #EEF4FA 100%);
+}
+.ath-folha-pag-btn {
+  border: 1px solid #CBD5E1;
+  background: #F8FAFC;
+  color: #314F79;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ath-folha-pag-btn[aria-pressed="true"] {
+  background: #314F79;
+  color: #FFFFFF;
+  border-color: #314F79;
+}
+.ath-folha-pag-ind {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  text-align: center;
+}
+
+.ath-folha-var-header { margin-bottom: 10px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px; }
+.ath-folha-var-titulo { margin: 0 0 2px; font-size: 13px; font-weight: 800; color: #0F172A; }
+.ath-folha-var-sub { margin: 0; font-size: 10.5px; color: #64748B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ath-folha-var-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.ath-folha-var-vazio { margin: 4px 0; font-size: 11px; color: #64748B; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 8px; }
+.ath-folha-var-item { border: 1px solid #E2E8F0; border-radius: 8px; padding: 7px 8px; background: #F8FAFC; display: flex; flex-direction: column; gap: 6px; }
+.ath-folha-var-item-topo { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ath-folha-var-nome { font-size: 11px; font-weight: 800; color: #1E293B; }
+.ath-folha-var-limpar { border: none; background: #E2E8F0; color: #475569; width: 18px; height: 18px; border-radius: 50%; font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.ath-folha-var-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ath-folha-var-chip { border: 1px solid #CBD5E1; background: #FFFFFF; color: #334155; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; cursor: pointer; }
+.ath-folha-var-chip.ativo { background: #314F79; color: #FFFFFF; border-color: #314F79; }
+.ath-folha-var-input, .ath-folha-var-input-val { width: 100%; box-sizing: border-box; font-size: 11px; padding: 5px 8px; border: 1px solid #CBD5E1; border-radius: 6px; background: #FFFFFF; color: #0F172A; }
+.ath-folha-var-add { border-top: 1px dashed #CBD5E1; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ath-folha-var-add-tit { font-size: 11px; font-weight: 800; color: #314F79; }
+.ath-folha-var-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.ath-folha-var-preset-btn { border: 1px solid #C8D7E6; background: #EEF4FA; color: #314F79; font-size: 10px; font-weight: 750; padding: 2px 7px; border-radius: 999px; cursor: pointer; }
+.ath-folha-var-btn-add { width: 100%; font-size: 11px; padding: 6px 10px; }
 
 .ath-livro-folha-interna::-webkit-scrollbar {
   width: 7px;
@@ -1142,6 +1213,7 @@
   .ath-status-btn,
   .ath-btn-copiar-citacao,
   .ath-btn-soft,
+  .ath-folha-pagina.ativa,
   .ath-livro-3d:not(.aberto):hover,
   .ath-livro-3d-wrap:hover.ath-livro-3d:not(.aberto),
   .ath-livro-3d-wrap:hover .ath-livro-3d:not(.aberto) {

@@ -36,6 +36,38 @@ import {
 
 import { artigoTemPdf } from './athenes_estudo_artigos_dados.js';
 import { svgIcone } from './athenes_icones.js';
+import {
+  PRESETS_VARIAVEIS_REFERENCIA,
+  normalizarMapaVariaveis,
+  obterCatalogoVariaveis,
+  registrarVariavelNoCatalogo,
+  definirVariavelNoArtigo,
+  removerVariavelDoArtigo,
+  slugVariavel
+} from '../core/athenes_variaveis_referencia.js';
+
+function limparFilhosElemento(el) {
+  if (!el) return;
+  while (el.firstChild || (el.children && el.children.length > 0)) {
+    const alvo = el.firstChild || el.children[0];
+    if (typeof el.removeChild === 'function') {
+      el.removeChild(alvo);
+    } else if (Array.isArray(el.children)) {
+      el.children.shift();
+    } else {
+      break;
+    }
+  }
+}
+
+function elementoVisivelNaFolha(el, raiz) {
+  let cur = el;
+  while (cur && cur !== raiz) {
+    if (cur.style?.display === 'none') return false;
+    cur = cur.parentNode;
+  }
+  return Boolean(el && el.style?.display !== 'none');
+}
 
 export const CORES_CAPA_SELECAO = Object.freeze([
   { cor: CORES_CAPA_PADRAO[0], nome: 'Azul' },
@@ -838,7 +870,7 @@ export function tratarTecladoLivro3D(evento, livroAbertoEl) {
       : null;
     if (folha && typeof folha.querySelectorAll === 'function') {
       const seletores = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-      const focaveis = Array.from(folha.querySelectorAll(seletores)).filter(el => el && el.style?.display !== 'none');
+      const focaveis = Array.from(folha.querySelectorAll(seletores)).filter(el => elementoVisivelNaFolha(el, folha));
       if (focaveis.length > 0) {
         const primeiro = focaveis[0];
         const ultimo = focaveis[focaveis.length - 1];
@@ -933,7 +965,9 @@ export function renderizarFolhaInterna(ref = {}, {
   onMoverPasta = null,
   onMudarCor = null,
   onEditarMetadados = null,
-  onAlterarCorCapa = null
+  onAlterarCorCapa = null,
+  onAtualizarVariaveis = null,
+  obterCatalogoVariaveisFn = null
 } = {}) {
   const fnEditarMeta = onEditarMetadados || onEditarMeta;
   const fnMudarCor = onAlterarCorCapa || onMudarCor;
@@ -942,6 +976,13 @@ export function renderizarFolhaInterna(ref = {}, {
   folha.setAttribute('role', 'dialog');
   folha.setAttribute('aria-modal', 'true');
   folha.setAttribute('aria-label', `Ficha rápida de ${ref?.titulo || 'referência'}`);
+
+  const palcoPaginas = criarElemento('div', 'ath-folha-paginas-palco');
+  const pagFicha = criarElemento('div', 'ath-folha-pagina ath-folha-pagina-ficha ativa');
+  pagFicha.setAttribute('data-folha-pagina', 'ficha');
+  const pagVars = criarElemento('div', 'ath-folha-pagina ath-folha-pagina-variaveis');
+  pagVars.setAttribute('data-folha-pagina', 'variaveis');
+  pagVars.style.display = 'none';
 
   // Normalização de dados seguros
   const tituloStr = String(ref?.titulo || 'Sem Título').trim() || 'Sem Título';
@@ -1019,7 +1060,7 @@ export function renderizarFolhaInterna(ref = {}, {
     meta.textContent += ` · ${ref.publicacao}`;
   }
   cabecalho.appendChild(meta);
-  folha.appendChild(cabecalho);
+  pagFicha.appendChild(cabecalho);
 
   {
     const seletorCor = criarElemento('div', 'ath-folha-cores-capa');
@@ -1058,7 +1099,7 @@ export function renderizarFolhaInterna(ref = {}, {
       amostras.appendChild(amostra);
     }
     seletorCor.appendChild(amostras);
-    folha.appendChild(seletorCor);
+    pagFicha.appendChild(seletorCor);
   }
 
   // 2. Citation Tracker
@@ -1102,7 +1143,7 @@ export function renderizarFolhaInterna(ref = {}, {
     }
     tracker.appendChild(secoesLista);
   }
-  folha.appendChild(tracker);
+  pagFicha.appendChild(tracker);
 
   // 3. Preview de Fichamento & Anotação Rápida
   const preview = criarElemento('div', 'ath-fichamento-preview ath-folha-fichamento');
@@ -1183,7 +1224,7 @@ export function renderizarFolhaInterna(ref = {}, {
     executarSalvarNota();
   });
 
-  folha.appendChild(preview);
+  pagFicha.appendChild(preview);
 
   // 4. Ações da Folha
   const acoes = criarElemento('div', 'ath-folha-acoes');
@@ -1233,6 +1274,247 @@ export function renderizarFolhaInterna(ref = {}, {
     acoes.appendChild(secBox);
   }
 
+  pagFicha.appendChild(acoes);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Página 2: Variáveis Personalizadas da Referência (ex.: Inclusão/Exclusão)
+  // Construída 100% com criarElemento/appendChild (compatível com mock DOM).
+  // ─────────────────────────────────────────────────────────────────────────
+  const varHeader = criarElemento('div', 'ath-folha-var-header');
+  const varTitulo = criarElemento('h3', 'ath-folha-var-titulo');
+  varTitulo.textContent = 'Variáveis da Referência';
+  const varSub = criarElemento('p', 'ath-folha-var-sub');
+  varSub.textContent = tituloStr;
+  varHeader.appendChild(varTitulo);
+  varHeader.appendChild(varSub);
+  pagVars.appendChild(varHeader);
+
+  const varListaEl = criarElemento('div', 'ath-folha-var-lista');
+  pagVars.appendChild(varListaEl);
+
+  const varAddBox = criarElemento('div', 'ath-folha-var-add');
+  const varAddTitulo = criarElemento('div', 'ath-folha-var-add-tit');
+  varAddTitulo.textContent = 'Adicionar variável';
+  varAddBox.appendChild(varAddTitulo);
+
+  const presetsRow = criarElemento('div', 'ath-folha-var-presets');
+  const inNomeVar = criarElemento('input', 'ath-folha-var-input');
+  inNomeVar.setAttribute('type', 'text');
+  inNomeVar.setAttribute('placeholder', 'Nome (ex.: Triagem, Critério)');
+  const inValVar = criarElemento('input', 'ath-folha-var-input');
+  inValVar.setAttribute('type', 'text');
+  inValVar.setAttribute('placeholder', 'Valor (ex.: Incluído, Excluído)');
+  const inOpsVar = criarElemento('input', 'ath-folha-var-input');
+  inOpsVar.setAttribute('type', 'text');
+  inOpsVar.setAttribute('placeholder', 'Opções (ex.: Incluído, Excluído, Talvez)');
+  const btnCriarVar = criarElemento('button', 'ath-btn ath-btn-sm ath-btn-primary ath-folha-var-btn-add');
+  btnCriarVar.setAttribute('type', 'button');
+  btnCriarVar.textContent = '+ Salvar variável';
+
+  const notificarVar = () => {
+    atualizarPaginacaoUI();
+    if (typeof onAtualizarVariaveis === 'function') onAtualizarVariaveis(ref);
+  };
+
+  for (const preset of PRESETS_VARIAVEIS_REFERENCIA.slice(0, 3)) {
+    const bPreset = criarElemento('button', 'ath-folha-var-preset-btn');
+    bPreset.setAttribute('type', 'button');
+    bPreset.textContent = `+ ${preset.nome.split(' (')[0]}`;
+    bPreset.addEventListener('click', (ev) => {
+      if (ev?.stopPropagation) ev.stopPropagation();
+      registrarVariavelNoCatalogo(preset, [ref]);
+      renderizarListaVariaveis();
+      atualizarPaginacaoUI();
+    });
+    presetsRow.appendChild(bPreset);
+  }
+  varAddBox.appendChild(presetsRow);
+  varAddBox.appendChild(inNomeVar);
+  varAddBox.appendChild(inValVar);
+  varAddBox.appendChild(inOpsVar);
+  varAddBox.appendChild(btnCriarVar);
+  pagVars.appendChild(varAddBox);
+
+  const listaCatalogo = () => {
+    const base = typeof obterCatalogoVariaveisFn === 'function' ? obterCatalogoVariaveisFn() : obterCatalogoVariaveis([ref]);
+    const porId = new Map();
+    for (const v of base) {
+      if (v?.id) porId.set(v.id, { ...v, opcoes: [...(v.opcoes || [])] });
+    }
+    const doRef = normalizarMapaVariaveis(ref?.variaveisPersonalizadas);
+    for (const [nome, valor] of Object.entries(doRef)) {
+      const id = slugVariavel(nome);
+      if (!id) continue;
+      const vals = Array.isArray(valor) ? valor : [valor];
+      if (!porId.has(id)) {
+        porId.set(id, { id, nome, tipo: vals.length ? 'selecao' : 'texto', opcoes: [...vals] });
+      } else {
+        const def = porId.get(id);
+        for (const v of vals) {
+          if (!def.opcoes.some(o => o.toLocaleLowerCase('pt-BR') === v.toLocaleLowerCase('pt-BR'))) def.opcoes.push(v);
+        }
+      }
+    }
+    return [...porId.values()];
+  };
+
+  const valorAtualDaVar = (nomeVar) => {
+    const mapa = normalizarMapaVariaveis(ref?.variaveisPersonalizadas);
+    const idAlvo = slugVariavel(nomeVar);
+    for (const [k, v] of Object.entries(mapa)) {
+      if (slugVariavel(k) === idAlvo) return Array.isArray(v) ? v[0] || '' : String(v || '');
+    }
+    return '';
+  };
+
+  function renderizarListaVariaveis() {
+    limparFilhosElemento(varListaEl);
+    const itens = listaCatalogo();
+    if (!itens.length) {
+      const vazio = criarElemento('p', 'ath-folha-var-vazio');
+      vazio.textContent = 'Nenhuma variável criada ainda. Use os botões rápidos ou adicione abaixo.';
+      varListaEl.appendChild(vazio);
+      return;
+    }
+
+    for (const def of itens) {
+      const card = criarElemento('div', 'ath-folha-var-item');
+      const topo = criarElemento('div', 'ath-folha-var-item-topo');
+      const lbl = criarElemento('strong', 'ath-folha-var-nome');
+      lbl.textContent = def.nome;
+      topo.appendChild(lbl);
+
+      const valorAtual = valorAtualDaVar(def.nome);
+      if (valorAtual) {
+        const btnLimpar = criarElemento('button', 'ath-folha-var-limpar');
+        btnLimpar.setAttribute('type', 'button');
+        btnLimpar.setAttribute('title', 'Limpar valor');
+        btnLimpar.textContent = '×';
+        btnLimpar.addEventListener('click', (ev) => {
+          if (ev?.stopPropagation) ev.stopPropagation();
+          removerVariavelDoArtigo(ref, def.nome);
+          renderizarListaVariaveis();
+          notificarVar();
+        });
+        topo.appendChild(btnLimpar);
+      }
+      card.appendChild(topo);
+
+      if (def.opcoes && def.opcoes.length > 0) {
+        const chipsBox = criarElemento('div', 'ath-folha-var-chips');
+        for (const op of def.opcoes) {
+          const ativo = valorAtual && valorAtual.toLocaleLowerCase('pt-BR') === op.toLocaleLowerCase('pt-BR');
+          const chip = criarElemento('button', `ath-folha-var-chip ${ativo ? 'ativo' : ''}`);
+          chip.setAttribute('type', 'button');
+          chip.setAttribute('aria-pressed', String(Boolean(ativo)));
+          chip.textContent = op;
+          chip.addEventListener('click', (ev) => {
+            if (ev?.stopPropagation) ev.stopPropagation();
+            if (ativo) removerVariavelDoArtigo(ref, def.nome);
+            else definirVariavelNoArtigo(ref, def.nome, op);
+            renderizarListaVariaveis();
+            notificarVar();
+          });
+          chipsBox.appendChild(chip);
+        }
+        card.appendChild(chipsBox);
+      } else {
+        const inputLivre = criarElemento('input', 'ath-folha-var-input-val');
+        inputLivre.setAttribute('type', 'text');
+        inputLivre.setAttribute('placeholder', 'Digite um valor...');
+        inputLivre.value = valorAtual;
+        const salvarLivre = () => {
+          const novo = String(inputLivre.value || '').trim();
+          if (novo === valorAtual) return;
+          if (!novo) removerVariavelDoArtigo(ref, def.nome);
+          else definirVariavelNoArtigo(ref, def.nome, novo);
+          renderizarListaVariaveis();
+          notificarVar();
+        };
+        inputLivre.addEventListener('change', salvarLivre);
+        inputLivre.addEventListener('blur', salvarLivre);
+        card.appendChild(inputLivre);
+      }
+      varListaEl.appendChild(card);
+    }
+  }
+
+  btnCriarVar.addEventListener('click', (ev) => {
+    if (ev?.stopPropagation) ev.stopPropagation();
+    const nome = String(inNomeVar.value || '').trim();
+    if (!nome) return;
+    const val = String(inValVar.value || '').trim();
+    const opsRaw = String(inOpsVar.value || '').trim();
+    const opcoes = opsRaw ? opsRaw.split(/[,\n;]+/).map(s => s.trim()).filter(Boolean) : [];
+    if (val && !opcoes.some(o => o.toLocaleLowerCase('pt-BR') === val.toLocaleLowerCase('pt-BR')) && opcoes.length) {
+      opcoes.push(val);
+    }
+    registrarVariavelNoCatalogo({ nome, opcoes }, [ref]);
+    if (val) definirVariavelNoArtigo(ref, nome, val);
+    inNomeVar.value = '';
+    inValVar.value = '';
+    inOpsVar.value = '';
+    renderizarListaVariaveis();
+    notificarVar();
+  });
+
+  palcoPaginas.appendChild(pagFicha);
+  palcoPaginas.appendChild(pagVars);
+  folha.appendChild(palcoPaginas);
+
+  // Barra de paginação fixa na base da folha ("passar a página")
+  let paginaAtualFolha = 'ficha';
+  const paginacao = criarElemento('div', 'ath-folha-paginacao');
+  const btnPagAnt = criarElemento('button', 'ath-folha-pag-btn ath-folha-pag-btn-ant');
+  btnPagAnt.setAttribute('type', 'button');
+  btnPagAnt.setAttribute('data-pag-alvo', 'ficha');
+  btnPagAnt.textContent = '‹ Ficha';
+
+  const indPag = criarElemento('span', 'ath-folha-pag-ind');
+  const btnPagProx = criarElemento('button', 'ath-folha-pag-btn ath-folha-pag-btn-prox');
+  btnPagProx.setAttribute('type', 'button');
+  btnPagProx.setAttribute('data-pag-alvo', 'variaveis');
+
+  const atualizarPaginacaoUI = () => {
+    const totalVarsPreenchidas = Object.keys(normalizarMapaVariaveis(ref?.variaveisPersonalizadas)).length;
+    btnPagProx.textContent = `Variáveis (${totalVarsPreenchidas}) ›`;
+    indPag.textContent = paginaAtualFolha === 'ficha' ? '1 / 2 · Ficha' : `2 / 2 · Variáveis (${totalVarsPreenchidas})`;
+    btnPagAnt.setAttribute('aria-pressed', String(paginaAtualFolha === 'ficha'));
+    btnPagProx.setAttribute('aria-pressed', String(paginaAtualFolha === 'variaveis'));
+  };
+
+  const irParaPagina = (alvo) => {
+    paginaAtualFolha = alvo === 'variaveis' ? 'variaveis' : 'ficha';
+    if (paginaAtualFolha === 'ficha') {
+      pagFicha.style.display = '';
+      pagVars.style.display = 'none';
+      pagFicha.classList?.add('ativa');
+      pagVars.classList?.remove('ativa');
+    } else {
+      pagFicha.style.display = 'none';
+      pagVars.style.display = '';
+      pagVars.classList?.add('ativa');
+      pagFicha.classList?.remove('ativa');
+      renderizarListaVariaveis();
+    }
+    atualizarPaginacaoUI();
+  };
+
+  btnPagAnt.addEventListener('click', (ev) => {
+    if (ev?.stopPropagation) ev.stopPropagation();
+    irParaPagina('ficha');
+  });
+  btnPagProx.addEventListener('click', (ev) => {
+    if (ev?.stopPropagation) ev.stopPropagation();
+    irParaPagina('variaveis');
+  });
+
+  atualizarPaginacaoUI();
+  paginacao.appendChild(btnPagAnt);
+  paginacao.appendChild(indPag);
+  paginacao.appendChild(btnPagProx);
+  folha.appendChild(paginacao);
+
   // Gerenciamento de teclado dentro da folha modal (Escape para fechar e Focus Trap no Tab)
   folha.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' || ev.keyCode === 27) {
@@ -1247,7 +1529,7 @@ export function renderizarFolhaInterna(ref = {}, {
     if (ev.key === 'Tab' || ev.keyCode === 9) {
       const seletores = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
       const focaveis = typeof folha.querySelectorAll === 'function'
-        ? Array.from(folha.querySelectorAll(seletores)).filter(el => el && el.style?.display !== 'none')
+        ? Array.from(folha.querySelectorAll(seletores)).filter(el => elementoVisivelNaFolha(el, folha))
         : [];
       if (focaveis.length > 0) {
         const primeiro = focaveis[0];
@@ -1268,6 +1550,5 @@ export function renderizarFolhaInterna(ref = {}, {
     }
   });
 
-  folha.appendChild(acoes);
   return folha;
 }

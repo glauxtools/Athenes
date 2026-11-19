@@ -89,6 +89,8 @@ export function clonarEstadoArtigo(art) {
     pastaId: art.pastaId ?? null,
     corCapa: art.corCapa || '',
     status: art.status || '',
+    statusLeitura: art.statusLeitura || '',
+    variaveisPersonalizadas: clonarJsonSeguro(art.variaveisPersonalizadas && typeof art.variaveisPersonalizadas === 'object' ? art.variaveisPersonalizadas : {}, {}),
     totalPaginas: art.totalPaginas ?? null,
     conteudoPaginasPdf: clonarJsonSeguro(Array.isArray(art.conteudoPaginasPdf) ? art.conteudoPaginasPdf : [], []),
     fichamento: {
@@ -123,6 +125,10 @@ export function aplicarEstadoArtigo(art, snapshot) {
   art.pastaId = snapshot.pastaId ?? null;
   if (snapshot.corCapa !== undefined) art.corCapa = snapshot.corCapa;
   if (snapshot.status !== undefined) art.status = snapshot.status;
+  if (snapshot.statusLeitura !== undefined) art.statusLeitura = snapshot.statusLeitura;
+  if (snapshot.variaveisPersonalizadas !== undefined) {
+    art.variaveisPersonalizadas = clonarJsonSeguro(snapshot.variaveisPersonalizadas, {});
+  }
   if (Array.isArray(snapshot.conteudoPaginasPdf)) {
     art.conteudoPaginasPdf = clonarJsonSeguro(snapshot.conteudoPaginasPdf, []);
   }

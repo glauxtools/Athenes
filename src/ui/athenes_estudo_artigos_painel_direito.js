@@ -12,6 +12,15 @@ import { escapeHtml, sanitizarHtmlEditorial } from '../core/athenes_seguranca.js
 import { linhasInformacoesZotero, informacoesDoArtigo } from '../core/athenes_zotero_campos.js';
 import { svgIcone, svgGoogleDrive } from './athenes_icones.js';
 import { obterPdfLocal, registrarPdfLocalNoArtigo, garantirPdfDoArtigo, salvarArtigosEstudo, salvarArtigosEstudoDebounced, formatarCitacaoAbntDoArtigo, artigoTemPdf, ehArtigoExemploFicticio } from './athenes_estudo_artigos_dados.js';
+import {
+  PRESETS_VARIAVEIS_REFERENCIA,
+  normalizarMapaVariaveis,
+  obterCatalogoVariaveis,
+  registrarVariavelNoCatalogo,
+  definirVariavelNoArtigo,
+  removerVariavelDoArtigo,
+  slugVariavel
+} from '../core/athenes_variaveis_referencia.js';
 
 export const metodosEstudoPainelDireito = {
   /** "Informações" do item no Zotero (tipo, campos do tipo, autores com função, datas), só os preenchidos. */
@@ -205,6 +214,20 @@ export const metodosEstudoPainelDireito = {
           <label class="ath-fichamento-rotulo" style="margin-top:10px;">Tags / Palavras-Chave (Zotero)</label>
           <input type="text" id="athEstudoTagsInput" class="ath-input" value="${escapeHtml((art.palavrasChave || []).join(', '))}" placeholder="Ex.: REURB, Morfologia, SIG">
 
+          <div class="ath-estudo-vars-bloco" id="athEstudoVariaveisBloco" style="margin-top:12px; padding:10px; border:1px solid #DCE5F1; border-radius:10px; background:#F8FAFC;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:8px;">
+              <label class="ath-fichamento-rotulo" style="margin:0;">Variáveis personalizadas</label>
+              <button type="button" class="ath-btn ath-btn-sm" id="athEstudoBtnPresetTriagem" style="height:22px; padding:0 8px; font-size:10.5px;">+ Triagem</button>
+            </div>
+            <div id="athEstudoVarsLista"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px;">
+              <input type="text" id="athEstudoVarNovaNome" class="ath-input" placeholder="Nome (ex.: Triagem)">
+              <input type="text" id="athEstudoVarNovaVal" class="ath-input" placeholder="Valor (ex.: Incluído)">
+            </div>
+            <input type="text" id="athEstudoVarNovaOps" class="ath-input" style="margin-top:5px;" placeholder="Opções separadas por vírgula (opcional)">
+            <button type="button" class="ath-btn ath-btn-sm ath-btn-primary" id="athEstudoBtnAddVar" style="margin-top:6px; width:100%;">+ Adicionar variável</button>
+          </div>
+
           ${this.htmlNotasDoZotero(art)}
 
           ${this.htmlInformacoesZotero(art)}
@@ -290,6 +313,91 @@ export const metodosEstudoPainelDireito = {
         art.palavrasChave = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
         salvarArtigosEstudo(this.artigos);
         this.registrarSnapshotArtigo?.(art);
+      });
+
+      const renderVarsDireito = () => {
+        const listaEl = box.querySelector('#athEstudoVarsLista');
+        if (!listaEl) return;
+        const cat = obterCatalogoVariaveis(this.artigos || [art]);
+        const doArt = normalizarMapaVariaveis(art.variaveisPersonalizadas);
+        const mapa = new Map(cat.map(v => [v.id, { ...v, opcoes: [...(v.opcoes || [])] }]));
+        for (const [k, val] of Object.entries(doArt)) {
+          const id = slugVariavel(k);
+          if (!id) continue;
+          const arr = Array.isArray(val) ? val : [val];
+          if (!mapa.has(id)) mapa.set(id, { id, nome: k, opcoes: arr });
+        }
+        const defs = [...mapa.values()];
+        if (!defs.length) {
+          listaEl.innerHTML = '<div style="font-size:11px; color:#64748B;">Nenhuma variável ainda. Crie abaixo ou clique em + Triagem.</div>';
+          return;
+        }
+        const valDe = (nomeVar) => {
+          const slug = slugVariavel(nomeVar);
+          for (const [k, v] of Object.entries(normalizarMapaVariaveis(art.variaveisPersonalizadas))) {
+            if (slugVariavel(k) === slug) return Array.isArray(v) ? v[0] || '' : String(v || '');
+          }
+          return '';
+        };
+        listaEl.innerHTML = defs.map(def => {
+          const cur = valDe(def.nome);
+          return `<div style="margin-bottom:7px; padding:7px; background:#fff; border:1px solid #E2E8F0; border-radius:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <strong style="font-size:11px; color:#1E293B;">${escapeHtml(def.nome)}</strong>
+              ${cur ? `<button type="button" data-dir-var-clear="${escapeHtml(def.nome)}" style="border:0;background:transparent;color:#64748B;cursor:pointer;font-size:13px;" title="Limpar">×</button>` : ''}
+            </div>
+            ${def.opcoes.length
+              ? `<div style="display:flex; flex-wrap:wrap; gap:4px;">${def.opcoes.map(op => {
+                  const ativo = cur && cur.toLocaleLowerCase('pt-BR') === op.toLocaleLowerCase('pt-BR');
+                  return `<button type="button" class="ath-btn ath-btn-sm ${ativo ? 'ath-btn-primary' : ''}" data-dir-var-name="${escapeHtml(def.nome)}" data-dir-var-op="${escapeHtml(op)}" style="height:22px; padding:0 8px; font-size:10.5px; border-radius:999px;">${escapeHtml(op)}</button>`;
+                }).join('')}</div>`
+              : `<input type="text" class="ath-input" data-dir-var-input="${escapeHtml(def.nome)}" value="${escapeHtml(cur)}" placeholder="Valor...">`}
+          </div>`;
+        }).join('');
+
+        listaEl.querySelectorAll('[data-dir-var-op]').forEach(btn => btn.addEventListener('click', () => {
+          const n = btn.dataset.dirVarName, op = btn.dataset.dirVarOp;
+          if (valDe(n).toLocaleLowerCase('pt-BR') === op.toLocaleLowerCase('pt-BR')) removerVariavelDoArtigo(art, n);
+          else definirVariavelNoArtigo(art, n, op);
+          salvarArtigosEstudo(this.artigos, art);
+          this.registrarSnapshotArtigo?.(art);
+          renderVarsDireito();
+        }));
+        listaEl.querySelectorAll('[data-dir-var-clear]').forEach(btn => btn.addEventListener('click', () => {
+          removerVariavelDoArtigo(art, btn.dataset.dirVarClear);
+          salvarArtigosEstudo(this.artigos, art);
+          this.registrarSnapshotArtigo?.(art);
+          renderVarsDireito();
+        }));
+        listaEl.querySelectorAll('[data-dir-var-input]').forEach(inp => inp.addEventListener('change', () => {
+          const v = inp.value.trim();
+          if (!v) removerVariavelDoArtigo(art, inp.dataset.dirVarInput);
+          else definirVariavelNoArtigo(art, inp.dataset.dirVarInput, v);
+          salvarArtigosEstudo(this.artigos, art);
+          this.registrarSnapshotArtigo?.(art);
+          renderVarsDireito();
+        }));
+      };
+      renderVarsDireito();
+
+      box.querySelector('#athEstudoBtnPresetTriagem')?.addEventListener('click', () => {
+        registrarVariavelNoCatalogo(PRESETS_VARIAVEIS_REFERENCIA[0], this.artigos || [art]);
+        renderVarsDireito();
+      });
+      box.querySelector('#athEstudoBtnAddVar')?.addEventListener('click', () => {
+        const n = box.querySelector('#athEstudoVarNovaNome')?.value.trim();
+        if (!n) return;
+        const v = box.querySelector('#athEstudoVarNovaVal')?.value.trim() || '';
+        const opsRaw = box.querySelector('#athEstudoVarNovaOps')?.value.trim() || '';
+        const ops = opsRaw ? opsRaw.split(/[,\n;]+/).map(s => s.trim()).filter(Boolean) : (v ? [v] : []);
+        registrarVariavelNoCatalogo({ nome: n, opcoes: ops }, this.artigos || [art]);
+        if (v) definirVariavelNoArtigo(art, n, v);
+        salvarArtigosEstudo(this.artigos, art);
+        this.registrarSnapshotArtigo?.(art);
+        box.querySelector('#athEstudoVarNovaNome').value = '';
+        box.querySelector('#athEstudoVarNovaVal').value = '';
+        box.querySelector('#athEstudoVarNovaOps').value = '';
+        renderVarsDireito();
       });
       return;
     }

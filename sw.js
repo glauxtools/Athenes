@@ -4,7 +4,7 @@
  * Permite instalar a interface no navegador, tablet e celular, funcionando com suporte offline.
  */
 
-const CACHE_NAME = 'athenes-pwa-v47';
+const CACHE_NAME = 'athenes-pwa-v48';
 
 const ASSETS_CANONICOS = [
   './',
@@ -20,6 +20,8 @@ const ASSETS_CANONICOS = [
   './src/css/athenes_zotero.css',
   './src/css/athenes_estante_3d.css',
   './src/css/athenes_traducao.css',
+  './src/relations/panel.css',
+  './src/relations/controls.css',
   './src/ui/athenes_app.js',
   './src/ui/athenes_dashboard.js',
   './src/ui/athenes_dashboard_pastas.js',
@@ -33,6 +35,16 @@ const ASSETS_CANONICOS = [
   './src/ui/athenes_traducao_ui.js',
   './src/ui/athenes_assistente_ia_ui.js',
   './src/core/athenes_estudo_historico.js',
+  './src/core/athenes_variaveis_referencia.js',
+  './src/core/athenes_relacoes.js',
+  './src/ui/athenes_painel_conexoes.js',
+  './src/relations/analysis.js',
+  './src/relations/render.js',
+  './src/relations/physics.js',
+  './src/relations/drag.js',
+  './src/relations/panel.js',
+  './src/relations/controls.js',
+  './src/relations/download.js',
   './src/ui/athenes_estudo_artigos.js',
   './src/ui/athenes_estudo_artigos_pastas.js',
   './src/ui/athenes_estudo_artigos_estante.js',

@@ -10,6 +10,7 @@ import { salvarArquivoNoGoogleDrive } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { codificarMetadadosNotaZotero } from '../core/athenes_zotero_anexos_notas.js';
 import { blobEhPdf, normalizarDoi, normalizarIsbn } from '../core/athenes_pdf_identificadores.js';
+import { normalizarMapaVariaveis } from '../core/athenes_variaveis_referencia.js';
 
 export const STORAGE_KEY_ARTIGOS = 'athenes_estudo_artigos_v1';
 export const IDS_ARTIGOS_EXEMPLO = new Set(['zot_art_01', 'zot_art_02', 'zot_art_03']);
@@ -359,6 +360,24 @@ export function mesclarFichamentoPreservandoDados(artAlvo, artFonte) {
     artAlvo.conteudoPaginasPdf = artFonte.conteudoPaginasPdf;
   }
 
+  const artFonteMaisNovo = (artFonte.atualizadoEm || '') > (artAlvo.atualizadoEm || '');
+  if (artFonte.statusLeitura && (!artAlvo.statusLeitura || artFonteMaisNovo)) {
+    artAlvo.statusLeitura = artFonte.statusLeitura;
+  }
+  if (artFonte.corCapa && (!artAlvo.corCapa || artFonteMaisNovo)) {
+    artAlvo.corCapa = artFonte.corCapa;
+  }
+  const varsFonte = normalizarMapaVariaveis(artFonte.variaveisPersonalizadas);
+  if (Object.keys(varsFonte).length) {
+    const varsAlvo = normalizarMapaVariaveis(artAlvo.variaveisPersonalizadas);
+    for (const [k, v] of Object.entries(varsFonte)) {
+      if (!(k in varsAlvo) || artFonteMaisNovo) {
+        varsAlvo[k] = v;
+      }
+    }
+    artAlvo.variaveisPersonalizadas = varsAlvo;
+  }
+
   const fAlvo = artAlvo.fichamento || (artAlvo.fichamento = { resumoPessoal: '', metodologiaNotas: '', citacoesMarcadas: [], notasPagina: {}, tracosPorPagina: {}, grifosPorPagina: {} });
   const fFonte = artFonte.fichamento;
   if (!fFonte || typeof fFonte !== 'object') return artAlvo;
@@ -431,6 +450,9 @@ export async function guardarSnapshotArtigosIdb(lista) {
         notaZoteroKey: a.notaZoteroKey || '',
         docCompartilhadoId: a.docCompartilhadoId || '',
         compartilhamento: a.compartilhamento || null,
+        statusLeitura: a.statusLeitura || '',
+        corCapa: a.corCapa || '',
+        variaveisPersonalizadas: normalizarMapaVariaveis(a.variaveisPersonalizadas),
         totalPaginas: a.totalPaginas || 1,
         conteudoPaginasPdf: Array.isArray(a.conteudoPaginasPdf) ? a.conteudoPaginasPdf : [],
         fichamento: a.fichamento ? JSON.parse(JSON.stringify(a.fichamento)) : null

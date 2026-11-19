@@ -34,10 +34,11 @@ import {
   classificarAtalhoHistorico
 } from '../core/athenes_estudo_historico.js';
 import { svgIcone } from './athenes_icones.js';
-import {PainelConexoes} from './athenes_painel_conexoes.js';
-import {registrosReferencias,CAMPOS_RELACOES,inserirFiguraRelacoes} from '../core/athenes_relacoes.js';
+import {PainelConexoes,construirListaPastasRelacoes} from './athenes_painel_conexoes.js';
+import {registrosReferencias,CAMPOS_RELACOES,camposRelacoesComVariaveis,inserirFiguraRelacoes} from '../core/athenes_relacoes.js';
 import * as documentosRelacoes from '../core/athenes_repositorio.js';
-import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, escolherEspelhoZotero, artigoEstaNaPasta, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
+import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, escolherEspelhoZotero, artigoEstaNaPasta, artigoEstaNasPastas, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
+import { obterCatalogoVariaveis, registrarVariavelNoCatalogo, definirVariavelNoArtigo } from '../core/athenes_variaveis_referencia.js';
 import { aplicarFilhosZoteroAoArtigo } from '../core/athenes_zotero_anexos_notas.js';
 import { tokenPodeLerTodoODrive, listarConteudoDoDrive, copiarPdfDoDriveParaAthenes, ESCOPOS_COM_LEITURA } from '../core/athenes_drive_navegar.js';
 import { mostrarAviso } from './athenes_aviso.js';
@@ -134,11 +135,66 @@ export class EstudoArtigosView {
     this._fecharRelacoes?.();
     const overlay=document.createElement('div');overlay.className='ath-modal-backdrop';
     const docs=documentosRelacoes.listar().filter(d=>podeEditarRelacoesDestino(d)&&!d.precisaCarregarConteudo&&d.secoes?.some(sec=>Array.isArray(sec.blocos)));
-    overlay.innerHTML=`<section class="ath-modal ath-relations-modal" style="width:min(1300px,96vw);max-width:1300px"><header class="ath-modal-head"><h2>Análise das referências</h2><button type="button" data-rel-close aria-label="Fechar">×</button></header><div style="padding:12px 20px"><label>Inserir em <select data-rel-destination><option value="">Escolha um documento aberto</option>${docs.map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(d.titulo||'Documento')}</option>`).join('')}</select></label></div><div class="ath-modal-corpo" data-rel-body style="overflow:auto;padding:20px"></div></section>`;document.body.append(overlay);
+    overlay.innerHTML=`<section class="ath-modal ath-relations-modal"><header class="ath-modal-head"><h2>Análise das referências</h2><label class="ath-rel-head-dest">Inserir em <select data-rel-destination><option value="">Escolha um documento aberto</option>${docs.map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(d.titulo||'Documento')}</option>`).join('')}</select></label><button type="button" data-rel-close aria-label="Fechar">×</button></header><div class="ath-modal-corpo" data-rel-body></div></section>`;document.body.append(overlay);
     const all=this.artigosCatalogo().filter(article=>!article.compartilhadoComigo),current=all.filter(a=>!this.pastaFiltroId||this.pastaFiltroId==='todas'||this.pastaFiltroId==='compartilhados_comigo'&&a.compartilhadoComigo||artigoEstaNaPasta(a,this.pastaFiltroId));
-    const sources=[{id:'library',label:'Todas as referências próprias',fields:CAMPOS_RELACOES,defaultStages:['author','theme','year'],records:()=>registrosReferencias(all)},{id:'current-folder',label:'Pasta atual',fields:CAMPOS_RELACOES,defaultStages:['author','theme','year'],records:()=>registrosReferencias(current)}];
+    const pastasArvore=obterPastasDriveLocais();
+    const folders=construirListaPastasRelacoes(all,pastasArvore);
+    const fieldsAll=camposRelacoesComVariaveis(all);
+    const fieldsCurrent=camposRelacoesComVariaveis(current);
+    const sources=[
+      {
+        id:'library',
+        label:'Todas as referências próprias',
+        fields:fieldsAll,
+        defaultStages:['author','theme','year'],
+        folders,
+        records:(scope={})=>{
+          const filtrados=scope?.folderIds?.length?all.filter(a=>artigoEstaNasPastas(a,scope.folderIds,{pastas:pastasArvore,incluirSubpastas:scope.includeSubfolders!==false})):all;
+          return registrosReferencias(filtrados,{pastas:pastasArvore});
+        }
+      },
+      {
+        id:'current-folder',
+        label:'Pasta atual',
+        fields:fieldsCurrent,
+        defaultStages:['author','theme','year'],
+        records:()=>registrosReferencias(current,{pastas:pastasArvore})
+      }
+    ];
     if(this.pastaFiltroId==='compartilhados_comigo')sources.pop();
-    const panel=new PainelConexoes(overlay.querySelector('[data-rel-body]'),{referencias:all,secoes:[]},{sources,initial:this.analiseRelacoes,onSave:data=>{this.analiseRelacoes=data;},onInsert:data=>{const doc=docs.find(d=>d.id===overlay.querySelector('[data-rel-destination]').value);if(!doc)throw Error('Escolha um documento aberto para inserir o gráfico.');const source=sources.find(s=>s.id===data.sourceId),records=source.records();inserirFiguraRelacoes(doc,{...data,sourceId:'library',scope:data.sourceId==='current-folder'&&this.pastaFiltroId&&this.pastaFiltroId!=='todas'?{folderId:this.pastaFiltroId}:undefined,records});documentosRelacoes.gravarDocumento(doc);window.dispatchEvent(new CustomEvent('athenes:relacoes-inseridas',{detail:{doc}}));}});
+    const panel=new PainelConexoes(overlay.querySelector('[data-rel-body]'),{referencias:all,secoes:[]},{
+      sources,
+      pastas:pastasArvore,
+      folders,
+      currentFolderId:this.pastaFiltroId||'todas',
+      initial:this.analiseRelacoes,
+      onCreateVariable:def=>registrarVariavelNoCatalogo(def,this.artigos),
+      onMutateRecordVariable:(recordIds,varName,val)=>{
+        const ids=new Set((recordIds||[]).map(String));
+        let mudou=false;
+        for(const art of this.artigos){
+          if(ids.has(String(art.id||art.chaveZotero||art.chave))){
+            definirVariavelNoArtigo(art,varName,val);
+            salvarArtigosEstudo(this.artigos,art);
+            mudou=true;
+          }
+        }
+        if(mudou){
+          this.registrarSnapshotCatalogo();
+          if(!this.artigoAberto)this.atualizarGridCatalogo();
+        }
+      },
+      onSave:data=>{this.analiseRelacoes=data;},
+      onInsert:data=>{
+        const doc=docs.find(d=>d.id===overlay.querySelector('[data-rel-destination]').value);
+        if(!doc)throw Error('Escolha um documento aberto para inserir o gráfico.');
+        const source=sources.find(s=>s.id===data.sourceId),records=source.records(data.scope||{});
+        const scope=data.scope||(data.sourceId==='current-folder'&&this.pastaFiltroId&&this.pastaFiltroId!=='todas'?{folderId:this.pastaFiltroId}:undefined);
+        inserirFiguraRelacoes(doc,{...data,sourceId:'library',scope,records});
+        documentosRelacoes.gravarDocumento(doc);
+        window.dispatchEvent(new CustomEvent('athenes:relacoes-inseridas',{detail:{doc}}));
+      }
+    });
     const close=()=>{panel.destroy();overlay.remove();this._fecharRelacoes=null;};this._fecharRelacoes=close;overlay.querySelector('[data-rel-close]').addEventListener('click',close);overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
   }
   artigosCatalogo() {
@@ -1030,7 +1086,12 @@ export class EstudoArtigosView {
             salvarArtigosEstudo(this.artigos, art);
             this.registrarSnapshotCatalogo();
           }
-        }
+        },
+        onAtualizarVariaveis: (art) => {
+          salvarArtigosEstudo(this.artigos, art);
+          this.registrarSnapshotCatalogo();
+        },
+        obterCatalogoVariaveisFn: () => obterCatalogoVariaveis(this.artigos)
       }
     });
 

@@ -396,24 +396,22 @@ export class AthenesApp {
     const modal = document.createElement('div');
     modal.className = 'ath-modal-backdrop';
     modal.innerHTML = `
-      <div class="ath-modal" style="max-width: 950px; height: 85vh;">
+      <div class="ath-modal ath-relations-modal">
         <div class="ath-modal-head">
-          <h2>Grafo de Conexões Bibliográficas (Obras, Autores, Temas e Anos)</h2>
-          <button type="button" class="ath-btn ath-btn-icon" id="athModalConexoesFechar">✕</button>
+          <h2>Grafo de Conexões Bibliográficas (Obras, Autores, Temas e Variáveis)</h2>
+          <button type="button" data-rel-close id="athModalConexoesFechar" aria-label="Fechar">×</button>
         </div>
-        <div class="ath-modal-corpo" id="athModalConexoesCorpo" style="padding:16px;"></div>
+        <div class="ath-modal-corpo" id="athModalConexoesCorpo" data-rel-body></div>
       </div>
     `;
 
     document.body.appendChild(modal);
 
-    const fechar = () => modal.remove();
-    modal.querySelector('#athModalConexoesFechar').addEventListener('click', fechar);
-    modal.addEventListener('click', e => { if (e.target === modal) fechar(); });
-
     const corpo = modal.querySelector('#athModalConexoesCorpo');
     const painel=new PainelConexoes(corpo, this.documentoAtivo,{onChange:()=>{this.editorView?.salvarSnapshot?.();this.editorView?.renderizarFolhasPaginas?.();this.autoSalvar();}});
-    modal.querySelector('#athModalConexoesFechar').addEventListener('click',()=>painel.destroy(),{once:true});
+    const fechar = () => { painel.destroy(); modal.remove(); };
+    modal.querySelector('#athModalConexoesFechar').addEventListener('click', fechar);
+    modal.addEventListener('click', e => { if (e.target === modal) fechar(); });
   }
 
   /** Com o Drive conectado, o documento sobe (na pasta dele) alguns segundos depois da última alteração. */

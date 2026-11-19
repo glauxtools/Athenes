@@ -213,3 +213,67 @@ export function artigoEstaNaPasta(art, pastaId) {
   const ids = Array.isArray(art?.pastasIds) && art.pastasIds.length ? art.pastasIds : [art?.pastaId || RAIZ_BIBLIOGRAFIA];
   return ids.includes(pastaId);
 }
+
+/** Coleta todos os IDs da pasta e suas subpastas recursivas (aceita árvore com `subpastas` ou lista plana com `parentId`). */
+export function coletarIdsDescendentesPasta(pastas = [], pastaId) {
+  const resultado = new Set();
+  if (!pastaId) return resultado;
+  const listaPlana = [];
+  const porId = new Map();
+  const filhosPorPai = new Map();
+
+  const indexar = (item, paiFallback = '') => {
+    if (!item?.id || porId.has(item.id)) return;
+    const pid = item.parentId || paiFallback || '';
+    const norm = { ...item, parentId: pid };
+    porId.set(item.id, norm);
+    listaPlana.push(norm);
+    if (pid) {
+      if (!filhosPorPai.has(pid)) filhosPorPai.set(pid, []);
+      filhosPorPai.get(pid).push(norm.id);
+    }
+    if (Array.isArray(item.subpastas)) {
+      for (const sub of item.subpastas) indexar(sub, item.id);
+    }
+  };
+
+  for (const p of (Array.isArray(pastas) ? pastas : [])) indexar(p);
+
+  const fila = [String(pastaId)];
+  while (fila.length) {
+    const atual = fila.shift();
+    if (!atual || resultado.has(atual)) continue;
+    resultado.add(atual);
+    const nodo = porId.get(atual);
+    if (Array.isArray(nodo?.subpastas)) {
+      for (const sub of nodo.subpastas) {
+        if (sub?.id && !resultado.has(String(sub.id))) fila.push(String(sub.id));
+      }
+    }
+    for (const filhoId of (filhosPorPai.get(atual) || [])) {
+      if (!resultado.has(String(filhoId))) fila.push(String(filhoId));
+    }
+  }
+  return resultado;
+}
+
+/** Verifica se o artigo pertence a qualquer uma das pastas informadas (incluindo subpastas quando ativado). */
+export function artigoEstaNasPastas(art, pastaIds = [], { pastas = [], incluirSubpastas = true } = {}) {
+  const lista = Array.isArray(pastaIds) ? pastaIds.map(v => String(v || '').trim()).filter(Boolean) : (pastaIds ? [String(pastaIds)] : []);
+  if (!lista.length || lista.includes('todas')) return true;
+  const permitidas = new Set();
+  for (const pid of lista) {
+    if (pid === 'compartilhados_comigo') {
+      if (art?.compartilhadoComigo) return true;
+      continue;
+    }
+    if (incluirSubpastas) {
+      for (const subId of coletarIdsDescendentesPasta(pastas, pid)) permitidas.add(subId);
+    } else {
+      permitidas.add(pid);
+    }
+  }
+  if (!permitidas.size) return false;
+  const idsArt = Array.isArray(art?.pastasIds) && art.pastasIds.length ? art.pastasIds : [art?.pastaId || RAIZ_BIBLIOGRAFIA];
+  return idsArt.some(id => permitidas.has(String(id)));
+}
