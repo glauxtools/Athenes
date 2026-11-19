@@ -31,6 +31,7 @@ import {
   sortStageNodes
 } from '../src/relations/render.js';
 import { installRelationDrag } from '../src/relations/drag.js';
+import { resolveInitialFolderScope, createRelationPanel } from '../src/relations/panel.js';
 import { renderizarFolhaInterna } from '../src/ui/athenes_estudo_artigos_estante.js';
 
 describe('Variáveis personalizadas, filtros combinados e gráficos de relações fixos', () => {
@@ -461,5 +462,29 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.ok(metrics.modularityQ > 0.3, `Esperava Q > 0.3, obteve ${metrics.modularityQ}`);
     assert.ok(metrics.silhouetteS > 0.5, `Esperava S > 0.5, obteve ${metrics.silhouetteS}`);
     assert.ok(metrics.maxBetweenness > 0.1, `Esperava bridge node com betweenness > 0.1, obteve ${metrics.maxBetweenness}`);
+  });
+
+  it('12. resolveInitialFolderScope prioriza seleção explícita antes de carregar tudo', () => {
+    assert.equal(typeof createRelationPanel, 'function');
+
+    // Com pastas e na visualização geral ("todas"): abre no modo "selected" sem marcar nada ainda
+    const emTodas = resolveInitialFolderScope({ hasFolders: true, currentFolderId: 'todas' });
+    assert.equal(emTodas.folderScopeMode, 'selected');
+    assert.deepEqual(emTodas.folderIds, []);
+
+    // Com pastas e dentro de uma pasta ativa: abre no modo "selected" com a pasta ativa pré-marcada
+    const emPasta = resolveInitialFolderScope({ hasFolders: true, currentFolderId: 'p_mestrado' });
+    assert.equal(emPasta.folderScopeMode, 'selected');
+    assert.deepEqual(emPasta.folderIds, ['p_mestrado']);
+
+    // Com configuração já salva: preserva as pastas salvas
+    const salvo = resolveInitialFolderScope({ hasFolders: true, configuredFolderIds: ['p_a', 'p_b'], currentFolderId: 'todas' });
+    assert.equal(salvo.folderScopeMode, 'selected');
+    assert.deepEqual(salvo.folderIds, ['p_a', 'p_b']);
+
+    // Sem pastas na fonte (ex.: documento): usa modo "all"
+    const semPastas = resolveInitialFolderScope({ hasFolders: false, currentFolderId: 'todas' });
+    assert.equal(semPastas.folderScopeMode, 'all');
+    assert.deepEqual(semPastas.folderIds, []);
   });
 });

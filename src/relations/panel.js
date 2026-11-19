@@ -42,7 +42,16 @@ function groupedFieldOptions(fields=[],selected=''){
   return renderGrp('Variáveis personalizadas',groups.variavel)+renderGrp('Athenes (Leitura, Cor, Pastas)',groups.athenes)+renderGrp('Metadados da referência',groups.meta);
 }
 
-export function createRelationPanel(container,{sources=[],initial={},onSave,onInsert,onChange,onCreateVariable,onMutateRecordVariable,currentFolderId='todas',title='Análise de relações',readonly=false}={}){
+export function resolveInitialFolderScope({hasFolders=false,configuredFolderIds=[],scope=null,currentFolderId='todas'}={}){
+  const list=v=>(Array.isArray(v)?v:[]).map(String).filter(Boolean);
+  let folderIds=list(configuredFolderIds);
+  if(!folderIds.length&&scope?.folderIds?.length)folderIds=list(scope.folderIds);
+  else if(!folderIds.length&&scope?.folderId&&scope.folderId!=='todas')folderIds=[String(scope.folderId)];
+  else if(!folderIds.length&&hasFolders&&currentFolderId&&currentFolderId!=='todas')folderIds=[String(currentFolderId)];
+  return {folderScopeMode:hasFolders?'selected':'all',folderIds};
+}
+
+export function createRelationPanel(container,{sources=[],initial={},onSave,onInsert,onChange,onCreateVariable,onMutateRecordVariable,currentFolderId='todas',title='Análise de relações',readonly=false,autoRender=false}={}){
   if(readonly&&initial.linked===false&&initial.snapshot){
     sources=[{id:initial.sourceId,label:'Instantâneo salvo',fields:initial.snapshotFields||(initial.config?.stages||[]).map((id,index)=>({id,label:initial.snapshot.config.stageLabels?.[index]||id})),records:()=>initial.snapshotRecords||[]}];
   }
@@ -51,13 +60,15 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   let style=normalizeRelationStyle(initial.style||{});
   let graph=null,zoom=1,pan={x:0,y:0},timer=null,activeSelection=null,folderSearch='';
   let draggingStageIdx=null;
+  let hasGenerated=Boolean(readonly||autoRender);
 
   if(!source){container.textContent='Nenhuma fonte de dados disponível.';return {destroy(){}};}
   if(!config.stages.length)config.stages=source.defaultStages||source.fields.slice(0,3).map(f=>f.id);
   config.stageOrders=config.stages.map((_,i)=>config.stageOrders?.[i]||'auto');
   if(!config.textFields.length)config.textFields=source.fields.filter(f=>f.text).map(f=>f.id);
-  if(!config.folderIds.length&&initial.scope?.folderIds?.length)config.folderIds=[...initial.scope.folderIds];
-  else if(!config.folderIds.length&&initial.scope?.folderId&&initial.scope.folderId!=='todas')config.folderIds=[initial.scope.folderId];
+  const initScope=resolveInitialFolderScope({hasFolders:Boolean(source.folders?.length),configuredFolderIds:config.folderIds,scope:initial.scope,currentFolderId});
+  let folderScopeMode=initScope.folderScopeMode;
+  config.folderIds=initScope.folderIds;
 
   container.innerHTML=`
   <div class="relation-panel">
@@ -84,6 +95,10 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
           <div class="rel-folder-list" data-rel-folder-list></div>
         </div>
       </fieldset>
+
+      <div class="rel-run-bar" data-rel-run-bar>
+        <button type="button" class="rel-btn-primary rel-btn-run" data-rel-action="run-analysis">Gerar análise</button>
+      </div>
 
       <label>Análise
         <select name="mode">${opts([['fields','Relações entre campos'],['terms','Termos recorrentes nos textos']],config.mode)}</select>
@@ -215,16 +230,27 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   const error=message=>{root.querySelector('[data-rel-error]').textContent=message||'';};
 
   let allSourceRecords=[];
+  let allRecordsSourceId=null;
   let scopedRecords=[];
-  const getScopedRecords=()=>{
-    const useFolders=source.folders?.length&&config.folderIds.length;
-    allSourceRecords=typeof source.records==='function'?source.records({}):[];
-    scopedRecords=useFolders
-      ?(typeof source.records==='function'?source.records({folderIds:config.folderIds,includeSubfolders:config.includeSubfolders}):[])
-      :allSourceRecords;
+  const getScopedRecords=(forceReload=false)=>{
+    if(forceReload||allRecordsSourceId!==source.id){
+      allSourceRecords=typeof source.records==='function'?source.records({}):[];
+      allRecordsSourceId=source.id;
+    }
+    if(source.folders?.length&&folderScopeMode==='selected'){
+      if(!config.folderIds.length){
+        scopedRecords=[];
+        return scopedRecords;
+      }
+      scopedRecords=typeof source.records==='function'
+        ?source.records({folderIds:config.folderIds,includeSubfolders:config.includeSubfolders})
+        :[];
+      return scopedRecords;
+    }
+    scopedRecords=allSourceRecords;
     return scopedRecords;
   };
-  let records=getScopedRecords();
+  let records=getScopedRecords(true);
 
   const nodeDrag=installRelationDrag(viewport,drawing,{layout:()=>style.layout});
 
@@ -251,7 +277,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     const folders=source.folders||[];
     box.hidden=!folders.length;
     if(!folders.length)return;
-    const mode=config.folderIds.length?'selected':'all';
+    const mode=folderScopeMode;
     const rAll=form.querySelector('input[name="folderScope"][value="all"]');
     const rSel=form.querySelector('input[name="folderScope"][value="selected"]');
     if(rAll)rAll.checked=mode==='all';
@@ -352,7 +378,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     const synonyms=Object.fromEntries(lines('synonyms').map(s=>{const i=s.indexOf('=');return i>0?[s.slice(0,i).trim(),s.slice(i+1).trim()]:['',''];}).filter(([a,b])=>a&&b));
     const {stages,stageOrders}=readStagesFromDom();
     const filters=readFiltersFromDom();
-    const folderScope=form.querySelector('input[name="folderScope"]:checked')?.value||'all';
+    const folderScope=form.querySelector('input[name="folderScope"]:checked')?.value||folderScopeMode;
     const folderIds=folderScope==='selected'?[...root.querySelectorAll('[data-rel-folder-id]:checked')].map(e=>e.dataset.relFolderId):[];
     const includeSubfolders=form.elements.namedItem('includeSubfolders')?.checked??true;
     const stageLabels=stages.map(id=>source.fields.find(f=>f.id===id)?.label||id);
@@ -629,6 +655,71 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       ${item.records.length<(item.recordCount??item.value)?'<small class="rel-side-note">Exibindo os primeiros 100 registros.</small>':''}`;
   }
 
+  function renderIdleState(){
+    const fieldsVis=root.querySelector('[data-rel-fields]');
+    const termsVis=root.querySelector('[data-rel-terms]');
+    const recsVis=root.querySelector('[data-rel-records]');
+    if(fieldsVis)fieldsVis.hidden=config.mode!=='fields';
+    if(termsVis)termsVis.hidden=config.mode!=='terms';
+    if(recsVis)recsVis.hidden=value('scope')!=='selected';
+
+    graph=null;
+    activeSelection=null;
+    const clearBtn=root.querySelector('[data-rel-clear-sel]');
+    if(clearBtn)clearBtn.hidden=true;
+    const metricsBox=root.querySelector('[data-rel-metrics]');
+    if(metricsBox)metricsBox.innerHTML='';
+    const chainBox=root.querySelector('[data-rel-chain]');
+    if(chainBox){chainBox.hidden=true;chainBox.innerHTML='';}
+    const recBox=root.querySelector('[data-rel-records-inspect]');
+    if(recBox){recBox.hidden=true;recBox.innerHTML='';}
+    const ranking=root.querySelector('.rel-term-ranking');
+    if(ranking)ranking.hidden=true;
+    const warningsBox=root.querySelector('.rel-warnings');
+    if(warningsBox)warningsBox.innerHTML='';
+
+    const hasFolders=Boolean(source.folders?.length);
+    const noFolderPicked=hasFolders&&folderScopeMode==='selected'&&!config.folderIds.length;
+    const targetCount=value('scope')==='selected'?config.selectedIds.length:records.length;
+    const runBar=root.querySelector('[data-rel-run-bar]');
+    if(runBar){
+      runBar.hidden=false;
+      const runBtn=runBar.querySelector('[data-rel-action="run-analysis"]');
+      if(runBtn)runBtn.disabled=targetCount===0;
+    }
+
+    root.querySelector('.rel-summary').textContent=noFolderPicked
+      ?`Nenhuma pasta selecionada · ${allSourceRecords.length} registro(s) disponíveis na fonte`
+      :`${targetCount} registro(s) pronto(s) para analisar · clique em "Gerar análise"`;
+
+    const escopoTexto=noFolderPicked
+      ?`Escolha uma ou mais pastas à esquerda (ou clique em "Analisar tudo") para evitar carregar todas as ${allSourceRecords.length} referências de uma vez.`
+      :hasFolders&&folderScopeMode==='selected'
+        ?`${config.folderIds.length} pasta(s) selecionada(s) (${targetCount} de ${allSourceRecords.length} registro(s)). Ajuste colunas ou filtros à esquerda se desejar e gere o gráfico.`
+        :`${targetCount} registro(s) selecionado(s) em "${source.label}". Ajuste colunas ou filtros à esquerda e clique abaixo para gerar.`;
+
+    drawing.innerHTML=`
+      <div class="rel-idle-card">
+        <strong>Selecione o que deseja analisar</strong>
+        <p>${esc(escopoTexto)}</p>
+        <div class="rel-idle-actions">
+          <button type="button" class="rel-btn-primary" data-rel-action="run-analysis" ${targetCount===0?'disabled':''}>Gerar análise${targetCount?` (${targetCount})`:''}</button>
+          ${noFolderPicked&&allSourceRecords.length>0?`<button type="button" data-rel-action="run-analysis-all">Analisar tudo (${allSourceRecords.length})</button>`:''}
+        </div>
+      </div>`;
+
+    const inspectBox=root.querySelector('.rel-inspect');
+    if(inspectBox){
+      inspectBox.innerHTML=`
+        <div class="rel-inspect-empty">
+          <strong>Inspetor de cadeia e registros</strong>
+          <p>Escolha as pastas, colunas ou filtros à esquerda e clique em Gerar análise para carregar a rede.</p>
+        </div>`;
+    }
+    const pctEl=root.querySelector('[data-rel-zoom-pct]');
+    if(pctEl)pctEl.textContent='100%';
+  }
+
   function update(){
     error('');
     const data=read();
@@ -636,6 +727,17 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     root.querySelector('[data-rel-fields]').hidden=config.mode!=='fields';
     root.querySelector('[data-rel-terms]').hidden=config.mode!=='terms';
     root.querySelector('[data-rel-records]').hidden=value('scope')!=='selected';
+
+    const emptySelectedFolder=Boolean(source.folders?.length&&folderScopeMode==='selected'&&!config.folderIds.length);
+    if(!hasGenerated||emptySelectedFolder){
+      if(emptySelectedFolder)hasGenerated=false;
+      renderIdleState();
+      return;
+    }
+
+    const runBar=root.querySelector('[data-rel-run-bar]');
+    if(runBar)runBar.hidden=true;
+
     if(config.mode==='fields'&&config.stages.length<2){error('Selecione ao menos duas variáveis.');return;}
     if(config.mode==='terms'&&!config.textFields.length){error('Selecione ao menos um campo de texto.');return;}
     if(value('scope')==='selected'&&!config.selectedIds.length){error('Selecione ao menos um registro.');return;}
@@ -704,20 +806,25 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     clearTimeout(timer);
     if(event.target.name==='source'){
       source=sources.find(s=>s.id===value('source'));
+      const nextScope=resolveInitialFolderScope({hasFolders:Boolean(source.folders?.length),currentFolderId});
+      folderScopeMode=nextScope.folderScopeMode;
+      records=getScopedRecords(true);
+      config={...config,stages:source.defaultStages||source.fields.slice(0,3).map(f=>f.id),stageOrders:(source.defaultStages||[]).map(()=>'auto'),textFields:source.fields.filter(f=>f.text).map(f=>f.id),selectedIds:[],folderIds:nextScope.folderIds,filters:[]};
       records=getScopedRecords();
-      config={...config,stages:source.defaultStages||source.fields.slice(0,3).map(f=>f.id),stageOrders:(source.defaultStages||[]).map(()=>'auto'),textFields:source.fields.filter(f=>f.text).map(f=>f.id),selectedIds:[],folderIds:[],filters:[]};
+      if(!readonly&&source.folders?.length&&!config.folderIds.length)hasGenerated=false;
       refreshSourceFieldsSelects();
       fieldsUI();
       activeSelection=null;
     }else if(event.target.name==='folderScope'){
-      if(event.target.value==='all'){
+      folderScopeMode=event.target.value==='all'?'all':'selected';
+      if(folderScopeMode==='all'){
         config.folderIds=[];
       }else if(!config.folderIds.length&&currentFolderId&&currentFolderId!=='todas'){
-        config.folderIds=[currentFolderId];
-      }else if(!config.folderIds.length&&source.folders?.[0]?.id){
-        config.folderIds=[source.folders[0].id];
+        config.folderIds=[String(currentFolderId)];
       }
       renderFoldersUI();
+      records=getScopedRecords();
+      root.querySelector('[data-rel-records]').innerHTML=records.slice(0,2000).map(r=>`<label><input type="checkbox" data-rel-record="${esc(r.id)}" ${config.selectedIds.includes(String(r.id))?'checked':''}> ${esc(r.label||r.id)}</label>`).join('');
     }else if(event.target.matches('[data-rel-folder-id]')||event.target.name==='includeSubfolders'){
       if(event.target.matches('[data-rel-folder-id]')){
         config.folderIds=[...root.querySelectorAll('[data-rel-folder-id]:checked')].map(e=>e.dataset.relFolderId);
@@ -879,16 +986,48 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     }
 
     if(action==='folders-all'){
+      folderScopeMode='selected';
       config.folderIds=(source.folders||[]).map(f=>String(f.id));
-      renderFoldersUI();update();return;
+      renderFoldersUI();
+      records=getScopedRecords();
+      update();return;
     }
     if(action==='folders-clear'){
+      folderScopeMode='selected';
       config.folderIds=[];
-      renderFoldersUI();update();return;
+      renderFoldersUI();
+      records=getScopedRecords();
+      update();return;
     }
     if(action==='folders-current'){
-      config.folderIds=currentFolderId&&currentFolderId!=='todas'?[String(currentFolderId)]:[];
-      renderFoldersUI();update();return;
+      if(currentFolderId&&currentFolderId!=='todas'){
+        folderScopeMode='selected';
+        config.folderIds=[String(currentFolderId)];
+      }else{
+        folderScopeMode='all';
+        config.folderIds=[];
+      }
+      renderFoldersUI();
+      records=getScopedRecords();
+      update();return;
+    }
+    if(action==='run-analysis'){
+      clearTimeout(timer);
+      records=getScopedRecords();
+      if(!records.length){error('Selecione ao menos uma pasta ou escolha "Diretório inteiro".');return;}
+      hasGenerated=true;
+      update();
+      return;
+    }
+    if(action==='run-analysis-all'){
+      clearTimeout(timer);
+      folderScopeMode='all';
+      config.folderIds=[];
+      renderFoldersUI();
+      records=getScopedRecords();
+      hasGenerated=true;
+      update();
+      return;
     }
 
     if(action==='var-toggle'||action==='var-cancel'){
@@ -959,7 +1098,13 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
 
     try{
       if(['save','insert','svg','png','json'].includes(action)){
-        clearTimeout(timer);update();
+        clearTimeout(timer);
+        if(!hasGenerated){
+          records=getScopedRecords();
+          if(!records.length){error('Selecione ao menos uma pasta e gere a análise antes de continuar.');return;}
+          hasGenerated=true;
+        }
+        update();
         if(root.querySelector('[data-rel-error]').textContent)return;
         button.closest('details')?.removeAttribute('open');
       }
@@ -1000,7 +1145,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
 
   let drag=null,panMoved=false;
   viewport.addEventListener('pointerdown',e=>{
-    if(e.button!==0)return;
+    if(e.button!==0||!graph||e.target.closest('.rel-idle-card'))return;
     const node=e.target.closest('[data-relation-node]');
     if(node&&!isFixedLayout(style.layout))return;
     panMoved=false;
@@ -1035,6 +1180,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   };
 
   const wheel=e=>{
+    if(!graph)return;
     e.preventDefault();
     const rect=viewport.getBoundingClientRect();
     const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?rect.height:1);
@@ -1044,6 +1190,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
 
   let touchPinch=null;
   const onTouchStart=e=>{
+    if(!graph)return;
     if(e.touches?.length===2){
       const t0=e.touches[0],t1=e.touches[1];
       const dist=Math.hypot(t0.clientX-t1.clientX,t0.clientY-t1.clientY);
@@ -1053,6 +1200,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
     }
   };
   const onTouchMove=e=>{
+    if(!graph)return;
     if(touchPinch&&e.touches?.length===2){
       if(e.cancelable)e.preventDefault();
       const t0=e.touches[0],t1=e.touches[1];
@@ -1071,7 +1219,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   return {
     getGraph:()=>graph,
     getConfiguration:read,
-    refreshRecords(){records=getScopedRecords();fieldsUI();update();},
+    refreshRecords(){records=getScopedRecords(true);fieldsUI();update();},
     destroy(){
       clearTimeout(timer);
       nodeDrag.destroy();
