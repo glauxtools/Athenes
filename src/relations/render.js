@@ -2,7 +2,7 @@
 export const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#315887','#288a79','#d57c37','#8459a6','#bd5271','#47a4ae','#b6a03f','#677c98'];
 export const RELATION_LAYOUTS=[['force','Rede orgânica'],['clusters','Comunidades'],['radial','Radial'],['star','Centro e anéis'],['circle','Circular'],['ellipse','Elíptica'],['bundled','Feixes radiais'],['tree','Ramificações'],['sphere','Esfera · projeção'],['arc','Arcos'],['sankey','Sankey / aluvial'],['temporal','Fluxo temporal']];
-export const FIXED_LAYOUTS=new Set(['sankey','temporal']);
+export const FIXED_LAYOUTS=new Set(['sankey','temporal','arc']);
 export const isFixedLayout=layout=>FIXED_LAYOUTS.has(layout);
 
 const ORDER_LABELS={

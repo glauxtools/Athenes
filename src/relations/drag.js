@@ -68,7 +68,7 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
   }
   function wake(){
     if(isFixedLayout(layout()))return;
-    const g=cache();if(g.nodes.length>180||g.edges.length>900)return;
+    const g=cache();if(g.nodes.length>3500||g.edges.length>15000)return;
     simulation=g.nodes.map(n=>{const o=offsets.get(n.id)||{x:0,y:0};return {id:n.id,x:n.x+o.x,y:n.y+o.y,base:n,marginX:n.marginX,marginY:n.marginY,vx:0,vy:0};});
     heat=1;if(!frame)frame=requestAnimationFrame(tick);
   }

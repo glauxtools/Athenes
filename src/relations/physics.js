@@ -3,8 +3,10 @@ export function stepNetwork(nodes,links,pinned,heat=1,{layout='force',width=920,
  const anchored=!['force','clusters'].includes(layout),flow=['sankey','temporal'].includes(layout);
  const byId=new Map(nodes.map(n=>[n.id,n]));
  for(const n of nodes){n.vx=(n.vx||0)*.72;n.vy=(n.vy||0)*.72;}
- for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
-  const a=nodes[i],b=nodes[j],dx=b.x-a.x||.1,dy=b.y-a.y||.1,d=Math.max(6,Math.hypot(dx,dy)),force=Math.min(3,1800/(d*d));
+ const nLen=nodes.length;
+ const repStep=nLen<=450?1:Math.max(1,Math.floor(nLen/60));
+ for(let i=0;i<nLen;i++)for(let j=i+1;j<nLen;j+=repStep){
+  const a=nodes[i],b=nodes[j],dx=b.x-a.x||.1,dy=b.y-a.y||.1,d=Math.max(6,Math.hypot(dx,dy)),force=Math.min(3,(1800*repStep)/(d*d));
   a.vx-=dx/d*force;a.vy-=dy/d*force;b.vx+=dx/d*force;b.vy+=dy/d*force;
  }
  for(const link of links){const a=byId.get(link.source),b=byId.get(link.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),rest=anchored&&a.base&&b.base?Math.max(20,Math.hypot(b.base.x-a.base.x,b.base.y-a.base.y)):85,force=(d-rest)*.008; a.vx+=dx/d*force;a.vy+=dy/d*force;b.vx-=dx/d*force;b.vy-=dy/d*force;}
