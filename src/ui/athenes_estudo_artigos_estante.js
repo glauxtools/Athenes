@@ -738,12 +738,22 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   }
 
   if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !livroEl._fecharAoClicarFora) {
+    livroEl._pointerDownDentro = false;
+    livroEl._marcarPointerDown = (ev) => {
+      livroEl._pointerDownDentro = typeof livroEl.contains === 'function'
+        ? livroEl.contains(ev.target)
+        : ev.target?.closest?.('.ath-livro-3d') === livroEl;
+    };
     livroEl._fecharAoClicarFora = (ev) => {
+      const iniciouDentro = livroEl._pointerDownDentro;
+      livroEl._pointerDownDentro = false;
+      if (iniciouDentro) return;
       const dentro = typeof livroEl.contains === 'function'
         ? livroEl.contains(ev.target)
         : ev.target?.closest?.('.ath-livro-3d') === livroEl;
       if (!dentro) fecharLivro3D(livroEl);
     };
+    document.addEventListener('pointerdown', livroEl._marcarPointerDown, true);
     document.addEventListener('click', livroEl._fecharAoClicarFora, true);
   }
 
@@ -787,6 +797,11 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
 export function fecharLivro3D(livroEl) {
   if (!livroEl) return;
 
+  if (livroEl._marcarPointerDown && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+    document.removeEventListener('pointerdown', livroEl._marcarPointerDown, true);
+    delete livroEl._marcarPointerDown;
+    delete livroEl._pointerDownDentro;
+  }
   if (livroEl._fecharAoClicarFora && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
     document.removeEventListener('click', livroEl._fecharAoClicarFora, true);
     delete livroEl._fecharAoClicarFora;
@@ -978,6 +993,9 @@ export function renderizarFolhaInterna(ref = {}, {
   folha.setAttribute('role', 'dialog');
   folha.setAttribute('aria-modal', 'true');
   folha.setAttribute('aria-label', `Ficha rápida de ${ref?.titulo || 'referência'}`);
+  folha.addEventListener('click', (ev) => {
+    if (ev?.stopPropagation) ev.stopPropagation();
+  });
 
   const palcoPaginas = criarElemento('div', 'ath-folha-paginas-palco');
   const pagFicha = criarElemento('div', 'ath-folha-pagina ath-folha-pagina-ficha ativa');
