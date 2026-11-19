@@ -1210,7 +1210,8 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   let touchPinch=null;
   const onTouchStart=e=>{
     if(!graph)return;
-    if(e.touches?.length===2){
+    if(e.touches?.length>=2){
+      drag=null;panMoved=false;
       const t0=e.touches[0],t1=e.touches[1];
       const dist=Math.hypot(t0.clientX-t1.clientX,t0.clientY-t1.clientY);
       if(dist>8){

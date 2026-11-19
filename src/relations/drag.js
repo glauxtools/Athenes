@@ -6,6 +6,7 @@ import {isFixedLayout} from './render.js';
 export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
   const offsets=new Map();
   let active=null,moved=false,suppressClick=false,frame=0,heat=0,lastFrame=0,geometry=null,simulation=[];
+  const pointers=new Set();
   const point=e=>{
     const svg=drawing.querySelector('svg');
     const ctm=svg?.getScreenCTM?.();
@@ -68,11 +69,13 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
   }
   function wake(){
     if(isFixedLayout(layout()))return;
-    const g=cache();if(g.nodes.length>3500||g.edges.length>15000)return;
+    const g=cache();if(g.nodes.length>450||g.edges.length>2500)return;
     simulation=g.nodes.map(n=>{const o=offsets.get(n.id)||{x:0,y:0};return {id:n.id,x:n.x+o.x,y:n.y+o.y,base:n,marginX:n.marginX,marginY:n.marginY,vx:0,vy:0};});
     heat=1;if(!frame)frame=requestAnimationFrame(tick);
   }
   function down(e){
+    if(e.pointerId!==undefined)pointers.add(e.pointerId);
+    if(pointers.size>1){active=null;moved=false;stop();return;}
     const node=e.target.closest('[data-relation-node]');if(!node||e.button!==0)return;
     const id=node.dataset.relationNode;
     if(isFixedLayout(layout())){
@@ -97,6 +100,7 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
     apply();
   }
   function up(e){
+    if(e.pointerId!==undefined)pointers.delete(e.pointerId);
     if(active?.pointer!==e.pointerId)return;
     const selection=active.node,wasFixed=active.fixed;active=null;
     if(!wasFixed&&viewport.hasPointerCapture?.(e.pointerId))viewport.releasePointerCapture(e.pointerId);
