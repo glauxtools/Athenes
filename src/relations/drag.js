@@ -84,16 +84,19 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
       return;
     }
     const p=point(e);
-    active={id,node,p,offset:offsets.get(id)||{x:0,y:0},fixed:false,pointer:e.pointerId};
+    active={id,node,p,startClient:{x:e.clientX,y:e.clientY},offset:offsets.get(id)||{x:0,y:0},fixed:false,pointer:e.pointerId,isTouch:e.pointerType==='touch'};
     moved=false;suppressClick=false;viewport.setPointerCapture?.(e.pointerId);e.preventDefault();
   }
   function move(e){
+    if(pointers.size>1){active=null;moved=false;stop();return;}
     if(!active||active.pointer!==e.pointerId)return;
     if(active.fixed){
       if(Math.hypot(e.clientX-active.p.x,e.clientY-active.p.y)>6)moved=true;
       return;
     }
-    const p=point(e),dx=p.x-active.p.x,dy=p.y-active.p.y;if(!moved&&Math.hypot(dx,dy)<=3)return;
+    const screenDist=Math.hypot(e.clientX-active.startClient.x,e.clientY-active.startClient.y);
+    if(!moved&&screenDist<=(active.isTouch?12:6))return;
+    const p=point(e),dx=p.x-active.p.x,dy=p.y-active.p.y;
     if(!moved){moved=true;wake();}
     const o={x:active.offset.x+dx,y:active.offset.y+dy};offsets.set(active.id,o);
     const n=simulation.find(n=>n.id===active.id);if(n){n.x=n.base.x+o.x;n.y=n.base.y+o.y;heat=1;if(!frame)frame=requestAnimationFrame(tick);}
