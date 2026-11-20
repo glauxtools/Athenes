@@ -174,7 +174,28 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
         <label>Cor por<select name="colorField"><option value="">Comunidades automáticas</option>${groupedFieldOptions(source.fields,config.colorField)}</select></label>
         <div class="rel-layouts">${RELATION_LAYOUTS.map(([id,label])=>`<button type="button" data-rel-layout="${id}" title="${esc(label)}${isFixedLayout(id)?' (layout fixo)':''}" aria-label="${esc(label)}" aria-pressed="${id===style.layout}">${layoutIcon(id)}<span>${esc(label)}</span></button>`).join('')}</div>
         <label><input name="labels" type="checkbox" ${style.labels?'checked':''}> Mostrar rótulos</label>
-        <label>Tamanho dos nós<input name="nodeScale" type="range" min=".5" max="2" step=".1" value="${style.nodeScale}"></label>
+        <label class="rel-slider-field">
+          <span class="rel-slider-head"><span>Tamanho dos nós</span><small data-rel-val="nodeScale">${Number(style.nodeScale).toFixed(1).replace('.',',')}×</small></span>
+          <input name="nodeScale" type="range" min=".5" max="2" step=".1" value="${style.nodeScale}">
+        </label>
+        <div class="rel-forces-box" data-rel-forces ${isFixedLayout(style.layout)?'hidden':''}>
+          <label class="rel-slider-field" title="Destaca mais os nós com maior número de conexões">
+            <span class="rel-slider-head"><span>Proporção por conexões</span><small data-rel-val="sizeContrast">${Number(style.sizeContrast).toFixed(1).replace('.',',')}×</small></span>
+            <input name="sizeContrast" type="range" min="0" max="2" step=".1" value="${style.sizeContrast}">
+          </label>
+          <label class="rel-slider-field" title="Força com que os nós se afastam entre si">
+            <span class="rel-slider-head"><span>Repulsão global</span><small data-rel-val="repulsion">${Number(style.repulsion).toFixed(1).replace('.',',')}×</small></span>
+            <input name="repulsion" type="range" min=".2" max="3" step=".1" value="${style.repulsion}">
+          </label>
+          <label class="rel-slider-field" title="Força de atração ao longo das ligações">
+            <span class="rel-slider-head"><span>Atração (ligações)</span><small data-rel-val="attraction">${Number(style.attraction).toFixed(1).replace('.',',')}×</small></span>
+            <input name="attraction" type="range" min=".2" max="3" step=".1" value="${style.attraction}">
+          </label>
+          <label class="rel-slider-field" title="Força de retração dos nós para a posição base">
+            <span class="rel-slider-head"><span>Retração</span><small data-rel-val="gravity">${Number(style.gravity).toFixed(1).replace('.',',')}×</small></span>
+            <input name="gravity" type="range" min="0" max="3" step=".1" value="${style.gravity}">
+          </label>
+        </div>
       </fieldset>
 
       <div class="rel-save-actions">
@@ -252,7 +273,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
   };
   let records=getScopedRecords(true);
 
-  const nodeDrag=installRelationDrag(viewport,drawing,{layout:()=>style.layout});
+  const nodeDrag=installRelationDrag(viewport,drawing,{layout:()=>style.layout,forces:()=>({repulsion:style.repulsion,attraction:style.attraction,gravity:style.gravity})});
 
   function fieldDiscreteValues(fieldId){
     const def=source.fields.find(f=>f.id===fieldId);
@@ -406,7 +427,15 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       folderIds,
       includeSubfolders
     });
-    style={...style,labels:form.elements.namedItem('labels').checked,nodeScale:Number(value('nodeScale'))};
+    style=normalizeRelationStyle({
+      ...style,
+      labels:form.elements.namedItem('labels').checked,
+      nodeScale:Number(value('nodeScale')),
+      sizeContrast:value('sizeContrast'),
+      repulsion:value('repulsion'),
+      attraction:value('attraction'),
+      gravity:value('gravity')
+    });
     return {
       sourceId:source.id,
       config,
@@ -803,6 +832,15 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       renderFoldersUI();
       return;
     }
+    if(e.target.matches('input[type="range"][name]')){
+      const badge=form.querySelector(`[data-rel-val="${e.target.name}"]`);
+      if(badge)badge.textContent=`${Number(e.target.value).toFixed(1).replace('.',',')}×`;
+      read();
+      if(['repulsion','attraction','gravity'].includes(e.target.name)&&hasGenerated&&graph&&!isFixedLayout(style.layout)){
+        nodeDrag.nudge();
+        if(!['force','clusters'].includes(style.layout))return;
+      }
+    }
     clearTimeout(timer);
     timer=setTimeout(update,180);
   });
@@ -972,6 +1010,8 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
       nodeDrag.reset();
       style.layout=layoutBtn.dataset.relLayout;
       root.querySelectorAll('[data-rel-layout]').forEach(b=>b.setAttribute('aria-pressed',String(b===layoutBtn)));
+      const forcesBox=root.querySelector('[data-rel-forces]');
+      if(forcesBox)forcesBox.hidden=isFixedLayout(style.layout);
       update();
       return;
     }

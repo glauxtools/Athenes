@@ -3,7 +3,7 @@ import {stepNetwork} from './physics.js';
 import {isFixedLayout} from './render.js';
 
 // Pointer selection and exploratory physics share one SVG geometry cache.
-export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
+export function installRelationDrag(viewport,drawing,{layout=()=> 'force',forces=()=>({repulsion:1,attraction:1,gravity:1})}={}){
   const offsets=new Map();
   let active=null,moved=false,suppressClick=false,frame=0,heat=0,lastFrame=0,geometry=null,simulation=[];
   const pointers=new Set();
@@ -63,7 +63,8 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
   }
   function tick(now){
     frame=0;if(now-lastFrame<32){frame=requestAnimationFrame(tick);return;}lastFrame=now;if(!geometry?.svg?.isConnected||isFixedLayout(layout()))return;
-    stepNetwork(simulation,geometry.edges,active?.id,heat,{layout:layout(),width:Number(geometry.svg.dataset.relationWidth)||920,height:Number(geometry.svg.dataset.relationHeight)||620});
+    const f=typeof forces==='function'?(forces()||{}):{};
+    stepNetwork(simulation,geometry.edges,active?.id,heat,{layout:layout(),width:Number(geometry.svg.dataset.relationWidth)||920,height:Number(geometry.svg.dataset.relationHeight)||620,repulsion:f.repulsion??1,attraction:f.attraction??1,gravity:f.gravity??1});
     for(const n of simulation){const base=n.base;offsets.set(n.id,{x:n.x-base.x,y:n.y-base.y});}
     apply();heat*=.95;if(heat>.02)frame=requestAnimationFrame(tick);
   }
@@ -113,6 +114,7 @@ export function installRelationDrag(viewport,drawing,{layout=()=> 'force'}={}){
   viewport.addEventListener('pointerdown',down);viewport.addEventListener('pointermove',move);viewport.addEventListener('pointerup',up);viewport.addEventListener('pointercancel',up);viewport.addEventListener('click',click,true);
   return {
     apply,
+    nudge(){wake();},
     reset(){stop();offsets.clear();simulation=[];apply();},
     destroy(){stop();viewport.removeEventListener('pointerdown',down);viewport.removeEventListener('pointermove',move);viewport.removeEventListener('pointerup',up);viewport.removeEventListener('pointercancel',up);viewport.removeEventListener('click',click,true);}
   };

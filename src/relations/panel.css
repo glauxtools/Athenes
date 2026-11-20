@@ -68,6 +68,11 @@
 .rel-layouts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .rel-layouts button{justify-content:flex-start;font-size:11px}
 .rel-layouts svg{flex:none}
+.rel-forces-box{display:grid;gap:8px;padding-top:6px;border-top:1px dashed #dce5f1}
+.rel-slider-field{gap:3px!important}
+.rel-slider-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rel-slider-head small{font-size:11px;font-weight:750;color:#315887;display:inline}
+.rel-controls input[type=range]{padding:0;border:none;background:transparent;accent-color:#315887}
 .rel-save-actions{display:grid;gap:8px}
 .rel-save-actions button{background:#315887;color:#fff;border-color:#315887}
 .rel-controls [data-rel-records]{max-height:140px;overflow:auto;display:grid;gap:4px}

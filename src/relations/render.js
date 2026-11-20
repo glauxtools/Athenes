@@ -21,7 +21,24 @@ const fmt=n=>Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});
 const safeColor=c=>/^#[0-9a-f]{6}$/i.test(c||'')?c:palette[0];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const cleanFont=v=>String(v||'Arial, sans-serif').replace(/[^\p{L}\p{N}\s,._-]/gu,'').slice(0,100)||'Arial, sans-serif';
-export function normalizeRelationStyle(raw={}){return {layout:RELATION_LAYOUTS.some(([id])=>id===raw.layout)?raw.layout:'force',primary:safeColor(raw.primary),labels:raw.labels!==false,nodeScale:clamp(Number(raw.nodeScale)||1,.5,2),edgeOpacity:clamp(Number(raw.edgeOpacity)||.25,.05,.9),font:cleanFont(raw.font)};}
+export function normalizeRelationStyle(raw={}){
+  const gRaw=raw.gravity;
+  const scRaw=raw.sizeContrast;
+  const gravity=gRaw===undefined||gRaw===null||gRaw===''?1:clamp(Number(gRaw),0,3);
+  const sizeContrast=scRaw===undefined||scRaw===null||scRaw===''?1:clamp(Number(scRaw),0,2);
+  return {
+    layout:RELATION_LAYOUTS.some(([id])=>id===raw.layout)?raw.layout:'force',
+    primary:safeColor(raw.primary),
+    labels:raw.labels!==false,
+    nodeScale:clamp(Number(raw.nodeScale)||1,.5,2),
+    edgeOpacity:clamp(Number(raw.edgeOpacity)||.25,.05,.9),
+    sizeContrast:Number.isFinite(sizeContrast)?sizeContrast:1,
+    repulsion:clamp(Number(raw.repulsion)||1,.2,3),
+    attraction:clamp(Number(raw.attraction)||1,.2,3),
+    gravity:Number.isFinite(gravity)?gravity:1,
+    font:cleanFont(raw.font)
+  };
+}
 
 export function communities(graph){
   const ns=graph.nodes,adj=new Map(ns.map(n=>[n.id,new Map()])),groups=new Map(ns.map(n=>[n.id,n.id])),degree=new Map(ns.map(n=>[n.id,0]));
@@ -31,7 +48,11 @@ export function communities(graph){
   const unique=[...new Set(groups.values())].sort();return new Map([...groups].map(([id,g])=>[id,unique.indexOf(g)]));
 }
 
-export function relationPositions(graph,layout='force'){
+export function relationPositions(graph,layout='force',style={}){
+  const repMul=clamp(Number(style?.repulsion)||1,.2,3);
+  const attMul=clamp(Number(style?.attraction)||1,.2,3);
+  const gravMul=Number.isFinite(Number(style?.gravity))?clamp(Number(style.gravity),0,3):1;
+  const contrast=Number.isFinite(Number(style?.sizeContrast))?clamp(Number(style.sizeContrast),0,2):1;
   const labels=[...new Set(graph.nodes.map(n=>n.group).filter(Boolean))].sort(),nodes=graph.nodes.map(n=>({...n,groupLabel:n.group})),groups=labels.length?new Map(nodes.map(n=>[n.id,Math.max(0,labels.indexOf(n.group))])):communities(graph),groupCount=Math.max(0,...groups.values())+1,degree=new Map(nodes.map(n=>[n.id,0])),adj=new Map(nodes.map(n=>[n.id,[]]));
   for(const l of graph.links){if(!adj.has(l.source)||!adj.has(l.target)||l.source===l.target)continue;adj.get(l.source).push(l.target);adj.get(l.target).push(l.source);degree.set(l.source,degree.get(l.source)+l.value);degree.set(l.target,degree.get(l.target)+l.value);}
   const root=[...nodes].sort((a,b)=>degree.get(b.id)-degree.get(a.id)||a.id.localeCompare(b.id))[0],levels=new Map();if(root){levels.set(root.id,0);const queue=[root.id];while(queue.length){const id=queue.shift();for(const other of adj.get(id)){if(!levels.has(other)){levels.set(other,levels.get(id)+1);queue.push(other);}}}}
@@ -40,7 +61,8 @@ export function relationPositions(graph,layout='force'){
   nodes.forEach((n,i)=>{
     const angle=i/Math.max(1,nodes.length)*Math.PI*2-Math.PI/2;
     n.group=groups.get(n.id)||0;
-    n.r=4+Math.sqrt(Math.max(1,n.value||degree.get(n.id)))*2;
+    const connScore=Math.max(1,degree.get(n.id)||n.value||1);
+    n.r=contrast<=0.05?6:3.5+Math.pow(connScore,0.5*contrast)*(1.5+0.5*contrast);
     n.x=460+Math.cos(angle)*300;n.y=310+Math.sin(angle)*230;
     if(layout==='circle'){n.x=460+Math.cos(angle)*230;n.y=310+Math.sin(angle)*230;}
     if(layout==='ellipse')n.y=310+Math.sin(angle)*160;
@@ -63,9 +85,9 @@ export function relationPositions(graph,layout='force'){
     const byId=new Map(connected.map(n=>[n.id,n]));
     for(let step=0;step<180;step++){
       const heat=1-step/210;
-      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy)),f=580/(dist*dist);a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;}
-      for(const l of graph.links){const a=byId.get(l.source),b=byId.get(l.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),force=(dist-65)*.012*Math.min(3,Math.sqrt(l.value));a.vx+=dx/dist*force;a.vy+=dy/dist*force;b.vx-=dx/dist*force;b.vy-=dy/dist*force;}
-      for(const n of connected){const angle=n.group/groupCount*Math.PI*2,tx=layout==='clusters'?460+Math.cos(angle)*185:460,ty=layout==='clusters'?305+Math.sin(angle)*175:305;n.vx+=(tx-n.x)*.005;n.vy+=(ty-n.y)*.005;n.x=clamp(n.x+clamp(n.vx,-8,8)*heat,70,850);n.y=clamp(n.y+clamp(n.vy,-8,8)*heat,55,550);n.vx*=.65;n.vy*=.65;}
+      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy)),f=(580*repMul)/(dist*dist);a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;}
+      for(const l of graph.links){const a=byId.get(l.source),b=byId.get(l.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),force=(dist-65)*(.012*attMul)*Math.min(3,Math.sqrt(l.value));a.vx+=dx/dist*force;a.vy+=dy/dist*force;b.vx-=dx/dist*force;b.vy-=dy/dist*force;}
+      for(const n of connected){const angle=n.group/groupCount*Math.PI*2,tx=layout==='clusters'?460+Math.cos(angle)*185:460,ty=layout==='clusters'?305+Math.sin(angle)*175:305;n.vx+=(tx-n.x)*(.005*gravMul);n.vy+=(ty-n.y)*(.005*gravMul);n.x=clamp(n.x+clamp(n.vx,-8,8)*heat,70,850);n.y=clamp(n.y+clamp(n.vy,-8,8)*heat,55,550);n.vx*=.65;n.vy*=.65;}
     }
     if(connected.length>1){
       const xs=connected.map(n=>n.x),ys=connected.map(n=>n.y),loX=Math.min(...xs),hiX=Math.max(...xs),loY=Math.min(...ys),hiY=Math.max(...ys),maxSpanX=isolated.length?620:740,maxSpanY=isolated.length?380:450,factor=Math.min(maxSpanX/Math.max(80,hiX-loX),maxSpanY/Math.max(80,hiY-loY));
@@ -499,7 +521,7 @@ export function renderRelations(graph,rawStyle={}){
     height=f.height;
     width=f.width||920;
   }else{
-    const nodes=relationPositions(graph,style.layout),byId=new Map(nodes.map(n=>[n.id,n]));
+    const nodes=relationPositions(graph,style.layout,style),byId=new Map(nodes.map(n=>[n.id,n]));
     if(style.layout==='clusters'){
       for(const group of new Set(nodes.map(n=>n.group))){
         const ns=nodes.filter(n=>n.group===group&&graph.links.some(l=>l.source===n.id||l.target===n.id));
@@ -526,7 +548,8 @@ export function renderRelations(graph,rawStyle={}){
     }
     const boxes=[];
     nodes.forEach((n,i)=>{
-      const radius=Math.min(28,n.r)*style.nodeScale,fullLabel=String(n.label||''),label=fullLabel.length>26?fullLabel.slice(0,24)+'…':fullLabel,w=label.length*6.5;
+      const maxR=28+Math.max(0,(style.sizeContrast||1)-1)*18;
+      const radius=Math.min(maxR,n.r)*style.nodeScale,fullLabel=String(n.label||''),label=fullLabel.length>26?fullLabel.slice(0,24)+'…':fullLabel,w=label.length*6.5;
       let caption='';
       if(style.labels){
         let placedPrimary=false;

@@ -504,4 +504,23 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     assert.match(svg, /Densidade estimada dos valores anuais/);
     assert.doesNotMatch(svg, /NaN|Infinity|undefined/);
   });
+
+  it('14. Escala de proporção por conexões e forças globais (repulsion, attraction, gravity)', () => {
+    const rows = [
+      { id: '1', fields: { author: 'Hub', theme: 'T1' } },
+      { id: '2', fields: { author: 'Hub', theme: 'T2' } },
+      { id: '3', fields: { author: 'Hub', theme: 'T3' } },
+      { id: '4', fields: { author: 'Hub', theme: 'T4' } },
+      { id: '5', fields: { author: 'Leaf', theme: 'T5' } }
+    ];
+    const g = analyzeRelations(rows, { stages: ['author', 'theme'] });
+    const flat = sortStageNodes ? renderRelations(g, { layout: 'circle', sizeContrast: 0 }) : '';
+    const high = renderRelations(g, { layout: 'circle', sizeContrast: 2, repulsion: 2, attraction: 0.5, gravity: 0.3 });
+    assert.match(flat, /<svg/);
+    assert.match(high, /<svg/);
+    // Em sizeContrast: 2, o raio máximo do hub deve superar o do contraste 0
+    const radiiFlat = [...flat.matchAll(/<circle[^>]*r="([\d.]+)"/g)].map(m => Number(m[1]));
+    const radiiHigh = [...high.matchAll(/<circle[^>]*r="([\d.]+)"/g)].map(m => Number(m[1]));
+    assert.ok(Math.max(...radiiHigh) > Math.max(...radiiFlat), 'Hub com mais conexões deve escalar mais com sizeContrast=2');
+  });
 });
