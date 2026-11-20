@@ -33,5 +33,5 @@ export function stepNetwork(nodes,links,pinned,heat=1,{layout='force',width=920,
   }
  }
  for(const link of links){const a=byId.get(link.source),b=byId.get(link.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),rest=anchored&&a.base&&b.base?Math.max(20,Math.hypot(b.base.x-a.base.x,b.base.y-a.base.y)):85,force=(d-rest)*attK; a.vx+=dx/d*force;a.vy+=dy/d*force;b.vx-=dx/d*force;b.vy-=dy/d*force;}
- for(const n of nodes){if(n.id===pinned){n.vx=n.vy=0;continue;}const target=n.base||{x:width/2,y:height/2};const pull=(anchored?(flow?.06:.025):.004)*gravMul;n.vx+=(target.x-n.x)*pull;n.vy+=(target.y-n.y)*pull;const mx=n.marginX||30,my=n.marginY||30;n.x=Math.max(mx,Math.min(width-mx,n.x+Math.max(-7,Math.min(7,n.vx))*heat));n.y=Math.max(my,Math.min(height-my,n.y+Math.max(-7,Math.min(7,n.vy))*heat));}
+ for(const n of nodes){if(n.id===pinned){n.vx=n.vy=0;continue;}const target=n.base||{x:width/2,y:height/2};const pull=(anchored?(flow?.06:.025):.004)*gravMul;n.vx+=(target.x-n.x)*pull;n.vy+=(target.y-n.y)*pull;const mx=n.marginX||30,my=n.marginY||30;const minX=anchored?mx:-width*1.5,maxX=anchored?width-mx:width*2.5;const minY=anchored?my:-height*1.5,maxY=anchored?height-my:height*2.5;n.x=Math.max(minX,Math.min(maxX,n.x+Math.max(-7,Math.min(7,n.vx))*heat));n.y=Math.max(minY,Math.min(maxY,n.y+Math.max(-7,Math.min(7,n.vy))*heat));}
 }

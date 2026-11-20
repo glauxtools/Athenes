@@ -58,6 +58,7 @@ export function relationPositions(graph,layout='force',style={}){
   const root=[...nodes].sort((a,b)=>degree.get(b.id)-degree.get(a.id)||a.id.localeCompare(b.id))[0],levels=new Map();if(root){levels.set(root.id,0);const queue=[root.id];while(queue.length){const id=queue.shift();for(const other of adj.get(id)){if(!levels.has(other)){levels.set(other,levels.get(id)+1);queue.push(other);}}}}
   const isolated=nodes.filter(n=>(degree.get(n.id)||0)===0);
   const isolatedIdx=new Map(isolated.map((n,k)=>[n.id,k]));
+  const areaScale=['force','clusters'].includes(layout)?Math.max(1,Math.min(3.2,Math.sqrt(nodes.length/42)))*Math.max(1,Math.pow(repMul,.35)):1;
   nodes.forEach((n,i)=>{
     const angle=i/Math.max(1,nodes.length)*Math.PI*2-Math.PI/2;
     n.group=groups.get(n.id)||0;
@@ -73,9 +74,9 @@ export function relationPositions(graph,layout='force',style={}){
       const a=n.group/groupCount*Math.PI*2;
       if((degree.get(n.id)||0)===0){
         const ringA=(isolatedIdx.get(n.id)||0)/Math.max(1,isolated.length)*Math.PI*2-Math.PI/2;
-        n.x=460+Math.cos(ringA)*385;n.y=305+Math.sin(ringA)*240;
+        n.x=460+Math.cos(ringA)*385*areaScale;n.y=305+Math.sin(ringA)*240*areaScale;
       }else{
-        n.x=460+Math.cos(a)*165+Math.cos(angle)*42;n.y=305+Math.sin(a)*165+Math.sin(angle)*42;
+        n.x=460+Math.cos(a)*165*areaScale+Math.cos(angle)*42*areaScale;n.y=305+Math.sin(a)*165*areaScale+Math.sin(angle)*42*areaScale;
       }
       n.vx=0;n.vy=0;
     }
@@ -85,12 +86,12 @@ export function relationPositions(graph,layout='force',style={}){
     const byId=new Map(connected.map(n=>[n.id,n]));
     for(let step=0;step<180;step++){
       const heat=1-step/210;
-      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy)),f=(580*repMul)/(dist*dist);a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;}
-      for(const l of graph.links){const a=byId.get(l.source),b=byId.get(l.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),force=(dist-65)*(.012*attMul)*Math.min(3,Math.sqrt(l.value));a.vx+=dx/dist*force;a.vy+=dy/dist*force;b.vx-=dx/dist*force;b.vy-=dy/dist*force;}
-      for(const n of connected){const angle=n.group/groupCount*Math.PI*2,tx=layout==='clusters'?460+Math.cos(angle)*185:460,ty=layout==='clusters'?305+Math.sin(angle)*175:305;n.vx+=(tx-n.x)*(.005*gravMul);n.vy+=(ty-n.y)*(.005*gravMul);n.x=clamp(n.x+clamp(n.vx,-8,8)*heat,70,850);n.y=clamp(n.y+clamp(n.vy,-8,8)*heat,55,550);n.vx*=.65;n.vy*=.65;}
+      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy)),f=(580*repMul*areaScale)/(dist*dist);a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;}
+      for(const l of graph.links){const a=byId.get(l.source),b=byId.get(l.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),force=(dist-65*Math.sqrt(areaScale))*(.012*attMul)*Math.min(3,Math.sqrt(l.value));a.vx+=dx/dist*force;a.vy+=dy/dist*force;b.vx-=dx/dist*force;b.vy-=dy/dist*force;}
+      for(const n of connected){const angle=n.group/groupCount*Math.PI*2,tx=layout==='clusters'?460+Math.cos(angle)*185*areaScale:460,ty=layout==='clusters'?305+Math.sin(angle)*175*areaScale:305;n.vx+=(tx-n.x)*(.005*gravMul);n.vy+=(ty-n.y)*(.005*gravMul);n.x=clamp(n.x+clamp(n.vx,-10*areaScale,10*areaScale)*heat,460-600*areaScale,460+600*areaScale);n.y=clamp(n.y+clamp(n.vy,-10*areaScale,10*areaScale)*heat,305-420*areaScale,305+420*areaScale);n.vx*=.65;n.vy*=.65;}
     }
     if(connected.length>1){
-      const xs=connected.map(n=>n.x),ys=connected.map(n=>n.y),loX=Math.min(...xs),hiX=Math.max(...xs),loY=Math.min(...ys),hiY=Math.max(...ys),maxSpanX=isolated.length?620:740,maxSpanY=isolated.length?380:450,factor=Math.min(maxSpanX/Math.max(80,hiX-loX),maxSpanY/Math.max(80,hiY-loY));
+      const xs=connected.map(n=>n.x),ys=connected.map(n=>n.y),loX=Math.min(...xs),hiX=Math.max(...xs),loY=Math.min(...ys),hiY=Math.max(...ys),maxSpanX=(isolated.length?620:740)*areaScale,maxSpanY=(isolated.length?380:450)*areaScale,factor=Math.min(maxSpanX/Math.max(80,hiX-loX),maxSpanY/Math.max(80,hiY-loY));
       for(const n of connected){n.x=460+(n.x-(loX+hiX)/2)*factor;n.y=305+(n.y-(loY+hiY)/2)*factor;}
     }
   }
@@ -521,7 +522,23 @@ export function renderRelations(graph,rawStyle={}){
     height=f.height;
     width=f.width||920;
   }else{
-    const nodes=relationPositions(graph,style.layout,style),byId=new Map(nodes.map(n=>[n.id,n]));
+    const nodes=relationPositions(graph,style.layout,style);
+    if(['force','clusters'].includes(style.layout)&&nodes.length){
+      const pad=64;
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+      for(const n of nodes){
+        const r=n.r*style.nodeScale;
+        if(n.x-r<minX)minX=n.x-r;
+        if(n.y-r<minY)minY=n.y-r;
+        if(n.x+r>maxX)maxX=n.x+r;
+        if(n.y+r>maxY)maxY=n.y+r;
+      }
+      const shiftX=minX<pad?pad-minX:0,shiftY=minY<pad?pad-minY:0;
+      if(shiftX||shiftY)for(const n of nodes){n.x+=shiftX;n.y+=shiftY;}
+      width=Math.max(920,Math.ceil(maxX+shiftX+pad));
+      height=Math.max(620,Math.ceil(maxY+shiftY+pad));
+    }
+    const byId=new Map(nodes.map(n=>[n.id,n]));
     if(style.layout==='clusters'){
       for(const group of new Set(nodes.map(n=>n.group))){
         const ns=nodes.filter(n=>n.group===group&&graph.links.some(l=>l.source===n.id||l.target===n.id));
@@ -557,7 +574,7 @@ export function renderRelations(graph,rawStyle={}){
           const candidates=[[n.x-w/2,n.y+radius+5],[n.x-w/2,n.y-radius-20],[n.x+radius+7,n.y-7],[n.x-radius-w-7,n.y-7]];
           for(const [x,y]of candidates){
             const box={x,y,w,h:15};
-            if(x<4||x+w>916||y<4||y+15>height-5||boxes.some(b=>x<b.x+b.w&&x+w>b.x&&y<b.y+b.h&&y+15>b.y))continue;
+            if(x<4||x+w>width-4||y<4||y+15>height-5||boxes.some(b=>x<b.x+b.w&&x+w>b.x&&y<b.y+b.h&&y+15>b.y))continue;
             boxes.push(box);
             caption=`<text class="rel-label rel-label-primary" x="${x.toFixed(1)}" y="${(y+12).toFixed(1)}" font-size="11.5" fill="currentColor">${esc(label)}</text>`;
             placedPrimary=true;
