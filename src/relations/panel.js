@@ -17,6 +17,7 @@ import {
   obterCatalogoVariaveis,
   registrarVariavelNoCatalogo
 } from '../core/athenes_variaveis_referencia.js';
+import { baixarBibliografiaCsv, registroRelacaoParaArtigoCsv } from '../core/athenes_export_bibliografia_csv.js';
 
 const ZOOM_MIN=.2;
 const ZOOM_MAX=40;
@@ -215,6 +216,7 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
         <button data-rel-action="clear-selection" type="button" data-rel-clear-sel hidden>Limpar seleção</button>
         <span class="rel-tools-spacer"></span>
         ${downloadMenuMarkup(format=>`data-rel-action="${format}"`)}
+        <button data-rel-action="csv" type="button" title="Exportar referências selecionadas em CSV" aria-label="Exportar referências selecionadas em CSV">CSV</button>
         <button class="visual-icon-button" data-rel-action="json" type="button" title="Baixar dados e configuração" aria-label="Baixar dados e configuração">${databaseIcon}</button>
       </div>
       <p class="rel-summary" aria-live="polite"></p>
@@ -1179,6 +1181,10 @@ export function createRelationPanel(container,{sources=[],initial={},onSave,onIn
         else await onInsert?.({...read(),graph,svg:cloneFullSvg()?.outerHTML||'',linked:form.elements.namedItem('linked').checked});
       }else if(action==='svg'||action==='png'){
         await downloadSvg(cloneFullSvg(),title,action);
+      }else if(action==='csv'){
+        const alvoCsv=getScopedRecords().map(registroRelacaoParaArtigoCsv).filter(Boolean);
+        if(!alvoCsv.length){error('Nenhuma referência selecionada para exportar em CSV.');return;}
+        baixarBibliografiaCsv(alvoCsv,{nomeArquivo:title||'athenes-bibliografia-selecao'});
       }else if(action==='json'){
         downloadBlob(new Blob([JSON.stringify({configuration:read(),graph},null,2)],{type:'application/json'}),'analise-relacoes.json');
       }

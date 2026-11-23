@@ -105,6 +105,7 @@ export function registrosReferencias(referencias=[],opcoes={}){
     return {
       id:String(r.id||r.chaveZotero||r.chave||`ref-${i}`),
       label:title,
+      raw:r,
       omitEmptyFields:['theme','keywords','tags'],
       fields:{
         author:authors,

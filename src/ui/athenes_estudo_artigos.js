@@ -654,6 +654,10 @@ export class EstudoArtigosView {
         <input type="file" accept=".bib,.txt" id="athInputImportarBibEstudo" style="display:none;">
       </div>
 
+      <button type="button" class="ath-btn ath-btn-icone" id="athBtnExportarBibCsv" title="Exportar conjunto bibliográfico (CSV)" aria-label="Exportar conjunto bibliográfico (CSV)">
+        ${svgIcone('exportar', 16)}
+      </button>
+
       <button type="button" class="ath-btn ath-btn-primary ath-btn-icone" id="athBtnNovoArtigoDrive" title="Vincular Artigo & PDF" aria-label="Vincular Artigo & PDF">
         ${svgIcone('mais', 16)}
       </button>
@@ -873,6 +877,10 @@ export class EstudoArtigosView {
     document.addEventListener('click', this._fecharImportarBib);
     escopoBotoes.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && listaImp && !listaImp.hidden) { fecharImp(); btnImp?.focus(); } });
 
+    escopoBotoes.querySelector('#athBtnExportarBibCsv')?.addEventListener('click', () => {
+      this.abrirModalExportarBibliografiaCsv();
+    });
+
     escopoBotoes.querySelector('#athInputImportarBibEstudo')?.addEventListener('change', e => {
       const arq = e.target.files?.[0];
       if (!arq) return;
@@ -1076,6 +1084,7 @@ export class EstudoArtigosView {
       const alvo = `${art.titulo} ${autoresStr} ${art.ano} ${art.publicacao} ${tagsStr} ${citStr}`.toLowerCase();
       return alvo.includes(this.filtroBusca);
     });
+    this._ultimosArtigosFiltrados = filtrados;
 
     if (filtrados.length === 0) {
       const pastaInfo = buscarPastaNaArvore(obterPastasDriveLocais(), this.pastaFiltroId);

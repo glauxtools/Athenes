@@ -17,6 +17,10 @@ import { obterConfigGoogleDrive, salvarConfigGoogleDrive, autenticarGoogleDrive,
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { svgIcone } from './athenes_icones.js';
 import { ehArtigoExemploFicticio, registrarPdfLocalNoArtigo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, formatarCitacaoAbntDoArtigo } from './athenes_estudo_artigos_dados.js';
+import { baixarBibliografiaCsv, construirMapaCaminhosPastas } from '../core/athenes_export_bibliografia_csv.js';
+import { artigoEstaNasPastas } from '../core/athenes_zotero_pastas.js';
+import { coletarPastasBibliografia } from './athenes_estudo_artigos_pastas.js';
+import { mostrarAviso } from './athenes_aviso.js';
 
 export const metodosEstudoModais = {
   configurarPopoversTopoEstudio(root, art) {
@@ -906,5 +910,252 @@ export const metodosEstudoModais = {
       fechar();
       this.atualizarAbaCitacoesEContadores(art);
     });
+  },
+
+  abrirModalExportarBibliografiaCsv() {
+    const todos = typeof this.artigosCatalogo === 'function' ? this.artigosCatalogo() : (this.artigos || []).filter(a => !ehArtigoExemploFicticio(a));
+    const visiveis = Array.isArray(this._ultimosArtigosFiltrados) ? this._ultimosArtigosFiltrados : todos;
+    const pastasArvore = coletarPastasBibliografia();
+    const mapaPastas = construirMapaCaminhosPastas(pastasArvore);
+
+    const pastasPlanas = [];
+    const achatar = (lista, nivel = 0) => {
+      for (const p of lista || []) {
+        if (!p?.id) continue;
+        const qtd = todos.filter(a => artigoEstaNasPastas(a, [p.id], { pastas: pastasArvore, incluirSubpastas: true })).length;
+        pastasPlanas.push({ id: String(p.id), nome: p.nome || p.id, caminho: mapaPastas.get(String(p.id)) || p.nome || p.id, nivel, qtd });
+        if (Array.isArray(p.subpastas) && p.subpastas.length) achatar(p.subpastas, nivel + 1);
+      }
+    };
+    achatar(pastasArvore);
+
+    const temFiltroAtivo = visiveis.length !== todos.length || (this.pastaFiltroId && this.pastaFiltroId !== 'todas');
+    let escopo = temFiltroAtivo ? 'atual' : 'todas';
+    const pastasMarcadas = new Set(this.pastaFiltroId && this.pastaFiltroId !== 'todas' ? [String(this.pastaFiltroId)] : []);
+    const idsMarcados = new Set(visiveis.map(a => String(a.id)));
+
+    const modal = document.createElement('div');
+    modal.className = 'ath-modal-backdrop';
+    modal.innerHTML = `
+      <div class="ath-modal" style="max-width:660px; width:94vw;">
+        <div class="ath-modal-head">
+          <h2>Exportar Conjunto Bibliográfico (CSV)</h2>
+          <button type="button" class="ath-btn ath-btn-icon" id="athModalExpCsvFechar" aria-label="Fechar">${svgIcone('fechar', 16)}</button>
+        </div>
+        <div class="ath-modal-corpo" style="display:grid; gap:14px; max-height:72vh; overflow-y:auto;">
+          <div>
+            <strong style="display:block; font-size:12.5px; color:#243a59; margin-bottom:8px;">1. Quais referências exportar</strong>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(145px, 1fr)); gap:8px;" id="athExpCsvEscopoBtns">
+              <button type="button" class="ath-btn ath-btn-sm ${escopo === 'atual' ? 'ath-btn-primary' : ''}" data-exp-escopo="atual">Estante atual (${visiveis.length})</button>
+              <button type="button" class="ath-btn ath-btn-sm ${escopo === 'pastas' ? 'ath-btn-primary' : ''}" data-exp-escopo="pastas">Escolher pastas</button>
+              <button type="button" class="ath-btn ath-btn-sm ${escopo === 'manual' ? 'ath-btn-primary' : ''}" data-exp-escopo="manual">Selecionar obras</button>
+              <button type="button" class="ath-btn ath-btn-sm ${escopo === 'todas' ? 'ath-btn-primary' : ''}" data-exp-escopo="todas">Toda a biblioteca (${todos.length})</button>
+            </div>
+          </div>
+
+          <div id="athExpCsvBoxPastas" ${escopo === 'pastas' ? '' : 'hidden'} style="border:1px solid #dce5f1; border-radius:10px; padding:10px; background:#f8fafd;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+              <small style="color:#475569;">Marque uma ou mais pastas/coleções (inclui subpastas):</small>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="ath-btn ath-btn-xs" id="athExpCsvPastasTodas">Todas</button>
+                <button type="button" class="ath-btn ath-btn-xs" id="athExpCsvPastasLimpar">Limpar</button>
+              </div>
+            </div>
+            <div id="athExpCsvListaPastas" style="max-height:175px; overflow-y:auto; display:grid; gap:4px;">
+              ${pastasPlanas.length ? pastasPlanas.map(p => `
+                <label style="display:flex; align-items:center; gap:8px; padding:4px 6px; padding-left:${6 + p.nivel * 14}px; border-radius:6px; cursor:pointer; font-size:12.5px;">
+                  <input type="checkbox" value="${escapeHtml(p.id)}" ${pastasMarcadas.has(p.id) ? 'checked' : ''}>
+                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(p.caminho)}">${escapeHtml(p.nome)}</span>
+                  <small style="color:#64748b;">${p.qtd}</small>
+                </label>
+              `).join('') : '<small style="color:#64748b;">Nenhuma pasta cadastrada.</small>'}
+            </div>
+          </div>
+
+          <div id="athExpCsvBoxManual" ${escopo === 'manual' ? '' : 'hidden'} style="border:1px solid #dce5f1; border-radius:10px; padding:10px; background:#f8fafd;">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+              <input type="search" class="ath-input" id="athExpCsvBuscaManual" placeholder="Filtrar referências por título, autor ou ano…" style="flex:1; min-width:180px;">
+              <button type="button" class="ath-btn ath-btn-xs" id="athExpCsvManualVisiveis">Marcar estante atual</button>
+              <button type="button" class="ath-btn ath-btn-xs" id="athExpCsvManualTodas">Marcar todas</button>
+              <button type="button" class="ath-btn ath-btn-xs" id="athExpCsvManualLimpar">Limpar</button>
+            </div>
+            <div id="athExpCsvListaManual" style="max-height:210px; overflow-y:auto; display:grid; gap:4px;"></div>
+          </div>
+
+          <div style="display:grid; gap:8px; border-top:1px solid #e5ebf4; padding-top:12px;">
+            <strong style="font-size:12.5px; color:#243a59;">2. Informações incluídas no CSV</strong>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;">
+              <input type="checkbox" id="athExpCsvColMeta" checked>
+              <span>Metadados bibliográficos completos (título, autores, ano, periódico, editora, DOI, ISBN, tags, pastas, resumo)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;">
+              <input type="checkbox" id="athExpCsvColZotero" checked>
+              <span>Campos extras do Zotero (todas as colunas preenchidas da coleção)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;">
+              <input type="checkbox" id="athExpCsvColVars" checked>
+              <span>Variáveis personalizadas criadas no Athenes</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;">
+              <input type="checkbox" id="athExpCsvColEstudo" checked>
+              <span>Estudo, fichamento, citações marcadas, notas de página e vínculo de PDF</span>
+            </label>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; border-top:1px solid #e5ebf4; padding-top:12px; font-size:12.5px;">
+            <strong style="color:#243a59;">Separador:</strong>
+            <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="athExpCsvSep" value=";" checked> Ponto e vírgula (<code>;</code> — Excel Brasil)
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="athExpCsvSep" value=","> Vírgula (<code>,</code> — Internacional / R / Python)
+            </label>
+          </div>
+        </div>
+        <div class="ath-modal-foot" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <small id="athExpCsvResumo" style="color:#475569;"></small>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="ath-btn" id="athModalExpCsvCancelar">Cancelar</button>
+            <button type="button" class="ath-btn ath-btn-primary" id="athModalExpCsvBaixar">${svgIcone('exportar', 14)} Exportar CSV</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    const fechar = () => modal.remove();
+    modal.querySelector('#athModalExpCsvFechar')?.addEventListener('click', fechar);
+    modal.querySelector('#athModalExpCsvCancelar')?.addEventListener('click', fechar);
+    modal.addEventListener('click', e => { if (e.target === modal) fechar(); });
+
+    const boxPastas = modal.querySelector('#athExpCsvBoxPastas');
+    const boxManual = modal.querySelector('#athExpCsvBoxManual');
+    const listaManual = modal.querySelector('#athExpCsvListaManual');
+    const buscaManual = modal.querySelector('#athExpCsvBuscaManual');
+    const resumoEl = modal.querySelector('#athExpCsvResumo');
+    const btnBaixar = modal.querySelector('#athModalExpCsvBaixar');
+
+    const obterSelecionados = () => {
+      if (escopo === 'atual') return visiveis;
+      if (escopo === 'todas') return todos;
+      if (escopo === 'pastas') {
+        const idsP = [...pastasMarcadas];
+        if (!idsP.length) return [];
+        return todos.filter(a => artigoEstaNasPastas(a, idsP, { pastas: pastasArvore, incluirSubpastas: true }));
+      }
+      return todos.filter(a => idsMarcados.has(String(a.id)));
+    };
+
+    const atualizarEstado = () => {
+      boxPastas.hidden = escopo !== 'pastas';
+      boxManual.hidden = escopo !== 'manual';
+      modal.querySelectorAll('[data-exp-escopo]').forEach(b => {
+        b.classList.toggle('ath-btn-primary', b.dataset.expEscopo === escopo);
+      });
+      const sel = obterSelecionados();
+      resumoEl.textContent = sel.length
+        ? `${sel.length} ${sel.length === 1 ? 'referência selecionada' : 'referências selecionadas'} para exportação.`
+        : 'Nenhuma referência selecionada.';
+      btnBaixar.disabled = sel.length === 0;
+      btnBaixar.innerHTML = `${svgIcone('exportar', 14)} Exportar CSV (${sel.length})`;
+    };
+
+    const renderizarListaManual = () => {
+      const q = (buscaManual?.value || '').trim().toLowerCase();
+      const filtradas = q
+        ? todos.filter(a => {
+            const aut = (a.autores || []).map(x => `${x.sobrenome || ''} ${x.prenome || ''}`).join(' ');
+            return `${a.titulo || ''} ${aut} ${a.ano || ''}`.toLowerCase().includes(q);
+          })
+        : todos;
+      listaManual.innerHTML = filtradas.length
+        ? filtradas.map(a => {
+            const idStr = String(a.id);
+            const aut0 = a.autores?.[0]?.sobrenome || '';
+            const meta = [aut0, a.ano].filter(Boolean).join(', ');
+            return `
+              <label style="display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:6px; cursor:pointer; font-size:12.5px;">
+                <input type="checkbox" data-exp-ref-id="${escapeHtml(idStr)}" ${idsMarcados.has(idStr) ? 'checked' : ''}>
+                <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(a.titulo || '')}">${escapeHtml(a.titulo || 'Sem título')}</span>
+                ${meta ? `<small style="color:#64748b; white-space:nowrap;">${escapeHtml(meta)}</small>` : ''}
+              </label>`;
+          }).join('')
+        : '<small style="color:#64748b;">Nenhuma referência corresponde à busca.</small>';
+      listaManual.querySelectorAll('[data-exp-ref-id]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const id = cb.dataset.expRefId;
+          if (cb.checked) idsMarcados.add(id); else idsMarcados.delete(id);
+          atualizarEstado();
+        });
+      });
+    };
+
+    modal.querySelectorAll('[data-exp-escopo]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        escopo = btn.dataset.expEscopo;
+        if (escopo === 'manual') renderizarListaManual();
+        atualizarEstado();
+      });
+    });
+
+    modal.querySelectorAll('#athExpCsvListaPastas input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) pastasMarcadas.add(cb.value); else pastasMarcadas.delete(cb.value);
+        atualizarEstado();
+      });
+    });
+    modal.querySelector('#athExpCsvPastasTodas')?.addEventListener('click', () => {
+      modal.querySelectorAll('#athExpCsvListaPastas input[type="checkbox"]').forEach(cb => { cb.checked = true; pastasMarcadas.add(cb.value); });
+      atualizarEstado();
+    });
+    modal.querySelector('#athExpCsvPastasLimpar')?.addEventListener('click', () => {
+      modal.querySelectorAll('#athExpCsvListaPastas input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+      pastasMarcadas.clear();
+      atualizarEstado();
+    });
+
+    buscaManual?.addEventListener('input', renderizarListaManual);
+    modal.querySelector('#athExpCsvManualVisiveis')?.addEventListener('click', () => {
+      idsMarcados.clear();
+      visiveis.forEach(a => idsMarcados.add(String(a.id)));
+      renderizarListaManual();
+      atualizarEstado();
+    });
+    modal.querySelector('#athExpCsvManualTodas')?.addEventListener('click', () => {
+      todos.forEach(a => idsMarcados.add(String(a.id)));
+      renderizarListaManual();
+      atualizarEstado();
+    });
+    modal.querySelector('#athExpCsvManualLimpar')?.addEventListener('click', () => {
+      idsMarcados.clear();
+      renderizarListaManual();
+      atualizarEstado();
+    });
+
+    btnBaixar?.addEventListener('click', () => {
+      const selecionados = obterSelecionados();
+      if (!selecionados.length) return;
+      const incluirMetadados = Boolean(modal.querySelector('#athExpCsvColMeta')?.checked);
+      const incluirCamposZotero = Boolean(modal.querySelector('#athExpCsvColZotero')?.checked);
+      const incluirVariaveis = Boolean(modal.querySelector('#athExpCsvColVars')?.checked);
+      const incluirEstudo = Boolean(modal.querySelector('#athExpCsvColEstudo')?.checked);
+      if (!incluirMetadados && !incluirCamposZotero && !incluirVariaveis && !incluirEstudo) {
+        mostrarAviso('Selecione ao menos um grupo de colunas para exportar.', { tipo: 'aviso' });
+        return;
+      }
+      const separador = modal.querySelector('input[name="athExpCsvSep"]:checked')?.value || ';';
+      const res = baixarBibliografiaCsv(selecionados, {
+        separador,
+        incluirMetadados,
+        incluirCamposZotero,
+        incluirVariaveis,
+        incluirEstudo,
+        mapaPastas
+      });
+      fechar();
+      mostrarAviso(`CSV exportado com ${res.totalLinhas} ${res.totalLinhas === 1 ? 'referência' : 'referências'} e ${res.colunas.length} colunas.`, { tipo: 'sucesso' });
+    });
+
+    atualizarEstado();
   }
 };
