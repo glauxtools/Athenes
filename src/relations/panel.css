@@ -102,6 +102,7 @@
 
 /* LOD progressivo de rótulos para legibilidade em zoom profundo */
 .rel-drawing .rel-label{font-size:calc(11.5px / var(--rel-label-damp, 1));paint-order:stroke fill;stroke:#fff;stroke-width:2.5px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.rel-drawing .rel-label-atlas-hub{pointer-events:none;letter-spacing:.02em}
 .rel-drawing .rel-label-detail,.rel-drawing .rel-label-hover{opacity:0;pointer-events:none;transition:opacity .12s}
 .rel-drawing.is-zoom-detail .rel-label-detail,.rel-drawing.is-zoom-deep .rel-label-detail{opacity:.95}
 .relation-map-svg [data-relation-node]:hover .rel-label-detail,.relation-map-svg [data-relation-node]:focus .rel-label-detail,.relation-map-svg [data-relation-node].is-chain .rel-label-detail,.relation-map-svg [data-relation-node].is-selected .rel-label-detail,.relation-map-svg [data-relation-node]:hover .rel-label-hover,.relation-map-svg [data-relation-node]:focus .rel-label-hover,.relation-map-svg [data-relation-node].is-chain .rel-label-hover,.relation-map-svg [data-relation-node].is-selected .rel-label-hover{opacity:1}

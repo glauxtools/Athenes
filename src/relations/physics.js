@@ -1,6 +1,6 @@
 // Bounded local spring/repulsion simulation. No workers or external dependency.
 export function stepNetwork(nodes,links,pinned,heat=1,{layout='force',width=920,height=610,repulsion=1,attraction=1,gravity=1}={}){
- const anchored=!['force','clusters'].includes(layout),flow=['sankey','temporal'].includes(layout);
+ const anchored=!['force','clusters','atlas'].includes(layout),flow=['sankey','temporal'].includes(layout);
  const repK=1800*Math.max(.1,Math.min(4,Number(repulsion)||1));
  const attK=.008*Math.max(.1,Math.min(4,Number(attraction)||1));
  const gravMul=Math.max(0,Math.min(4,Number.isFinite(Number(gravity))?Number(gravity):1));

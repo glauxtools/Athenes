@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 export const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#315887','#288a79','#d57c37','#8459a6','#bd5271','#47a4ae','#b6a03f','#677c98'];
-export const RELATION_LAYOUTS=[['force','Rede orgânica'],['clusters','Comunidades'],['radial','Radial'],['star','Centro e anéis'],['circle','Circular'],['ellipse','Elíptica'],['bundled','Feixes radiais'],['tree','Ramificações'],['sphere','Esfera · projeção'],['arc','Arcos'],['sankey','Sankey / aluvial'],['temporal','Fluxo temporal'],['timeline','Série temporal']];
+const atlasPalette=['#b81d4e','#7b3f8c','#385a9c','#2279a8','#1f8f8b','#539b4e','#d89b1c','#d45c27'];
+export const RELATION_LAYOUTS=[['force','Rede orgânica'],['clusters','Comunidades'],['atlas','Atlas · constelação'],['radial','Radial'],['star','Centro e anéis'],['circle','Circular'],['ellipse','Elíptica'],['bundled','Feixes radiais'],['tree','Ramificações'],['sphere','Esfera · projeção'],['arc','Arcos'],['sankey','Sankey / aluvial'],['temporal','Fluxo temporal'],['timeline','Série temporal']];
 export const FIXED_LAYOUTS=new Set(['sankey','temporal','arc','timeline']);
 const FLOW_LAYOUTS=new Set(['sankey','temporal']);
 export const isFixedLayout=layout=>FIXED_LAYOUTS.has(layout);
@@ -58,7 +59,18 @@ export function relationPositions(graph,layout='force',style={}){
   const root=[...nodes].sort((a,b)=>degree.get(b.id)-degree.get(a.id)||a.id.localeCompare(b.id))[0],levels=new Map();if(root){levels.set(root.id,0);const queue=[root.id];while(queue.length){const id=queue.shift();for(const other of adj.get(id)){if(!levels.has(other)){levels.set(other,levels.get(id)+1);queue.push(other);}}}}
   const isolated=nodes.filter(n=>(degree.get(n.id)||0)===0);
   const isolatedIdx=new Map(isolated.map((n,k)=>[n.id,k]));
-  const areaScale=['force','clusters'].includes(layout)?Math.max(1,Math.min(3.2,Math.sqrt(nodes.length/42)))*Math.max(1,Math.pow(repMul,.35)):1;
+  const isFree=['force','clusters','atlas'].includes(layout);
+  const areaScale=isFree?Math.max(1,Math.min(3.2,Math.sqrt(nodes.length/42)))*Math.max(1,Math.pow(repMul,.35)):1;
+  const groupMaxDeg=new Map();
+  const bridgeGroups=new Map();
+  if(layout==='atlas'){
+    for(const n of nodes){
+      const g=groups.get(n.id)||0,d=degree.get(n.id)||0;
+      groupMaxDeg.set(g,Math.max(groupMaxDeg.get(g)||1,d));
+      const neighGroups=new Set((adj.get(n.id)||[]).map(id=>groups.get(id)||0));
+      bridgeGroups.set(n.id,neighGroups.size);
+    }
+  }
   nodes.forEach((n,i)=>{
     const angle=i/Math.max(1,nodes.length)*Math.PI*2-Math.PI/2;
     n.group=groups.get(n.id)||0;
@@ -70,25 +82,49 @@ export function relationPositions(graph,layout='force',style={}){
     if(layout==='sphere'){const z=1-2*(i+.5)/nodes.length,a=i*Math.PI*(3-Math.sqrt(5));n.x=460+300*Math.sqrt(Math.max(0,1-z*z))*Math.cos(a);n.y=310+240*z;n.r*=.6+.4*(1+Math.sin(a))/2;}
     if(layout==='arc'){n.x=nodes.length===1?460:60+i*800/Math.max(1,nodes.length-1);n.y=500;}
     if(['radial','star','tree'].includes(layout)){const level=levels.get(n.id)??3,count=nodes.filter(a=>(levels.get(a.id)??3)===level).length,index=nodes.slice(0,i).filter(a=>(levels.get(a.id)??3)===level).length,a=index/Math.max(1,count)*Math.PI*2;n.x=level?460+Math.cos(a)*(layout==='star'?220:Math.min(260,level*85)):460;n.y=level?310+Math.sin(a)*(layout==='star'?220:Math.min(245,level*85)):310;if(layout==='tree'){n.x=70+level*180;n.y=50+(index+.5)*500/Math.max(1,count);}}
-    if(['force','clusters'].includes(layout)){
-      const a=n.group/groupCount*Math.PI*2;
+    if(isFree){
+      const a=n.group/groupCount*Math.PI*2-Math.PI/2;
       if((degree.get(n.id)||0)===0){
         const ringA=(isolatedIdx.get(n.id)||0)/Math.max(1,isolated.length)*Math.PI*2-Math.PI/2;
         n.x=460+Math.cos(ringA)*385*areaScale;n.y=305+Math.sin(ringA)*240*areaScale;
+      }else if(layout==='atlas'){
+        const d=degree.get(n.id)||0,maxD=groupMaxDeg.get(n.group)||1,rel=d/maxD;
+        const isBridge=(bridgeGroups.get(n.id)||0)>=2&&rel<0.45;
+        const wedge=((i%11)-5)/11*(Math.PI/Math.max(2,groupCount));
+        const rOrbit=isBridge?95*areaScale:(165+(1-rel)*185)*areaScale;
+        n.x=460+Math.cos(a+wedge)*rOrbit;n.y=305+Math.sin(a+wedge)*rOrbit;
       }else{
         n.x=460+Math.cos(a)*165*areaScale+Math.cos(angle)*42*areaScale;n.y=305+Math.sin(a)*165*areaScale+Math.sin(angle)*42*areaScale;
       }
       n.vx=0;n.vy=0;
     }
   });
-  if(['force','clusters'].includes(layout)){
+  if(isFree){
     const connected=nodes.filter(n=>(degree.get(n.id)||0)>0);
     const byId=new Map(connected.map(n=>[n.id,n]));
     for(let step=0;step<180;step++){
       const heat=1-step/210;
-      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy)),f=(580*repMul*areaScale)/(dist*dist);a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;}
+      for(let i=0;i<connected.length;i++)for(let j=i+1;j<connected.length;j++){
+        const a=connected[i],b=connected[j],dx=a.x-b.x||.1,dy=a.y-b.y||.1,dist=Math.max(8,Math.hypot(dx,dy));
+        const hubBoost=layout==='atlas'?(1+Math.min(2.4,(a.r+b.r)/26)):1;
+        let f=(580*repMul*areaScale*hubBoost)/(dist*dist);
+        if(layout==='atlas'){const minSep=a.r+b.r+12;if(dist<minSep)f+=(minSep-dist)*.18;}
+        a.vx+=dx/dist*f;a.vy+=dy/dist*f;b.vx-=dx/dist*f;b.vy-=dy/dist*f;
+      }
       for(const l of graph.links){const a=byId.get(l.source),b=byId.get(l.target);if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),force=(dist-65*Math.sqrt(areaScale))*(.012*attMul)*Math.min(3,Math.sqrt(l.value));a.vx+=dx/dist*force;a.vy+=dy/dist*force;b.vx-=dx/dist*force;b.vy-=dy/dist*force;}
-      for(const n of connected){const angle=n.group/groupCount*Math.PI*2,tx=layout==='clusters'?460+Math.cos(angle)*185*areaScale:460,ty=layout==='clusters'?305+Math.sin(angle)*175*areaScale:305;n.vx+=(tx-n.x)*(.005*gravMul);n.vy+=(ty-n.y)*(.005*gravMul);n.x=clamp(n.x+clamp(n.vx,-10*areaScale,10*areaScale)*heat,460-600*areaScale,460+600*areaScale);n.y=clamp(n.y+clamp(n.vy,-10*areaScale,10*areaScale)*heat,305-420*areaScale,305+420*areaScale);n.vx*=.65;n.vy*=.65;}
+      for(const n of connected){
+        const angle=n.group/groupCount*Math.PI*2-Math.PI/2;
+        let tx=460,ty=305;
+        if(layout==='clusters'){tx=460+Math.cos(angle)*185*areaScale;ty=305+Math.sin(angle)*175*areaScale;}
+        else if(layout==='atlas'){
+          const d=degree.get(n.id)||0,maxD=groupMaxDeg.get(n.group)||1,rel=d/maxD;
+          const isBridge=(bridgeGroups.get(n.id)||0)>=2&&rel<0.45;
+          const targetR=isBridge?105*areaScale:(165+(1-rel)*155)*areaScale;
+          tx=460+Math.cos(angle)*targetR;ty=305+Math.sin(angle)*targetR;
+        }
+        const pull=(layout==='atlas'?.0055:.005)*gravMul;
+        n.vx+=(tx-n.x)*pull;n.vy+=(ty-n.y)*pull;n.x=clamp(n.x+clamp(n.vx,-10*areaScale,10*areaScale)*heat,460-600*areaScale,460+600*areaScale);n.y=clamp(n.y+clamp(n.vy,-10*areaScale,10*areaScale)*heat,305-420*areaScale,305+420*areaScale);n.vx*=.65;n.vy*=.65;
+      }
     }
     if(connected.length>1){
       const xs=connected.map(n=>n.x),ys=connected.map(n=>n.y),loX=Math.min(...xs),hiX=Math.max(...xs),loY=Math.min(...ys),hiY=Math.max(...ys),maxSpanX=(isolated.length?620:740)*areaScale,maxSpanY=(isolated.length?380:450)*areaScale,factor=Math.min(maxSpanX/Math.max(80,hiX-loX),maxSpanY/Math.max(80,hiY-loY));
@@ -523,7 +559,9 @@ export function renderRelations(graph,rawStyle={}){
     width=f.width||920;
   }else{
     const nodes=relationPositions(graph,style.layout,style);
-    if(['force','clusters'].includes(style.layout)&&nodes.length){
+    const activePalette=style.layout==='atlas'?atlasPalette:palette;
+    let shiftX=0,shiftY=0;
+    if(['force','clusters','atlas'].includes(style.layout)&&nodes.length){
       const pad=64;
       let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
       for(const n of nodes){
@@ -533,7 +571,7 @@ export function renderRelations(graph,rawStyle={}){
         if(n.x+r>maxX)maxX=n.x+r;
         if(n.y+r>maxY)maxY=n.y+r;
       }
-      const shiftX=minX<pad?pad-minX:0,shiftY=minY<pad?pad-minY:0;
+      shiftX=minX<pad?pad-minX:0;shiftY=minY<pad?pad-minY:0;
       if(shiftX||shiftY)for(const n of nodes){n.x+=shiftX;n.y+=shiftY;}
       width=Math.max(920,Math.ceil(maxX+shiftX+pad));
       height=Math.max(620,Math.ceil(maxY+shiftY+pad));
@@ -544,9 +582,12 @@ export function renderRelations(graph,rawStyle={}){
         const ns=nodes.filter(n=>n.group===group&&graph.links.some(l=>l.source===n.id||l.target===n.id));
         if(!ns.length)continue;
         const x=ns.reduce((s,n)=>s+n.x,0)/ns.length,y=ns.reduce((s,n)=>s+n.y,0)/ns.length,rx=Math.max(30,...ns.map(n=>Math.abs(n.x-x)+n.r+15)),ry=Math.max(30,...ns.map(n=>Math.abs(n.y-y)+n.r+15));
-        parts.push(`<ellipse data-relation-halo="${esc(JSON.stringify(ns.map(n=>n.id)))}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${palette[group%palette.length]}" opacity=".07" pointer-events="none"/>`);
+        parts.push(`<ellipse data-relation-halo="${esc(JSON.stringify(ns.map(n=>n.id)))}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${activePalette[group%activePalette.length]}" opacity=".07" pointer-events="none"/>`);
       }
     }
+    const edgeScale=style.layout==='atlas'?Math.max(1,width/1050):1;
+    const edgeOp=style.layout==='atlas'?clamp(style.edgeOpacity*1.35,.22,.9):style.edgeOpacity;
+    const centerCx=460+shiftX,centerCy=305+shiftY;
     for(const l of graph.links){
       const a=byId.get(l.source),b=byId.get(l.target);
       if(!a||!b||a.id===b.id)continue;
@@ -559,14 +600,65 @@ export function renderRelations(graph,rawStyle={}){
         d=`M${a.x.toFixed(1)} ${a.y.toFixed(1)}C${midX.toFixed(1)} ${a.y.toFixed(1)},${midX.toFixed(1)} ${b.y.toFixed(1)},${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
       }else if(style.layout==='bundled'){
         d=`M${a.x.toFixed(1)} ${a.y.toFixed(1)}Q460 310 ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+      }else if(style.layout==='atlas'){
+        const dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy)||1;
+        const nx=-dy/dist,ny=dx/dist,cross=(a.x-centerCx)*dy-(a.y-centerCy)*dx;
+        const bend=Math.min(60,dist*.14)*(cross>=0?1:-1);
+        d=`M${a.x.toFixed(1)} ${a.y.toFixed(1)}Q${((a.x+b.x)/2+nx*bend).toFixed(1)} ${((a.y+b.y)/2+ny*bend).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
       }
       const k=JSON.stringify([l.source,l.target]);
-      parts.push(`<path class="rel-edge" data-relation-edge="${esc(k)}" data-source="${esc(l.source)}" data-target="${esc(l.target)}" d="${d}" fill="none" stroke="${palette[a.group%palette.length]}" stroke-width="${Math.min(8,1+Math.log2(l.value+1)).toFixed(2)}" opacity="${style.edgeOpacity}"><title>${esc(a.label)} — ${esc(b.label)}: ${fmt(l.value)}</title></path>`);
+      parts.push(`<path class="rel-edge" data-relation-edge="${esc(k)}" data-source="${esc(l.source)}" data-target="${esc(l.target)}" d="${d}" fill="none" stroke="${activePalette[a.group%activePalette.length]}" stroke-width="${(Math.min(8,1+Math.log2(l.value+1))*edgeScale*(style.layout==='atlas'?.65:1)).toFixed(2)}" opacity="${edgeOp}"><title>${esc(a.label)} — ${esc(b.label)}: ${fmt(l.value)}</title></path>`);
     }
     const boxes=[];
+    const atlasHubs=new Set();
+    if(style.layout==='atlas'){
+      const ranked=[...nodes].sort((a,b)=>b.r-a.r||b.value-a.value);
+      const hubCap=Math.min(34,Math.max(3,Math.round(nodes.length*0.22)));
+      for(const hn of ranked.slice(0,hubCap)){if(hn.r>=9||ranked.length<=12)atlasHubs.add(hn.id);}
+    }
     nodes.forEach((n,i)=>{
-      const maxR=28+Math.max(0,(style.sizeContrast||1)-1)*18;
+      const maxR=(style.layout==='atlas'?38:28)+Math.max(0,(style.sizeContrast||1)-1)*18;
       const radius=Math.min(maxR,n.r)*style.nodeScale,fullLabel=String(n.label||''),label=fullLabel.length>26?fullLabel.slice(0,24)+'…':fullLabel,w=label.length*6.5;
+      const col=n.group===0&&style.layout!=='atlas'?style.primary:activePalette[n.group%activePalette.length];
+      if(style.layout==='atlas'){
+        const isHub=atlasHubs.has(n.id);
+        const isBridge=!isHub&&(n.betweenness||0)>=0.06;
+        let shape='',caption='';
+        if(isHub){
+          const hubR=Math.max(16,radius*1.22);
+          const sw=Math.max(2,Math.min(4.2,hubR*.13)).toFixed(1);
+          shape=`<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${hubR.toFixed(1)}" fill="#ffffff" stroke="${col}" stroke-width="${sw}"/>`;
+          if(style.labels){
+            const up=fullLabel.toUpperCase();
+            const words=up.split(/\s+/).filter(Boolean);
+            let lines=[up];
+            if(words.length>=2&&up.length>9){
+              const mid=Math.ceil(words.length/2);
+              lines=[words.slice(0,mid).join(' '),words.slice(mid).join(' ')];
+            }
+            const longest=Math.max(...lines.map(s=>s.length),1);
+            const fs=clamp(Math.min(hubR*.42,(hubR*1.55)/(longest*.58)),5.8,13);
+            if(lines.length===2){
+              const lh=fs*1.12;
+              caption=`<text class="rel-label-atlas-hub" x="${n.x.toFixed(1)}" y="${(n.y-lh*.25).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#1e293b"><tspan x="${n.x.toFixed(1)}" dy="0">${esc(lines[0].slice(0,22))}</tspan><tspan x="${n.x.toFixed(1)}" dy="${lh.toFixed(1)}">${esc(lines[1].slice(0,22))}</tspan></text>`;
+            }else{
+              caption=`<text class="rel-label-atlas-hub" x="${n.x.toFixed(1)}" y="${n.y.toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${esc(lines[0].slice(0,22))}</text>`;
+            }
+          }
+        }else if(isBridge){
+          const dotR=Math.max(3.2,Math.min(7.5,radius*.55));
+          shape=`<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(dotR+2.8).toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.6"/><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${dotR.toFixed(1)}" fill="${col}"/>`;
+        }else{
+          const dotR=Math.max(2.6,Math.min(8,radius*.52));
+          shape=`<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${dotR.toFixed(1)}" fill="${col}" stroke="#ffffff" stroke-width="1"/>`;
+        }
+        if(style.labels&&!isHub){
+          const detailLabel=fullLabel.length>30?fullLabel.slice(0,28)+'…':fullLabel;
+          caption=`<text class="rel-label rel-label-hover" x="${n.x.toFixed(1)}" y="${(n.y+Math.max(8,radius*.6)+11).toFixed(1)}" font-size="10.5" text-anchor="middle" fill="currentColor">${esc(detailLabel)}</text>`;
+        }
+        parts.push(`<g data-relation-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(fullLabel)}: ${n.value} registros"><title>${esc(fullLabel)} · ${n.value} registros · comunidade ${n.group+1}</title>${shape}${caption}</g>`);
+        return;
+      }
       let caption='';
       if(style.labels){
         let placedPrimary=false;
@@ -594,7 +686,7 @@ export function renderRelations(graph,rawStyle={}){
           }
         }
       }
-      parts.push(`<g data-relation-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(fullLabel)}: ${n.value} registros"><title>${esc(fullLabel)} · ${n.value} registros · comunidade ${n.group+1}</title><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${n.group===0?style.primary:palette[n.group%palette.length]}" stroke="white" stroke-width="1.5"/>${caption}</g>`);
+      parts.push(`<g data-relation-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(fullLabel)}: ${n.value} registros"><title>${esc(fullLabel)} · ${n.value} registros · comunidade ${n.group+1}</title><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${col}" stroke="white" stroke-width="1.5"/>${caption}</g>`);
     });
   }
 

@@ -36,3 +36,23 @@ test('redes force/clusters expandem a área de distribuição sem aprisionar nó
  for(let i=0;i<180;i++)stepNetwork(sim,[],null,1,{layout:'force',width:920,height:620,repulsion:3,gravity:0});
  assert.ok(sim.some(n=>n.x<30||n.x>890||n.y<30||n.y>590),'nós livres não devem ficar presos no retângulo 920x620');
 });
+test('layout atlas renderiza hubs brancos com rótulo interno, pontes com duplo anel e arestas curvas',()=>{
+ const nodes=[
+  {id:'hub1',label:'Vocal Music',value:40,group:0,betweenness:0.02},
+  {id:'hub2',label:'Costumes',value:35,group:1,betweenness:0.01},
+  {id:'hub3',label:'Dance',value:32,group:2,betweenness:0.01},
+  {id:'bridge',label:'Ritual Bridge',value:8,group:0,betweenness:0.15},
+  ...Array.from({length:8},(_,i)=>({id:`leaf${i}`,label:`Folha ${i}`,value:2,group:i%2,betweenness:0}))
+ ];
+ const links=[
+  {source:'hub1',target:'bridge',value:1},
+  {source:'bridge',target:'hub2',value:1},
+  {source:'hub3',target:'leaf0',value:5},
+  ...Array.from({length:8},(_,i)=>({source:i%2?'hub2':'hub1',target:`leaf${i}`,value:5}))
+ ];
+ const svg=renderRelations({nodes,links},{layout:'atlas',labels:true});
+ assert.match(svg,/data-relation-layout="atlas"/);
+ assert.match(svg,/class="rel-label-atlas-hub"[\s\S]*VOCAL/);
+ assert.match(svg,/fill="#ffffff" stroke="#1e293b"/);
+ assert.match(svg,/class="rel-edge"[^>]*d="M[^"]+Q[^"]+"/);
+});
