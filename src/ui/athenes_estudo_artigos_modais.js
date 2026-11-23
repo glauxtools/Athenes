@@ -16,7 +16,7 @@ import { ZoteroClient } from '../core/athenes_zotero.js';
 import { obterConfigGoogleDrive, salvarConfigGoogleDrive, autenticarGoogleDrive, salvarArquivoNoGoogleDrive, obterPastasDriveLocais } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { svgIcone } from './athenes_icones.js';
-import { ehArtigoExemploFicticio, registrarPdfLocalNoArtigo, salvarArtigosEstudo, formatarCitacaoAbntDoArtigo } from './athenes_estudo_artigos_dados.js';
+import { ehArtigoExemploFicticio, registrarPdfLocalNoArtigo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, formatarCitacaoAbntDoArtigo } from './athenes_estudo_artigos_dados.js';
 
 export const metodosEstudoModais = {
   configurarPopoversTopoEstudio(root, art) {
@@ -203,12 +203,13 @@ export const metodosEstudoModais = {
 
       popDrive.querySelector('#athPopDriveNomeInput')?.addEventListener('change', e => {
         art.driveFileName = e.target.value.trim();
-        salvarArtigosEstudo(this.artigos);
+        salvarArtigosEstudo(this.artigos, art);
       });
 
       popDrive.querySelector('#athPopDriveIdInput')?.addEventListener('change', e => {
         art.driveFileId = e.target.value.trim();
-        salvarArtigosEstudo(this.artigos);
+        salvarArtigosEstudo(this.artigos, art);
+        sincronizarBibliotecaArtigosAgora();
       });
     }
 
@@ -704,10 +705,15 @@ export const metodosEstudoModais = {
       if (driveFileIdSelecionado) {
         novoArt.driveFileId = driveFileIdSelecionado;
       }
-      if (arquivoPdfSelecionado && !await registrarPdfLocalNoArtigo(novoArt, arquivoPdfSelecionado)) return;
-
       this.artigos.unshift(novoArt);
-      salvarArtigosEstudo(this.artigos);
+      salvarArtigosEstudo(this.artigos, novoArt);
+      if (arquivoPdfSelecionado && !await registrarPdfLocalNoArtigo(novoArt, arquivoPdfSelecionado)) {
+        const idx = this.artigos.indexOf(novoArt);
+        if (idx >= 0) this.artigos.splice(idx, 1);
+        salvarArtigosEstudo(this.artigos);
+        return;
+      }
+      if (driveFileIdSelecionado) sincronizarBibliotecaArtigosAgora();
       this.registrarSnapshotCatalogo?.();
       fechar();
       this.abrirArtigoNoEstudio(novoArt);

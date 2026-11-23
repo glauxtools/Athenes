@@ -890,6 +890,7 @@ export async function autenticarGoogleDrive(clientId = DEFAULT_GOOGLE_CLIENT_ID,
           // o token do Google dura ~1 h: guardar quando vence permite renová-lo antes de falhar (margem de 2 min)
           const expiraEm = Date.now() + Math.max(60, Number(resp.expires_in) || 3600) * 1000 - 120000;
           salvarConfigGoogleDrive({ ...cfgAtual, clientId: cid, accessToken: resp.access_token, accessTokenExpiraEm: expiraEm });
+          try { window.dispatchEvent(new CustomEvent('athenes:drive-conectado')); } catch (_) {}
           resolve(resp.access_token);
         },
         error_callback: (err) => reject(new Error(err?.message || err?.type || 'Autorização do Google cancelada ou bloqueada.'))

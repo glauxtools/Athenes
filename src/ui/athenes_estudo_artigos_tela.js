@@ -4,13 +4,14 @@
  * Métodos do EstudoArtigosView (usam `this`); são acrescentados ao prototype em athenes_estudo_artigos.js.
  */
 import { obterConfigGoogleDrive } from '../core/athenes_colaboracao.js';
+import { obterTokenOuConectar } from '../core/athenes_drive_sync.js';
 import { localDoPdfVinculado } from '../core/athenes_zotero_anexos_notas.js';
 import { tornarColunasRedimensionaveis } from './athenes_colunas_redim.js';
 import { artigoEstaNaPasta } from '../core/athenes_zotero_pastas.js';
 import { escapeHtml, sanitizarHtmlEditorial } from '../core/athenes_seguranca.js';
 import { svgIcone, svgLogo } from './athenes_icones.js';
 import { mostrarAviso } from './athenes_aviso.js';
-import { registrarPdfLocalNoArtigo, salvarArtigosEstudo, definirArtigoAbertoAtivo, formatarCitacaoAbntDoArtigo, artigoTemPdf, ehArtigoExemploFicticio } from './athenes_estudo_artigos_dados.js';
+import { registrarPdfLocalNoArtigo, garantirPdfDoArtigo, salvarArtigosEstudo, definirArtigoAbertoAtivo, formatarCitacaoAbntDoArtigo, artigoTemPdf, ehArtigoExemploFicticio } from './athenes_estudo_artigos_dados.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
 import { configurarTraducaoEstudio } from './athenes_traducao_ui.js';
 
@@ -279,29 +280,30 @@ export const metodosEstudoTela = {
             <div class="ath-pdf-selecao-popover" id="athPdfSelecaoPopover" hidden>
               <!-- Paleta de Cores para o Marcador / Grifo -->
               <div class="ath-sel-pop-cores" id="athSelPopCores" title="Escolha a cor do marcador para este trecho">
-                <button type="button" class="ath-sel-cor-chip on" data-sel-cor="#FDE047" style="background:#FDE047;" title="Amarelo"></button>
-                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#86EFAC" style="background:#86EFAC;" title="Verde"></button>
-                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#93C5FD" style="background:#93C5FD;" title="Azul"></button>
-                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#FCA5A5" style="background:#FCA5A5;" title="Rosa / Coral"></button>
-                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#D8B4FE" style="background:#D8B4FE;" title="Roxo"></button>
-                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#FDBA74" style="background:#FDBA74;" title="Laranja"></button>
+                <button type="button" class="ath-sel-cor-chip on" data-sel-cor="#FDE047" style="background:#FDE047;" title="Amarelo" aria-label="Grifar em amarelo"></button>
+                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#86EFAC" style="background:#86EFAC;" title="Verde" aria-label="Grifar em verde"></button>
+                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#93C5FD" style="background:#93C5FD;" title="Azul" aria-label="Grifar em azul"></button>
+                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#FCA5A5" style="background:#FCA5A5;" title="Rosa / Coral" aria-label="Grifar em rosa"></button>
+                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#D8B4FE" style="background:#D8B4FE;" title="Roxo" aria-label="Grifar em roxo"></button>
+                <button type="button" class="ath-sel-cor-chip" data-sel-cor="#FDBA74" style="background:#FDBA74;" title="Laranja" aria-label="Grifar em laranja"></button>
               </div>
-              <button type="button" class="ath-sel-pop-btn" id="athSelBtnGrifar" title="Grifar o trecho selecionado na página">
+              <button type="button" class="ath-sel-pop-btn" id="athSelBtnGrifar" title="Grifar o trecho selecionado na página" aria-label="Grifar texto">
                 <span class="ath-sel-cor-dot" id="athSelCorDotAtivo" style="background:#FDE047;"></span>
                 <span>Grifar Texto</span>
               </button>
-              <button type="button" class="ath-sel-pop-btn primario" id="athSelBtnCitar" title="Salvar trecho selecionado como Citação no Zotero com página">
+              <button type="button" class="ath-sel-pop-btn primario" id="athSelBtnCitar" title="Salvar trecho selecionado como Citação no Zotero com página" aria-label="Criar citação no Zotero">
                 ${svgIcone('citacao', 13)}
                 <span>+ Citação Zotero</span>
               </button>
-              <button type="button" class="ath-sel-pop-btn" id="athSelBtnNota" title="Criar uma Nota Adesiva na página com este trecho">
+              <button type="button" class="ath-sel-pop-btn" id="athSelBtnNota" title="Criar uma Nota Adesiva na página com este trecho" aria-label="Criar nota">
                 ${svgIcone('nota', 13)}
                 <span>Criar Nota</span>
               </button>
-              <button type="button" class="ath-sel-pop-btn" id="athSelBtnCopiarAbnt" title="Copiar trecho já formatado com (AUTOR, ANO, p. X)">
+              <button type="button" class="ath-sel-pop-btn" id="athSelBtnCopiarAbnt" title="Copiar trecho já formatado com (AUTOR, ANO, p. X)" aria-label="Copiar citação ABNT">
+                ${svgIcone('copiar', 13)}
                 <span>Copiar ABNT</span>
               </button>
-              <button type="button" class="ath-sel-pop-btn" id="athSelBtnTraduzir" title="Traduzir o trecho selecionado">${svgIcone('globo', 13)}<span>Traduzir</span></button>
+              <button type="button" class="ath-sel-pop-btn" id="athSelBtnTraduzir" title="Traduzir o trecho selecionado" aria-label="Traduzir seleção">${svgIcone('globo', 13)}<span>Traduzir</span></button>
             </div>
 
             <div class="ath-pdf-todas-paginas-stack" id="athPdfTodasPaginasStack"></div>
@@ -768,20 +770,52 @@ export const metodosEstudoTela = {
     // sem PDF: aviso claro no lugar das páginas (nada de folha inventada)
     if (!art.pdfBlobUrl && !ehArtigoExemploFicticio(art)) {
       const carregando = this._carregandoPdf === art;
+      const idDriveReal = String(art.driveFileId || '').trim();
+      const temIdDrive = Boolean(idDriveReal && !/^drive_pdf_/.test(idDriveReal) && !art.pdfVerificadoInvalido);
       const aviso = document.createElement('div');
       aviso.className = 'ath-pdf-sem-arquivo';
       aviso.innerHTML = carregando
         ? '<strong>Carregando o PDF do Google Drive…</strong>'
-        : `<strong>Este artigo ainda não tem PDF vinculado</strong>
-           <p>O registro veio do Zotero só com os dados da obra. Vincule o arquivo para ler, grifar e citar com página. O resumo e o fichamento ao lado já funcionam.</p>
-           ${art.anexoPdfZotero?.baixavel ? `<p><b>PDF disponível no Zotero:</b> baixe-o do armazenamento do Zotero e ele será guardado no seu Google Drive.</p>${htmlArmazenamentoZotero(art.anexoPdfZotero)}`
-             : art.anexoPdfZotero ? `<p><b>PDF só no seu computador:</b> no Zotero ele é um arquivo vinculado (não baixável pela web). Selecione o arquivo abaixo.</p>${htmlLocalDoPdf(art.anexoPdfZotero)}` : ''}
-           <div class="ath-pdf-sem-arquivo-acoes">
-             ${art.anexoPdfZotero?.baixavel ? `<button type="button" class="glx-btn glx-btn-primary glx-btn-sm" data-baixar-pdf-zotero>${svgIcone('drive', 14)} Baixar do Zotero</button>` : ''}
-             ${art.doi || art.isbn || art.camposZotero?.ISBN ? `<button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-buscar-pdf-identificador>${svgIcone('sincronizar', 14)} Buscar PDF pelo DOI/ISBN</button>` : ''}
-             <label class="glx-btn glx-btn-primary glx-btn-sm" style="cursor:pointer;">${svgIcone('upload', 14)} Selecionar PDF no computador<input type="file" accept="application/pdf,.pdf" hidden></label>
-             <button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-sem-pdf-drive>${svgIcone('drive', 14)} Do Google Drive…</button>
-           </div>`;
+        : temIdDrive
+          ? `<strong>PDF vinculado no Google Drive${art.driveFileName ? ` (${escapeHtml(art.driveFileName)})` : ''}</strong>
+             <p>Este artigo já possui um PDF vinculado na sua conta do Google Drive, mas a sessão do Drive neste aparelho precisa ser conectada ou renovada para baixá-lo.</p>
+             <div class="ath-pdf-sem-arquivo-acoes">
+               <button type="button" class="glx-btn glx-btn-primary glx-btn-sm" data-conectar-baixar-pdf-drive>${svgIcone('drive', 14)} Conectar Google Drive e abrir PDF</button>
+               <label class="glx-btn glx-btn-soft glx-btn-sm" style="cursor:pointer;">${svgIcone('upload', 14)} Selecionar PDF neste aparelho<input type="file" accept="application/pdf,.pdf" hidden></label>
+               <button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-sem-pdf-drive>${svgIcone('drive', 14)} Trocar PDF do Drive…</button>
+             </div>`
+          : `<strong>Este artigo ainda não tem PDF vinculado</strong>
+             <p>O registro veio do Zotero só com os dados da obra. Vincule o arquivo para ler, grifar e citar com página. O resumo e o fichamento ao lado já funcionam.</p>
+             ${art.anexoPdfZotero?.baixavel ? `<p><b>PDF disponível no Zotero:</b> baixe-o do armazenamento do Zotero e ele será guardado no seu Google Drive.</p>${htmlArmazenamentoZotero(art.anexoPdfZotero)}`
+               : art.anexoPdfZotero ? `<p><b>PDF só no seu computador:</b> no Zotero ele é um arquivo vinculado (não baixável pela web). Selecione o arquivo abaixo.</p>${htmlLocalDoPdf(art.anexoPdfZotero)}` : ''}
+             <div class="ath-pdf-sem-arquivo-acoes">
+               ${art.anexoPdfZotero?.baixavel ? `<button type="button" class="glx-btn glx-btn-primary glx-btn-sm" data-baixar-pdf-zotero>${svgIcone('drive', 14)} Baixar do Zotero</button>` : ''}
+               ${art.doi || art.isbn || art.camposZotero?.ISBN ? `<button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-buscar-pdf-identificador>${svgIcone('sincronizar', 14)} Buscar PDF pelo DOI/ISBN</button>` : ''}
+               <label class="glx-btn glx-btn-primary glx-btn-sm" style="cursor:pointer;">${svgIcone('upload', 14)} Selecionar PDF no computador<input type="file" accept="application/pdf,.pdf" hidden></label>
+               <button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-sem-pdf-drive>${svgIcone('drive', 14)} Do Google Drive…</button>
+             </div>`;
+      aviso.querySelector('[data-conectar-baixar-pdf-drive]')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const rotulo = btn.innerHTML;
+        btn.disabled = true;
+        btn.textContent = 'Conectando ao Google Drive…';
+        try {
+          await obterTokenOuConectar();
+          btn.textContent = 'Baixando PDF do Google Drive…';
+          const ok = await garantirPdfDoArtigo(art);
+          if (ok) {
+            this.renderizar();
+          } else {
+            btn.disabled = false;
+            btn.innerHTML = rotulo;
+            mostrarAviso('Não foi possível baixar este PDF do Google Drive. Verifique se você conectou a mesma conta Google onde o PDF foi salvo.', { tipo: 'aviso', ms: 7000 });
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.innerHTML = rotulo;
+          mostrarAviso(`Não foi possível conectar ao Google Drive: ${err?.message || err}`, { tipo: 'aviso', ms: 6000 });
+        }
+      });
       aviso.querySelector('input[type=file]')?.addEventListener('change', async (e) => {
         const arq = e.target.files?.[0];
         if (!arq) return;

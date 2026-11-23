@@ -4,7 +4,7 @@
  * citação ABNT e utilidades do desenho à mão livre. Separado da tela (athenes_estudo_artigos.js) para o arquivo não crescer sem fim.
  */
 import * as bib from '../core/athenes_biblioteca_artigos.js';
-import { obterTokenDrive, obterPastaRaizDrive, buscarOuCriarPasta, obterOuCriarPastaDoArtigoNoDrive, moverArquivoNoDrive, reconciliarArtigosComDrive } from '../core/athenes_drive_sync.js';
+import { obterTokenDrive, marcarSessaoDriveExpirada, obterPastaRaizDrive, buscarOuCriarPasta, obterOuCriarPastaDoArtigoNoDrive, moverArquivoNoDrive, reconciliarArtigosComDrive } from '../core/athenes_drive_sync.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import { salvarArquivoNoGoogleDrive } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
@@ -491,25 +491,39 @@ export async function lerSnapshotArtigosIdb() {
   }
 }
 
+export function sincronizarBibliotecaArtigosAgora() {
+  return bib.sincronizarBiblioteca().catch(() => null);
+}
+
 /** Envia o PDF do artigo à pasta "Bibliografia_PDFs" do Drive (dentro da raiz Athenes) e guarda o id. Devolve true se subiu. */
 export async function enviarPdfDoArtigoAoDrive(art, blob) {
   if (!await blobEhPdf(blob)) throw new Error('O arquivo não é um PDF válido.');
   const token = await obterTokenDrive();
   if (!token) return false;
-  const pastaId = await obterOuCriarPastaDoArtigoNoDrive(art?.pastaId, token);
-  const idAtual = String(art.driveFileId || '').trim();
-  const salvo = await salvarArquivoNoGoogleDrive({
-    nomeArquivo: art.driveFileName || blob.name || `${art.id}.pdf`, conteudoBlobOuTexto: blob, mimeType: 'application/pdf', accessToken: token,
-    driveFileId: idAtual && !art.pdfVerificadoInvalido && !/^drive_pdf_/.test(idAtual) ? idAtual : null, pastaId
-  });
-  if (idAtual && !art.pdfVerificadoInvalido && !/^drive_pdf_/.test(idAtual) && pastaId) {
-    await moverArquivoNoDrive(idAtual, pastaId, token).catch(() => {});
+  let salvo;
+  let pastaId = null;
+  try {
+    pastaId = await obterOuCriarPastaDoArtigoNoDrive(art?.pastaId, token);
+    const idAtual = String(art.driveFileId || '').trim();
+    salvo = await salvarArquivoNoGoogleDrive({
+      nomeArquivo: art.driveFileName || blob.name || `${art.id}.pdf`, conteudoBlobOuTexto: blob, mimeType: 'application/pdf', accessToken: token,
+      driveFileId: idAtual && !art.pdfVerificadoInvalido && !/^drive_pdf_/.test(idAtual) ? idAtual : null, pastaId
+    });
+    if (idAtual && !art.pdfVerificadoInvalido && !/^drive_pdf_/.test(idAtual) && pastaId) {
+      await moverArquivoNoDrive(idAtual, pastaId, token).catch(() => {});
+    }
+  } catch (e) {
+    if (e?.status === 401 || /\b401\b|invalid_token|unauthenticated/i.test(String(e?.message || ''))) {
+      marcarSessaoDriveExpirada(token);
+    }
+    throw e;
   }
   art.driveFileId = salvo.id;
   art.driveFolderId = pastaId;
   art.pdfVerificadoInvalido = false;
   art.driveStatus = 'PDF no Google Drive';
   salvarArtigosEstudo(carregarArtigosEstudo(), art); // o id do arquivo vai para o servidor
+  sincronizarBibliotecaArtigosAgora(); // envia driveFileId imediatamente à nuvem (sem esperar debounce)
 
   // Se o artigo já está compartilhado, aplica o compartilhamento no arquivo do Drive imediatamente
   if (art.docCompartilhadoId || art.compartilhamento) {
@@ -537,11 +551,12 @@ export async function registrarPdfLocalNoArtigo(art, file) {
     if (!ok) {
       art.driveStatus = 'PDF salvo neste dispositivo (Drive desconectado)';
       salvarArtigosEstudo(carregarArtigosEstudo(), art);
+      mostrarAviso('PDF salvo apenas neste dispositivo. Conecte o Google Drive para sincronizá-lo com o tablet e outros aparelhos.', { tipo: 'aviso', ms: 7000 });
     }
   }).catch(e => {
     art.driveStatus = 'PDF salvo neste dispositivo (falha ao enviar ao Drive)';
     salvarArtigosEstudo(carregarArtigosEstudo(), art);
-    mostrarAviso(`Não foi possível enviar o PDF ao Google Drive (mantido neste aparelho): ${e.message}`, { tipo: 'info' });
+    mostrarAviso(`Não foi possível enviar o PDF ao Google Drive (mantido neste aparelho): ${e.message}`, { tipo: 'aviso', ms: 7000 });
   });
   return true;
 }
@@ -716,7 +731,11 @@ export async function garantirPdfDoArtigo(art, { forcarBuscaIdentificadores = fa
         art.temPdfLocal = true;
         salvarPdfLocal(art.id, blob).catch(() => {});
         return true;
-      } catch (_) {}
+      } catch (e) {
+        if (/\b401\b|invalid_token|unauthenticated/i.test(String(e?.message || ''))) {
+          marcarSessaoDriveExpirada(tokenDrive);
+        }
+      }
     }
     // Fallback: download direto do Google Drive caso o arquivo tenha permissão pública
     try {
@@ -750,30 +769,42 @@ export async function reorganizarArquivosAntigosNoDrive(token = null) {
   return res;
 }
 
+let _migracaoDriveEmCurso = null;
+
 /**
  * Garante que os PDFs locais estejam sincronizados no Google Drive e reorganiza
  * no Drive os arquivos salvos antes desta atualização em suas respectivas coleções.
  */
 export async function migrarPdfsLocaisParaODrive() {
-  const token = await obterTokenDrive();
-  if (!token) return 0;
-  reorganizarArquivosAntigosNoDrive(token).catch(() => {});
-  let movidos = 0;
-  for (const art of carregarArtigosEstudo()) {
-    try {
-      const local = await obterPdfLocal(art.id);
-      if (!local) continue;
-      const idDrive = String(art.driveFileId || '').trim();
-      let noDrive = false;
-      if (idDrive && !/^drive_pdf_/.test(idDrive)) {
-        const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(idDrive)}?fields=id,trashed`, { headers: { Authorization: `Bearer ${token}` } });
-        noDrive = r.ok && !(await r.json()).trashed;
-      }
-      if (!noDrive) noDrive = await enviarPdfDoArtigoAoDrive(art, local);
-      if (noDrive) movidos++;
-    } catch (_) {}
-  }
-  return movidos;
+  if (_migracaoDriveEmCurso) return _migracaoDriveEmCurso;
+  const executar = async () => {
+    const token = await obterTokenDrive();
+    if (!token) return 0;
+    reorganizarArquivosAntigosNoDrive(token).catch(() => {});
+    let movidos = 0;
+    for (const art of carregarArtigosEstudo()) {
+      try {
+        let local = await obterPdfLocal(art.id);
+        if (!local && art.chaveZotero) {
+          local = await obterPdfLocal(`zot_${art.chaveZotero}`) || await obterPdfLocal(art.chaveZotero);
+        }
+        if (!local) continue;
+        const idDrive = String(art.driveFileId || '').trim();
+        let noDrive = false;
+        if (idDrive && !/^drive_pdf_/.test(idDrive)) {
+          const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(idDrive)}?fields=id,trashed`, { headers: { Authorization: `Bearer ${token}` } });
+          if (r.status === 401) { marcarSessaoDriveExpirada(token); break; }
+          noDrive = r.ok && !(await r.json()).trashed;
+        }
+        if (!noDrive) noDrive = await enviarPdfDoArtigoAoDrive(art, local);
+        if (noDrive) movidos++;
+      } catch (_) {}
+    }
+    if (movidos > 0) sincronizarBibliotecaArtigosAgora();
+    return movidos;
+  };
+  _migracaoDriveEmCurso = executar().finally(() => { _migracaoDriveEmCurso = null; });
+  return _migracaoDriveEmCurso;
 }
 
 /** Biblioteca da sessão (memória), sincronizada com o servidor; nada é lido nem gravado no localStorage. */

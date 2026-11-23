@@ -11,7 +11,7 @@ import { normalizarEmail } from '../core/athenes_compartilhamento.js';
 import { escapeHtml, sanitizarHtmlEditorial } from '../core/athenes_seguranca.js';
 import { linhasInformacoesZotero, informacoesDoArtigo } from '../core/athenes_zotero_campos.js';
 import { svgIcone, svgGoogleDrive } from './athenes_icones.js';
-import { obterPdfLocal, registrarPdfLocalNoArtigo, garantirPdfDoArtigo, salvarArtigosEstudo, salvarArtigosEstudoDebounced, formatarCitacaoAbntDoArtigo, artigoTemPdf, ehArtigoExemploFicticio } from './athenes_estudo_artigos_dados.js';
+import { obterPdfLocal, registrarPdfLocalNoArtigo, garantirPdfDoArtigo, salvarArtigosEstudo, salvarArtigosEstudoDebounced, sincronizarBibliotecaArtigosAgora, formatarCitacaoAbntDoArtigo, artigoTemPdf, ehArtigoExemploFicticio } from './athenes_estudo_artigos_dados.js';
 import {
   PRESETS_VARIAVEIS_REFERENCIA,
   normalizarMapaVariaveis,
@@ -663,7 +663,7 @@ export const metodosEstudoPainelDireito = {
       const fPdf = e.target.files?.[0];
       if (!fPdf) return;
       if (!await registrarPdfLocalNoArtigo(art, fPdf)) return;
-      salvarArtigosEstudo(this.artigos);
+      salvarArtigosEstudo(this.artigos, art);
       const statusEl = box.querySelector('#athStatusSyncArtigo');
       if (statusEl) {
         statusEl.style.color = '#15803D';
@@ -701,7 +701,9 @@ export const metodosEstudoPainelDireito = {
         if (salvo?.id) {
           art.driveFileId = salvo.id;
           art.driveFileName = salvo.name || nomeArquivo;
-          salvarArtigosEstudo(this.artigos);
+          art.driveStatus = 'PDF no Google Drive';
+          salvarArtigosEstudo(this.artigos, art);
+          sincronizarBibliotecaArtigosAgora();
           if (statusEl) {
             statusEl.style.color = '#15803D';
             statusEl.textContent = '✓ PDF salvo com sucesso na sua pasta do Google Drive!';
@@ -743,11 +745,12 @@ export const metodosEstudoPainelDireito = {
     });
     box.querySelector('#athDriveNomeArqArtigo').addEventListener('change', e => {
       art.driveFileName = e.target.value.trim();
-      salvarArtigosEstudo(this.artigos);
+      salvarArtigosEstudo(this.artigos, art);
     });
     box.querySelector('#athDriveIdArqArtigo').addEventListener('change', e => {
       art.driveFileId = e.target.value.trim();
-      salvarArtigosEstudo(this.artigos);
+      salvarArtigosEstudo(this.artigos, art);
+      sincronizarBibliotecaArtigosAgora();
     });
     box.querySelector('#athZoteroKeyArtigo').addEventListener('change', e => {
       art.chaveZotero = e.target.value.trim();

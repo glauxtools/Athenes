@@ -46,7 +46,7 @@ import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
 import { listarCompartilhadosComigo, carregarDocumentoCompartilhado } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
-import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
 import { metodosEstudoTela } from './athenes_estudo_artigos_tela.js';
 import { metodosEstudoPainelDireito } from './athenes_estudo_artigos_painel_direito.js';
 import { metodosEstudoAnotacoes } from './athenes_estudo_artigos_anotacoes.js';
@@ -79,8 +79,31 @@ export class EstudoArtigosView {
         if (!this.artigoAberto && typeof this.renderizar === 'function') this.renderizar();
       }
     });
-    this._bibliotecaInicial = bib.sincronizarBiblioteca().catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
-    migrarPdfsLocaisParaODrive().catch(() => {}); // PDFs que ficaram só neste computador vão para o Drive
+    this._bibliotecaInicial = bib.sincronizarBiblioteca()
+      .catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message))
+      .finally(() => { migrarPdfsLocaisParaODrive().catch(() => {}); }); // PDFs que ficaram só neste computador vão para o Drive assim que a biblioteca carrega
+    if (typeof window !== 'undefined' && !window.__athenesOuvinteDrivePdfs) {
+      window.__athenesOuvinteDrivePdfs = true;
+      window.addEventListener('athenes:drive-conectado', () => {
+        migrarPdfsLocaisParaODrive().catch(() => {});
+      });
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('athenes:drive-conectado', () => {
+        const aberto = this.artigoAberto;
+        if (aberto && !aberto.pdfBlobUrl && artigoTemPdf(aberto)) {
+          this._carregandoPdf = aberto;
+          this.renderizar?.();
+          garantirPdfDoArtigo(aberto).then(ok => {
+            if (this._carregandoPdf === aberto) this._carregandoPdf = null;
+            if (this.artigoAberto === aberto && ok) this.renderizar?.();
+          }).catch(() => {
+            if (this._carregandoPdf === aberto) this._carregandoPdf = null;
+            if (this.artigoAberto === aberto) this.renderizar?.();
+          });
+        }
+      });
+    }
     this.artigoAberto = null;
     this.paginaAtual = 1;
     this.zoomPct = 100;
@@ -2385,7 +2408,8 @@ export class EstudoArtigosView {
     art.driveFileId = ''; art.driveFileName = ''; art.driveStatus = 'Sem PDF vinculado';
     art.conteudoPaginasPdf = []; art.totalPaginas = 0; // as páginas vinham do arquivo antigo
     try { await removerPdfLocal(art.id); } catch (_) {} // sobra de versões antigas: sem isso o arquivo voltaria sozinho
-    salvarArtigosEstudo(this.artigos);
+    salvarArtigosEstudo(this.artigos, art);
+    sincronizarBibliotecaArtigosAgora();
     this.paginaAtual = 1;
     this.renderizar();
     mostrarAviso('PDF desvinculado. Escolha outro arquivo quando quiser.', { tipo: 'info', ms: 5000 });
@@ -2400,7 +2424,8 @@ export class EstudoArtigosView {
       art.driveStatus = 'PDF no Google Drive';
       art.pdfBlobUrl = null;
       if (this._pdfFalhou) this._pdfFalhou.clear();
-      salvarArtigosEstudo(this.artigos);
+      salvarArtigosEstudo(this.artigos, art);
+      sincronizarBibliotecaArtigosAgora();
       this.renderizar();
       garantirPdfDoArtigo(art).then(ok => { if (ok) this.renderizar(); });
     });
