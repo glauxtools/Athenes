@@ -655,7 +655,7 @@ export class EstudoArtigosView {
       </div>
 
       <button type="button" class="ath-btn ath-btn-icone" id="athBtnExportarBibCsv" title="Exportar conjunto bibliográfico (CSV)" aria-label="Exportar conjunto bibliográfico (CSV)">
-        ${svgIcone('exportar', 16)}
+        ${svgIcone('exportar_csv', 16)}
       </button>
 
       <button type="button" class="ath-btn ath-btn-primary ath-btn-icone" id="athBtnNovoArtigoDrive" title="Vincular Artigo & PDF" aria-label="Vincular Artigo & PDF">

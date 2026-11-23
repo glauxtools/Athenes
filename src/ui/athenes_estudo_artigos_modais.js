@@ -1016,7 +1016,7 @@ export const metodosEstudoModais = {
           <small id="athExpCsvResumo" style="color:#475569;"></small>
           <div style="display:flex; gap:8px;">
             <button type="button" class="ath-btn" id="athModalExpCsvCancelar">Cancelar</button>
-            <button type="button" class="ath-btn ath-btn-primary" id="athModalExpCsvBaixar">${svgIcone('exportar', 14)} Exportar CSV</button>
+            <button type="button" class="ath-btn ath-btn-primary" id="athModalExpCsvBaixar">${svgIcone('exportar_csv', 14)} Exportar CSV</button>
           </div>
         </div>
       </div>
@@ -1057,7 +1057,7 @@ export const metodosEstudoModais = {
         ? `${sel.length} ${sel.length === 1 ? 'referência selecionada' : 'referências selecionadas'} para exportação.`
         : 'Nenhuma referência selecionada.';
       btnBaixar.disabled = sel.length === 0;
-      btnBaixar.innerHTML = `${svgIcone('exportar', 14)} Exportar CSV (${sel.length})`;
+      btnBaixar.innerHTML = `${svgIcone('exportar_csv', 14)} Exportar CSV (${sel.length})`;
     };
 
     const renderizarListaManual = () => {
