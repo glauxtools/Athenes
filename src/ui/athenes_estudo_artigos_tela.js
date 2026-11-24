@@ -261,6 +261,9 @@ export const metodosEstudoTela = {
 
             <!-- Botão de Adicionar Folha Extra e Indicador de Página à Direita -->
             <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+              <button type="button" class="rm-ic-bt" id="athBtnBuscarNoPdf" data-tip="Buscar no PDF (Ctrl+F)" title="Buscar no PDF (Ctrl+F)" aria-label="Buscar no PDF (Ctrl+F)" aria-expanded="false">
+                ${svgIcone('busca', 15)}
+              </button>
               <div class="ath-traducao-controle" aria-label="Tradução da página de referência">
                 <button type="button" id="athBtnTraduzirPagina" aria-pressed="false" title="Traduzir a página atual sem alterar o PDF">${svgIcone('globo', 15)}<span>Traduzir página</span></button>
                 <select id="athIdiomaTraducao" aria-label="Idioma de destino da tradução"><option value="pt">PT</option><option value="en">EN</option><option value="es">ES</option><option value="fr">FR</option><option value="it">IT</option></select>
