@@ -64,6 +64,7 @@ export class EstudoArtigosView {
     this.onModoFullScreenChange = opcoes.onModoFullScreenChange || (() => {});
     this.artigos = carregarArtigosEstudo();
     this.artigosCompartilhados = [];
+    this.pastasCompartilhadasRecebidas = [];
     // a biblioteca vem do servidor: chegou algo de outro computador → atualiza a tela (sem interromper quem está lendo um artigo)
     this._cancelarBib = bib.aoMudarBiblioteca(() => {
       this.artigos = carregarArtigosEstudo();
@@ -281,10 +282,30 @@ export class EstudoArtigosView {
     else this.atualizarGridCatalogo();
   }
 
+  artigoPertenceAPastaCompartilhada(art, pastaId) {
+    if (!art?.compartilhadoComigo || !pastaId) return false;
+    const pid = String(pastaId);
+    if (String(art.pastaCompartilhadaId || '') === pid) return true;
+    if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === pid)) return true;
+    return false;
+  }
+
+  artigosAvulsosCompartilhados() {
+    const idsPastasRecebidas = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
+    return (this.artigosCompartilhados || []).filter(a => {
+      if (!a?.compartilhadoComigo) return false;
+      const pId = String(a.pastaCompartilhadaId || '');
+      if (pId && idsPastasRecebidas.has(pId)) return false;
+      if (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => idsPastasRecebidas.has(String(id)))) return false;
+      return true;
+    });
+  }
+
   async carregarCompartilhados() {
     const conta = obterContaAtiva();
     if (!lerSessaoSupabase()?.email) {
       this.artigosCompartilhados = [];
+      this.pastasCompartilhadasRecebidas = [];
       if (!this.artigoAberto && this.container?.isConnected) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
       return;
@@ -294,35 +315,66 @@ export class EstudoArtigosView {
       const resultados = await Promise.allSettled(lista.map(x => carregarDocumentoCompartilhado(x.id)));
       if (obterContaAtiva() !== conta || !this.container?.isConnected) return;
       const porChave = new Map();
-      const registrar = (artBase, doc, priorizar = false) => {
+      const pastasMap = new Map();
+      const adicionarPastaAoArtigo = (alvo, pastaId, pastaNome) => {
+        if (!pastaId) return;
+        const pid = String(pastaId);
+        if (!alvo.pastaCompartilhadaId) alvo.pastaCompartilhadaId = pid;
+        if (pastaNome && !alvo.pastaCompartilhadaNome) alvo.pastaCompartilhadaNome = pastaNome;
+        const listaIds = Array.isArray(alvo.pastasCompartilhadasIds) ? alvo.pastasCompartilhadasIds.map(String) : [];
+        if (!listaIds.includes(pid)) listaIds.push(pid);
+        alvo.pastasCompartilhadasIds = listaIds;
+      };
+      const registrar = (artBase, doc, priorizar = false, pastaId = null, pastaNome = '') => {
         if (!artBase) return;
         const chave = String(artBase.docCompartilhadoId || artBase.id || '').trim();
         if (!chave) return;
-        if (!priorizar && porChave.has(chave)) return;
-        porChave.set(chave, {
+        const existente = porChave.get(chave);
+        if (existente && !priorizar) {
+          adicionarPastaAoArtigo(existente, pastaId || artBase.pastaCompartilhadaId, pastaNome || artBase.pastaCompartilhadaNome);
+          return;
+        }
+        const novo = {
+          ...(existente || {}),
           ...artBase,
           compartilhadoComigo: true,
           proprietarioExterno: true,
-          docCompartilhadoId: artBase.docCompartilhadoId || doc.id,
-          permissao: doc.permissao || artBase.permissao || 'leitura',
-          proprietario: doc.proprietario || artBase.proprietario
-        });
+          docCompartilhadoId: artBase.docCompartilhadoId || existente?.docCompartilhadoId || doc.id,
+          permissao: doc.permissao || artBase.permissao || existente?.permissao || 'leitura',
+          proprietario: doc.proprietario || artBase.proprietario || existente?.proprietario
+        };
+        const idsHerdados = new Set([
+          ...(Array.isArray(existente?.pastasCompartilhadasIds) ? existente.pastasCompartilhadasIds : []),
+          ...(Array.isArray(artBase.pastasCompartilhadasIds) ? artBase.pastasCompartilhadasIds : [])
+        ].map(String).filter(Boolean));
+        if (idsHerdados.size) novo.pastasCompartilhadasIds = Array.from(idsHerdados);
+        adicionarPastaAoArtigo(novo, pastaId || artBase.pastaCompartilhadaId || existente?.pastaCompartilhadaId, pastaNome || artBase.pastaCompartilhadaNome || existente?.pastaCompartilhadaNome);
+        porChave.set(chave, novo);
       };
       for (const r of resultados) {
         const doc = r.status === 'fulfilled' ? r.value?.doc : null;
         if (!doc) continue;
-        if (doc.artigoEstudo) {
-          registrar(doc.artigoEstudo, doc, true);
-        } else if (Array.isArray(doc.pastaCompartilhada?.artigos)) {
-          for (const artPasta of doc.pastaCompartilhada.artigos) {
-            registrar({
-              ...artPasta,
-              pastaCompartilhadaId: artPasta.pastaCompartilhadaId || doc.id,
-              pastaCompartilhadaNome: artPasta.pastaCompartilhadaNome || doc.pastaCompartilhada.nome || ''
-            }, doc, false);
+        if (doc.pastaCompartilhada || String(doc.id || '').startsWith('pasta_bib_')) {
+          const nomeLimpo = doc.pastaCompartilhada?.nome || String(doc.titulo || '').replace(/^\[Pasta\]\s*/i, '').replace(/\s*\(\d+\s+obras?\)\s*$/i, '').trim() || 'Pasta compartilhada';
+          pastasMap.set(String(doc.id), {
+            id: String(doc.id),
+            nome: nomeLimpo,
+            tipo: 'bibliografia',
+            origem: 'compartilhada_nuvem',
+            permissao: doc.permissao || 'leitura',
+            proprietario: doc.proprietario || null,
+            driveFolderId: doc.pastaCompartilhada?.driveFolderId || null
+          });
+          if (Array.isArray(doc.pastaCompartilhada?.artigos)) {
+            for (const artPasta of doc.pastaCompartilhada.artigos) {
+              registrar(artPasta, doc, false, doc.id, nomeLimpo);
+            }
           }
+        } else if (doc.artigoEstudo) {
+          registrar(doc.artigoEstudo, doc, true, doc.artigoEstudo.pastaCompartilhadaId || null, doc.artigoEstudo.pastaCompartilhadaNome || '');
         }
       }
+      this.pastasCompartilhadasRecebidas = Array.from(pastasMap.values());
       this.artigosCompartilhados = Array.from(porChave.values());
       if (!this.artigoAberto) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
@@ -332,29 +384,52 @@ export class EstudoArtigosView {
   abrirPastaCompartilhadaRecebida(docPasta) {
     if (!docPasta) return;
     const itensPasta = Array.isArray(docPasta.pastaCompartilhada?.artigos) ? docPasta.pastaCompartilhada.artigos : [];
-    const nomePasta = docPasta.pastaCompartilhada?.nome || String(docPasta.titulo || '').replace(/^\[Pasta\]\s*/i, '').trim() || 'Pasta compartilhada';
+    const nomePasta = docPasta.pastaCompartilhada?.nome || String(docPasta.titulo || '').replace(/^\[Pasta\]\s*/i, '').replace(/\s*\(\d+\s+obras?\)\s*$/i, '').trim() || 'Pasta compartilhada';
+    const pastaId = String(docPasta.id || '');
+    if (pastaId && !(this.pastasCompartilhadasRecebidas || []).some(p => String(p.id) === pastaId)) {
+      this.pastasCompartilhadasRecebidas = [
+        ...(this.pastasCompartilhadasRecebidas || []),
+        {
+          id: pastaId,
+          nome: nomePasta,
+          tipo: 'bibliografia',
+          origem: 'compartilhada_nuvem',
+          permissao: docPasta.permissao || 'leitura',
+          proprietario: docPasta.proprietario || null,
+          driveFolderId: docPasta.pastaCompartilhada?.driveFolderId || null
+        }
+      ];
+    }
     if (itensPasta.length) {
       const porChave = new Map((this.artigosCompartilhados || []).map(a => [String(a.docCompartilhadoId || a.id || ''), a]));
       for (const artPasta of itensPasta) {
         const chave = String(artPasta.docCompartilhadoId || artPasta.id || '').trim();
         if (!chave) continue;
-        if (!porChave.has(chave)) {
+        const existente = porChave.get(chave);
+        if (existente) {
+          if (!existente.pastaCompartilhadaId) existente.pastaCompartilhadaId = pastaId;
+          const ids = Array.isArray(existente.pastasCompartilhadasIds) ? existente.pastasCompartilhadasIds.map(String) : [];
+          if (pastaId && !ids.includes(pastaId)) ids.push(pastaId);
+          existente.pastasCompartilhadasIds = ids;
+        } else {
           porChave.set(chave, {
             ...artPasta,
             compartilhadoComigo: true,
             proprietarioExterno: true,
-            docCompartilhadoId: artPasta.docCompartilhadoId || docPasta.id,
+            docCompartilhadoId: artPasta.docCompartilhadoId || pastaId,
             permissao: docPasta.permissao || artPasta.permissao || 'leitura',
             proprietario: docPasta.proprietario || artPasta.proprietario,
-            pastaCompartilhadaId: docPasta.id,
-            pastaCompartilhadaNome: nomePasta
+            pastaCompartilhadaId: pastaId,
+            pastaCompartilhadaNome: nomePasta,
+            pastasCompartilhadasIds: pastaId ? [pastaId] : []
           });
         }
       }
       this.artigosCompartilhados = Array.from(porChave.values());
     }
     this.artigoAberto = null;
-    this.filtrarPorPasta('compartilhados_comigo');
+    this.filtrarPorPasta(pastaId || 'compartilhados_comigo');
+    this.aoMudarPastas?.();
     this.carregarCompartilhados().catch(() => {});
     const qtd = itensPasta.length;
     mostrarAviso(
@@ -1423,11 +1498,22 @@ export class EstudoArtigosView {
     }
     grid.innerHTML = '';
 
+    const idsPastasRecebidas = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
     const filtrados = this.ordenarArtigos(this.artigosCatalogo()).filter(art => {
       if (this.pastaFiltroId && this.pastaFiltroId !== 'todas') {
         if (this.pastaFiltroId === 'compartilhados_comigo') {
           if (!art.compartilhadoComigo) return false;
-        } else if (!artigoEstaNaPasta(art, this.pastaFiltroId)) return false;
+          const pId = String(art.pastaCompartilhadaId || '');
+          if (pId && idsPastasRecebidas.has(pId)) return false;
+          if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => idsPastasRecebidas.has(String(id)))) return false;
+        } else if (idsPastasRecebidas.has(String(this.pastaFiltroId)) || String(this.pastaFiltroId).startsWith('pasta_bib_')) {
+          if (!this.artigoPertenceAPastaCompartilhada(art, this.pastaFiltroId)) return false;
+        } else {
+          if (art.compartilhadoComigo) return false;
+          if (!artigoEstaNaPasta(art, this.pastaFiltroId)) return false;
+        }
+      } else if (art.compartilhadoComigo && this.filtroAtivo !== 'compartilhados') {
+        return false;
       }
       if (this.filtroStatus && this.filtroStatus !== 'todos') {
         if (this.filtroStatus === 'com_pdf' && !artigoTemPdf(art)) return false;

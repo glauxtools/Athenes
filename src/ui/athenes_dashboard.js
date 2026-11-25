@@ -678,18 +678,21 @@ export class DashboardView {
 
   abrirAbaArtigosZoteroComPastaCompartilhada(docPasta) {
     if (!docPasta) return;
+    const pastaDestinoId = String(docPasta.id || 'compartilhados_comigo');
     this.abaAtiva = 'artigos_zotero';
-    this.pastaAtivaId = 'compartilhados_comigo';
+    this.pastaAtivaId = pastaDestinoId;
     try {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('athenes_dash_aba', 'artigos_zotero');
-        sessionStorage.setItem('athenes_dash_pasta', 'compartilhados_comigo');
+        sessionStorage.setItem('athenes_dash_pasta', pastaDestinoId);
       }
     } catch (_) {}
     this.renderizar();
     if (this.estudoView && typeof this.estudoView.abrirPastaCompartilhadaRecebida === 'function') {
       this.estudoView.abrirPastaCompartilhadaRecebida(docPasta);
     }
+    this.renderizarPastasLateral();
+    this.renderizarBannerPasta();
   }
 
   abrirModalLogin() {
