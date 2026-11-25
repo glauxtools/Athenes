@@ -602,6 +602,39 @@ export function registrarExclusoes(docs) {
 }
 
 /**
+ * Incorpora no registro local de exclusões (`athenes_docs_excluidos`) os documentos excluídos
+ * em outros dispositivos (vindos de `perfil.excluidos` no servidor), garantindo que tanto
+ * documentos próprios quanto compartilhados excluídos no PC também fiquem ocultos no celular.
+ */
+export function mesclarExclusoesDoServidor(mapaExcluidos = {}) {
+  if (!mapaExcluidos || typeof mapaExcluidos !== 'object') return 0;
+  const lista = lerExcluidos();
+  const porId = new Set(lista.map(x => String(x.id || '')).filter(Boolean));
+  const porDrive = new Set(lista.map(x => String(x.driveFileId || '')).filter(Boolean));
+  let adicionadas = 0;
+  for (const [chave, em] of Object.entries(mapaExcluidos)) {
+    const data = typeof em === 'string' && em ? em : new Date().toISOString();
+    if (chave.startsWith('i:')) {
+      const id = chave.slice(2);
+      if (id && !porId.has(id)) {
+        lista.push({ id, driveFileId: '', lixeira: true, nuvem: true, em: data });
+        porId.add(id);
+        adicionadas++;
+      }
+    } else if (chave.startsWith('f:')) {
+      const fid = chave.slice(2);
+      if (fid && !porDrive.has(fid)) {
+        lista.push({ id: `drive_${fid}`, driveFileId: fid, lixeira: true, nuvem: true, em: data });
+        porDrive.add(fid);
+        adicionadas++;
+      }
+    }
+  }
+  if (adicionadas > 0) gravarConta(CHAVE_EXCLUIDOS, JSON.stringify(lista.slice(-500)));
+  return adicionadas;
+}
+
+/**
  * Leva para a lixeira do Drive (recuperável por 30 dias) os arquivos dos documentos excluídos que ainda estão lá; tenta de novo
  * na próxima sincronização se falhar. Documentos de outras pessoas nunca são mexidos. Devolve quantos foram para a lixeira.
  */

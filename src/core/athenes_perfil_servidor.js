@@ -33,8 +33,20 @@ export function entradaDoDocumento(d) {
   };
 }
 
-/** O documento tem alteração ainda não enviada ao Drive? (nesse caso uma exclusão feita em outro lugar não o apaga) */
+/** O documento tem alteração ainda não enviada ao Drive? */
 export const temAlteracaoPendente = (d) => !d.driveFileId || !d.driveSincronizadoEm || (d.dataModificacao || '') > d.driveSincronizadoEm;
+
+/**
+ * Uma edição local só vence uma exclusão remota (`dataExclusao`) se o documento foi realmente
+ * modificado DEPOIS da exclusão — documentos antigos sem `driveFileId` no cache local de outro
+ * dispositivo jamais podem ressuscitar após serem excluídos em outro aparelho.
+ */
+const edicaoVenceExclusao = (d, dataExclusao) => {
+  if (!temAlteracaoPendente(d)) return false;
+  if (!dataExclusao || typeof dataExclusao !== 'string') return false;
+  const mod = String(d?.dataModificacao || '');
+  return Boolean(mod) && mod > dataExclusao;
+};
 
 const nomeNorm = (n) => String(n || '').trim().toLowerCase();
 
@@ -154,7 +166,7 @@ export function mesclarPerfil(servidor, local) {
     const e = entradaDoDocumento(d);
     const excl = excluidos[chaveExclusao(d)] || excluidos[`i:${d.id}`];
     if (excl) {
-      if (temAlteracaoPendente(d)) { delete excluidos[chaveExclusao(d)]; delete excluidos[`i:${d.id}`]; guardar(e); } // edição vence exclusão: o documento volta
+      if (edicaoVenceExclusao(d, excl)) { delete excluidos[chaveExclusao(d)]; delete excluidos[`i:${d.id}`]; guardar(e); } // edição posterior vence exclusão: o documento volta
       else remover.push(String(d.id));
       continue;
     }

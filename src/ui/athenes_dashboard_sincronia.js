@@ -9,10 +9,10 @@ import {remapearSelecaoPastas} from './athenes_estudo_artigos_pastas.js';
 import { sincronizarBiblioteca } from '../core/athenes_biblioteca_artigos.js';
 import { sincronizarTemplatesUsuario } from '../core/athenes_templates.js';
 import { sincronizarPerfil } from '../core/athenes_perfil_servidor.js';
-import { deduplicarDocumentos } from '../core/athenes_repositorio.js';
+import { deduplicarDocumentos, removerDoLegado, removerLegadoSeSeguro } from '../core/athenes_repositorio.js';
 import { montarEstadoLocal, chaveDoZotero } from '../core/athenes_perfil_local.js';
 import { mostrarAviso } from './athenes_aviso.js';
-import { obterTokenDrive, marcarSessaoDriveExpirada, processarPastasExcluidas, docsRemovidosDoDrive, processarExclusoesPendentes, obterPastaRaizDrive, repararPastaDosDocumentos, sincronizarZoteroComDrive, importarPastasDoDrive, listarBibliotecaDoDrive, mesclarBibliotecaDrive } from '../core/athenes_drive_sync.js';
+import { obterTokenDrive, marcarSessaoDriveExpirada, processarPastasExcluidas, docsRemovidosDoDrive, processarExclusoesPendentes, mesclarExclusoesDoServidor, obterPastaRaizDrive, repararPastaDosDocumentos, sincronizarZoteroComDrive, importarPastasDoDrive, listarBibliotecaDoDrive, mesclarBibliotecaDrive } from '../core/athenes_drive_sync.js';
 
 export const metodosDashboardSincronia = {
   async sincronizarComSupabase(silencioso = false) {
@@ -129,7 +129,18 @@ export const metodosDashboardSincronia = {
         const cz = r.indice.zotero?.cfg;
         if (cz) gravarConta('athenes_zotero_sync', JSON.stringify({ hash: chaveDoZotero(cz), em: new Date().toISOString() }));
 
-        if (r.remover.length) { const rm = new Set(r.remover); this.documentos = this.documentos.filter(x => !rm.has(String(x.id))); mudou = true; }
+        if (r.indice?.excluidos && Object.keys(r.indice.excluidos).length) {
+          mesclarExclusoesDoServidor(r.indice.excluidos);
+          const antesComp = this.documentos.length;
+          this.documentos = this.documentos.filter(x => !(x.compartilhadoComigo && r.indice.excluidos[`i:${x.id}`]));
+          if (this.documentos.length !== antesComp) mudou = true;
+        }
+        if (r.remover.length) {
+          const rm = new Set(r.remover);
+          this.documentos = this.documentos.filter(x => !rm.has(String(x.id)));
+          removerDoLegado(r.remover);
+          mudou = true;
+        }
         for (const e of r.adicionar) {
           if (!e.driveFileId && !e.salvoNuvem) continue; // ainda sem conteúdo em lugar nenhum: aparece quando o computador de origem enviar
           const jaExiste = this.documentos.find(x => String(x.id) === String(e.id) || (e.driveFileId && x.driveFileId === e.driveFileId));
@@ -160,6 +171,9 @@ export const metodosDashboardSincronia = {
         const antesDedup = this.documentos.length;
         this.documentos = deduplicarDocumentos(this.documentos);
         if (this.documentos.length !== antesDedup) mudou = true;
+        // Limpa legado do navegador quando todos os itens antigos já estão salvos na nuvem/Drive ou excluídos no servidor
+        const exclSrv = r.indice?.excluidos || {};
+        removerLegadoSeSeguro(d => Boolean(d.proprietarioExterno || d.compartilhadoComigo || d.salvoNuvem || d.driveFileId || exclSrv[`i:${d.id}`] || (d.driveFileId && exclSrv[`f:${d.driveFileId}`])));
         // pasta duplicada que foi unificada ou pasta excluída em outro computador: os documentos seguem para a pasta que ficou
         for (const doc of this.documentos) {
           if (r.mapaIds[doc.pastaId]) { doc.pastaId = r.mapaIds[doc.pastaId]; mudou = true; }

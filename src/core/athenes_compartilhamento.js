@@ -86,11 +86,11 @@ export async function listarCompartilhadosComigo(fetchImpl = globalThis.fetch) {
   const email = normalizarEmail(sessao?.email);
   if (!email) return [];
   const cfg = obterConfigSupabase();
-  const consulta = `compartilhado_com=cs.{${encodeURIComponent(aspasPg(email))}}&select=id,titulo,norma,atualizado_em,atualizado_por,permissoes,user_id,dono:conteudo_json->proprietario->>nome,conta:conteudo_json->proprietario->>conta&order=atualizado_em.desc&limit=100`;
+  const consulta = `compartilhado_com=cs.{${encodeURIComponent(aspasPg(email))}}&select=id,titulo,norma,atualizado_em,atualizado_por,permissoes,user_id,dono:conteudo_json->proprietario->>nome,conta:conteudo_json->proprietario->>conta,email_dono:conteudo_json->proprietario->>email&order=atualizado_em.desc&limit=100`;
   const resp = await fetchImpl(url(cfg, consulta), { headers: await cabecalhosSupabase(cfg, { fetchImpl }) });
   if (!resp.ok) throw new Error(`Não foi possível listar os compartilhados comigo (${resp.status}).`);
   return ((await resp.json()) || [])
-    .filter(l => l.user_id !== sessao.user_id && !documentoEDaMinhaConta({ contaDoDoc: l.conta }, { userId: sessao.user_id, email })) // o que é meu não é "compartilhado comigo"
+    .filter(l => l.user_id !== sessao.user_id && !documentoEDaMinhaConta({ contaDoDoc: l.conta || l.email_dono }, { userId: sessao.user_id, email })) // o que é meu não é "compartilhado comigo"
     .map(l => ({ ...l, papel: papelNaLinha(l, { userId: sessao.user_id, email }) || 'leitura' }));
 }
 

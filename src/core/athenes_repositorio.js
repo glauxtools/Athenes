@@ -102,6 +102,36 @@ export function carregarLegadoUmaVez() {
 }
 
 /**
+ * Remove imediatamente do cache legado do navegador (`athenes_docs_indice` e `athenes_doc_*`)
+ * documentos já excluídos em outro dispositivo ou localmente, impedindo que ressuscitem no reload.
+ */
+export function removerDoLegado(ids = []) {
+  const conjunto = new Set((Array.isArray(ids) ? ids : [ids]).map(id => String(id || '')).filter(Boolean));
+  if (!conjunto.size) return 0;
+  const antigos = lerLegado();
+  if (!antigos.length) return 0;
+  const restantes = antigos.filter(a => !conjunto.has(String(a?.id || '')) && !(a?.driveFileId && conjunto.has(`drive_${a.driveFileId}`)));
+  const removidos = antigos.length - restantes.length;
+  if (removidos > 0) {
+    if (restantes.length === 0) removerConta(CHAVE_LEGADO);
+    else {
+      try {
+        const ls = globalThis.localStorage;
+        const conta = obterContaAtiva?.() || '';
+        const chave = conta ? `${CHAVE_LEGADO}__${conta}` : CHAVE_LEGADO;
+        if (ls?.getItem(chave) !== null) ls.setItem(chave, JSON.stringify(restantes));
+        else if (ls?.getItem(CHAVE_LEGADO) !== null) ls.setItem(CHAVE_LEGADO, JSON.stringify(restantes));
+      } catch (_) {}
+    }
+  }
+  try {
+    const ls = globalThis.localStorage;
+    for (const id of conjunto) ls?.removeItem(`athenes_doc_${id}`);
+  } catch (_) {}
+  return removidos;
+}
+
+/**
  * Apaga do navegador a cópia antiga, mas SÓ se todos os documentos do usuário já estiverem a salvo no Drive (`estaASalvo(doc)`).
  * Devolve true se apagou.
  */

@@ -1039,6 +1039,7 @@ export class DashboardView {
    */
   async aposExcluir(docs) {
     registrarExclusoes(docs);
+    repositorio.removerDoLegado((docs || []).map(d => d?.id));
     this.agendarPerfil(200); // o servidor passa a saber da exclusão já: os outros computadores deixam de mostrar o documento
     try {
       const token = driveConectado() ? await obterTokenDrive() : null;

@@ -23,7 +23,10 @@ export const chaveDoZotero = chaveZotero;
 export function montarEstadoLocal(documentos) {
   const d = obterConfigGoogleDrive();
   const excluidos = {};
-  for (const x of exclusoesRegistradas()) excluidos[x.driveFileId ? `f:${x.driveFileId}` : `i:${x.id}`] = x.em;
+  for (const x of exclusoesRegistradas()) {
+    if (x.id) excluidos[`i:${x.id}`] = x.em;
+    if (x.driveFileId) excluidos[`f:${x.driveFileId}`] = x.em;
+  }
   return {
     pastas: obterPastasDriveLocais(), documentos, excluidos, pastasExcluidas: pastasExcluidasRegistradas(),
     drive: { pastaRaizId: d.pastaRaizId || '', pastaDocumentosId: d.pastaDocumentosId || '', pastaZoteroId: d.pastaZoteroId || '', pastaRelatoriosId: d.pastaRelatoriosId || '' },

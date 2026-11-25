@@ -136,3 +136,62 @@ test('enviarDocumentoAoDrive reaproveita arquivo existente no Drive por appPrope
   assert.equal(patchesUpload, 1, 'deve fazer PATCH no arquivo já existente encontrado por athenesDocId');
   assert.equal(docSemDriveId.driveFileId, 'DRV_JA_EXISTE');
 });
+
+import { mesclarExclusoesDoServidor, idsExcluidos, registrarExclusoes } from '../src/core/athenes_drive_sync.js';
+import { montarEstadoLocal } from '../src/core/athenes_perfil_local.js';
+import { removerDoLegado } from '../src/core/athenes_repositorio.js';
+import { _reiniciarContaEmMemoria } from '../src/core/athenes_conta.js';
+
+test('documento legado sem driveFileId excluido no PC NAO ressuscita no celular (exclusao mais nova vence)', () => {
+  const servidor = {
+    pastas: [],
+    documentos: [
+      { id: 'doc_arqcon', titulo: 'ARQ.CON', tipoDoc: 'artigo', pastaId: 'p1', driveFileId: 'F_ARQ', atualizadoEm: '2026-11-17T10:00:00Z', conteudoEm: '2026-11-17T10:00:00Z' }
+    ],
+    excluidos: {
+      'i:doc_diag_legado': '2026-11-25T10:00:00Z',
+      'i:doc_editado_depois': '2026-11-25T10:00:00Z'
+    }
+  };
+  const celular = {
+    pastas: [],
+    documentos: [
+      { id: 'doc_diag_legado', titulo: 'Relatório Técnico de Diagnóstico', tipoDoc: 'relatorio', dataModificacao: '2026-11-02T10:00:00Z' },
+      { id: 'doc_editado_depois', titulo: 'Editado Depois', tipoDoc: 'artigo', dataModificacao: '2026-11-26T10:00:00Z' }
+    ],
+    excluidos: {}
+  };
+  const r = mesclarPerfil(servidor, celular);
+  assert.deepEqual(r.remover, ['doc_diag_legado'], 'doc antigo de 02/11 sem driveFileId deve ser removido no celular');
+  assert.ok('i:doc_diag_legado' in r.indice.excluidos, 'a exclusão do PC não pode ser apagada do servidor');
+  assert.ok(!r.indice.documentos.some(d => d.id === 'doc_diag_legado'), 'doc excluído não volta ao índice');
+  assert.ok(r.indice.documentos.some(d => d.id === 'doc_editado_depois'), 'edição genuinamente posterior à exclusão continua vencendo');
+});
+
+test('exclusoes do servidor sao propagadas para idsExcluidos local, montarEstadoLocal envia i:+f: e removerDoLegado limpa localStorage', () => {
+  const m = new Map();
+  globalThis.localStorage = {
+    getItem: k => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => m.set(k, String(v)),
+    removeItem: k => m.delete(k),
+    key: i => [...m.keys()][i],
+    get length() { return m.size; }
+  };
+  _reiniciarContaEmMemoria();
+
+  // Simula PC excluindo um documento com driveFileId: montarEstadoLocal deve emitir tanto i: quanto f:
+  registrarExclusoes([{ id: 'doc_x', driveFileId: 'DRV_X' }]);
+  const estadoPc = montarEstadoLocal([]);
+  assert.ok('i:doc_x' in estadoPc.excluidos && 'f:DRV_X' in estadoPc.excluidos);
+
+  // Simula celular recebendo exclusão de documento compartilhado do servidor + limpando legado
+  m.set('athenes_docs_indice', JSON.stringify([{ id: 'doc_velho', titulo: 'Velho' }, { id: 'doc_fica', titulo: 'Fica' }]));
+  const qtd = mesclarExclusoesDoServidor({ 'i:doc_comp_teste': '2026-11-25T10:00:00Z', 'i:doc_velho': '2026-11-25T10:00:00Z' });
+  assert.equal(qtd, 2);
+  assert.ok(idsExcluidos().has('doc_comp_teste'));
+
+  const removidos = removerDoLegado(['doc_velho']);
+  assert.equal(removidos, 1);
+  const restante = JSON.parse(m.get('athenes_docs_indice'));
+  assert.deepEqual(restante.map(d => d.id), ['doc_fica']);
+});
