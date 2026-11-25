@@ -728,7 +728,9 @@ export class DashboardView {
   /** Pastas-base do app e pastas compartilhadas não são excluídas por aqui. */
   pastaPodeSerExcluida(pasta) {
     const espelho = this.pastasDrive?.find(p => p.id === 'pasta_bib_raiz')?.zoteroEspelho;
-    return Boolean(pasta) && pasta.origem !== 'compartilhada' && !['pasta_rel_raiz', 'pasta_bib_raiz', 'pasta_bib_so_athenes'].includes(pasta.id) &&
+    return Boolean(pasta) &&
+      !['compartilhada', 'compartilhada_nuvem', 'zotero_grupo'].includes(pasta.origem) &&
+      !['pasta_rel_raiz', 'pasta_bib_raiz', 'pasta_bib_so_athenes', 'compartilhados_comigo', 'zotero_grupos_macro'].includes(pasta.id) &&
       !espelho?.colecoes.some(c => c.key === pasta.zoteroKey);
   }
 

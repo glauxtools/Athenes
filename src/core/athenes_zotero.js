@@ -168,6 +168,81 @@ export class ZoteroClient {
   }
 
   /**
+   * Lê as bibliotecas de Grupo compartilhadas no Zotero (/users/{id}/groups),
+   * trazendo cada grupo com suas coleções (subpastas) e itens normalizados.
+   */
+  async lerGruposCompartilhados({ fetchImpl = globalThis.fetch, limiteGrupos = 15 } = {}) {
+    await this.garantirUserId();
+    if (!this.userId || !this.apiKey) return [];
+    const resGroups = await fetchImpl(`${ZOTERO_API_BASE}/users/${encodeURIComponent(this.userId)}/groups`, {
+      headers: this.getHeaders()
+    });
+    if (!resGroups.ok) return [];
+    const gruposBrutos = await resGroups.json();
+    if (!Array.isArray(gruposBrutos) || !gruposBrutos.length) return [];
+
+    const lerPaginado = async (baseUrl, caminho) => {
+      const dados = [];
+      const chaves = new Set();
+      while (true) {
+        const res = await fetchImpl(`${baseUrl}/${caminho}?limit=100&start=${dados.length}`, {
+          headers: this.getHeaders()
+        });
+        if (!res.ok) return dados;
+        const pagina = await res.json();
+        if (!Array.isArray(pagina) || !pagina.length) return dados;
+        for (const item of pagina) {
+          if (!item?.key || chaves.has(item.key)) continue;
+          chaves.add(item.key);
+          dados.push(item);
+        }
+        const total = res.headers?.get('Total-Results');
+        if ((total != null && dados.length >= Number(total)) || pagina.length < 100) return dados;
+      }
+    };
+
+    const resultado = [];
+    for (const g of gruposBrutos.slice(0, limiteGrupos)) {
+      const groupId = String(g?.id || '').trim();
+      if (!groupId) continue;
+      const nomeGrupo = String(g?.data?.name || g?.name || `Grupo Zotero ${groupId}`).trim();
+      const baseUrl = `${ZOTERO_API_BASE}/groups/${encodeURIComponent(groupId)}`;
+      try {
+        const [colecoesBrutas, itensBrutos] = await Promise.all([
+          lerPaginado(baseUrl, 'collections'),
+          lerPaginado(baseUrl, 'items/top')
+        ]);
+        const colecoes = colecoesBrutas.map(c => ({
+          key: c.key,
+          nome: c.data?.name || 'Coleção sem nome',
+          parentCollection: c.data?.parentCollection || false
+        }));
+        const itens = itensBrutos
+          .filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem)
+          .map(item => {
+            const norm = this.normalizarItemZotero(item);
+            if (!norm) return null;
+            return {
+              ...norm,
+              zoteroGroupId: groupId,
+              zoteroGroupNome: nomeGrupo,
+              zoteroBiblioteca: baseUrl
+            };
+          })
+          .filter(Boolean);
+        resultado.push({
+          id: groupId,
+          nome: nomeGrupo,
+          biblioteca: baseUrl,
+          colecoes,
+          itens
+        });
+      } catch (_) {}
+    }
+    return resultado;
+  }
+
+  /**
    * Citação no texto já formatada pelo Zotero (CSL) para um item da biblioteca, ex.: "(Silva, 2020)".
    * Devolve '' quando não há conexão ou o item não existe, para quem chama usar o formato local.
    */

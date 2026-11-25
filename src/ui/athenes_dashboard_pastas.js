@@ -70,7 +70,7 @@ export const metodosDashboardPastas = {
 
     // 1. Item Todas as Pastas (Visão Geral da Aba Ativa)
     const totalItens = ehAbaBib
-      ? (this.estudoView?.artigosCatalogo?.() || carregarArtigosEstudo()).length
+      ? (this.estudoView?.artigos || carregarArtigosEstudo()).filter(a => !a.compartilhadoComigo).length
       : this.documentos.length;
     const rotuloTodas = ehAbaBib
       ? 'Todas as Bibliografias'
@@ -130,7 +130,8 @@ export const metodosDashboardPastas = {
       }
     });
     const compartilhadasNuvem = ehAbaBib ? (this.estudoView?.pastasCompartilhadasRecebidas || []) : [];
-    const compartilhadas = [...compartilhadasNuvem];
+    const gruposZotero = ehAbaBib ? (this.estudoView?.gruposZoteroRecebidos || []) : [];
+    const compartilhadas = [...compartilhadasNuvem, ...gruposZotero];
     const idsJaIncluidos = new Set(compartilhadas.map(p => String(p.id)));
     const driveIdsJaIncluidos = new Set(compartilhadas.map(p => String(p.driveFolderId || '')).filter(Boolean));
     for (const p of compartilhadasDrive) {
@@ -180,9 +181,10 @@ export const metodosDashboardPastas = {
     const ehAbaBib = this.abaAtiva === 'artigos_zotero';
     let count = 0;
     if (ehAbaBib) {
-      if (pasta.origem === 'compartilhada_nuvem') {
-        const comp = this.estudoView?.artigosCompartilhados || [];
-        count = comp.filter(a => this.estudoView?.artigoPertenceAPastaCompartilhada?.(a, pasta.id)).length;
+      if (pasta.origem === 'compartilhada_nuvem' || pasta.origem === 'zotero_grupo') {
+        count = typeof this.estudoView?.contarArtigosPastaCompartilhada === 'function'
+          ? this.estudoView.contarArtigosPastaCompartilhada(pasta.id)
+          : (this.estudoView?.artigosCompartilhados || []).filter(a => this.estudoView?.artigoPertenceAPastaCompartilhada?.(a, pasta.id)).length;
       } else {
         const artigos = this.estudoView?.artigos || carregarArtigosEstudo();
         count = artigos.filter(a => !a.compartilhadoComigo && artigoEstaNaPasta(a, pasta.id)).length;
@@ -201,7 +203,7 @@ export const metodosDashboardPastas = {
     item.classList.toggle('ath-pasta-item-raiz', nivel === 0);
     if (/^#[\da-f]{6}$/i.test(pasta.cor || '')) item.style.setProperty('--ath-cor-pasta-lateral', pasta.cor);
     item.querySelector('.ath-pasta-link').addEventListener('click', () => this.selecionarPasta(pasta.id));
-    if ((ehCompartilhada && pasta.origem !== 'compartilhada_nuvem') || this.pastaPodeSerExcluida(pasta)) {
+    if ((ehCompartilhada && pasta.origem !== 'compartilhada_nuvem' && pasta.origem !== 'zotero_grupo') || this.pastaPodeSerExcluida(pasta)) {
       const acao = document.createElement('button');
       acao.type = 'button';
       acao.className = `ath-pasta-acao ${ehCompartilhada ? 'ath-btn-remover-comp' : 'ath-btn-excluir-pasta'}`;
@@ -380,7 +382,7 @@ export const metodosDashboardPastas = {
           </div>
         `;
       } else {
-        const totalArtigos = (this.estudoView?.artigosCatalogo?.() || carregarArtigosEstudo()).length;
+        const totalArtigos = (this.estudoView?.artigos || carregarArtigosEstudo()).filter(a => !a.compartilhadoComigo).length;
         bannerEl.innerHTML = `
           <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             <div style="display:flex; align-items:center; gap:8px; min-width:0;">
@@ -395,7 +397,7 @@ export const metodosDashboardPastas = {
     } else {
       const pastaCompNuvem = this.estudoView?.buscarPastaCompartilhadaRecebida?.(this.pastaAtivaId) || null;
       const pastaInfo = pastaCompNuvem || buscarPastaNaArvore(this.pastasDrive, this.pastaAtivaId) || {
-        nome: this.pastaAtivaId === 'compartilhados_comigo' ? 'Artigos de outras pessoas' : (this.pastaAtivaId === 'compartilhados_zotero' ? 'Compartilhados do Zotero' : 'Pasta Selecionada'),
+        nome: this.pastaAtivaId === 'compartilhados_comigo' ? 'Artigos de outras pessoas' : (this.pastaAtivaId === 'zotero_grupos_macro' ? 'Grupos do Zotero' : 'Pasta Selecionada'),
         tipo: ehAbaBib ? 'bibliografia' : 'relatorios'
       };
 
@@ -424,22 +426,25 @@ export const metodosDashboardPastas = {
       } else {
         const artigos = this.estudoView?.artigosCatalogo?.() || carregarArtigosEstudo();
         const ehPastaCompNuvem = pastaInfo.origem === 'compartilhada_nuvem';
+        const ehGrupoZotero = pastaInfo.origem === 'zotero_grupo' || this.pastaAtivaId === 'zotero_grupos_macro';
         const artigosNaPasta = this.pastaAtivaId === 'compartilhados_comigo'
-          ? (this.estudoView?.artigosAvulsosCompartilhados?.() || artigos.filter(a => a.compartilhadoComigo))
-          : ehPastaCompNuvem
-            ? (this.estudoView?.artigosCompartilhados || []).filter(a => this.estudoView?.artigoPertenceAPastaCompartilhada?.(a, this.pastaAtivaId))
+          ? (this.estudoView?.artigosAvulsosCompartilhados?.() || artigos.filter(a => a.compartilhadoComigo && !a.origemZoteroGrupo))
+          : (ehPastaCompNuvem || ehGrupoZotero)
+            ? (ehGrupoZotero ? (this.estudoView?.artigosGruposZotero || []) : (this.estudoView?.artigosCompartilhados || [])).filter(a => this.estudoView?.artigoPertenceAPastaCompartilhada?.(a, this.pastaAtivaId))
             : artigos.filter(a => !a.compartilhadoComigo && artigoEstaNaPasta(a, this.pastaAtivaId));
         const donoNome = pastaInfo.proprietario?.nome ? ` · de ${escapeHtml(pastaInfo.proprietario.nome)}` : '';
+        const rotuloTopo = ehGrupoZotero ? 'Grupo do Zotero:' : (ehPastaCompNuvem ? 'Pasta Compartilhada:' : 'Pasta de Bibliografia:');
+        const badgeTexto = ehGrupoZotero ? 'Zotero Grupo' : ((pastaInfo.origem === 'compartilhada' || ehPastaCompNuvem) ? 'Compartilhada' : 'Minha Pasta');
 
         bannerEl.innerHTML = `
           <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-              ${svgIcone(ehPastaCompNuvem ? 'usuarios' : 'livro', 20)}
+              ${svgIcone((ehPastaCompNuvem || ehGrupoZotero) ? 'usuarios' : 'livro', 20)}
             <div style="min-width:0;">
               <div style="display:flex; align-items:center; gap:6px;">
-                <span style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">${ehPastaCompNuvem ? 'Pasta Compartilhada:' : 'Pasta de Bibliografia:'}</span>
+                <span style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">${rotuloTopo}</span>
                 <strong style="font-size:13.5px; color:#314F79; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;">${escapeHtml(pastaInfo.nome)}</strong>
-                <span class="ath-badge ath-badge-info" style="font-size:10px;">${(pastaInfo.origem === 'compartilhada' || ehPastaCompNuvem) ? 'Compartilhada' : 'Minha Pasta'}</span>
+                <span class="ath-badge ath-badge-info" style="font-size:10px;">${badgeTexto}</span>
               </div>
               <small style="font-size:11px; color:#64748B; display:block; margin-top:1px;">
                 ${artigosNaPasta.length} artigo(s) / fichamento(s) nesta pasta${donoNome} · Mostrando apenas bibliografia selecionada

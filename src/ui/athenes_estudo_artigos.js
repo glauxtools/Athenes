@@ -65,6 +65,8 @@ export class EstudoArtigosView {
     this.artigos = carregarArtigosEstudo();
     this.artigosCompartilhados = [];
     this.pastasCompartilhadasRecebidas = [];
+    this.gruposZoteroRecebidos = [];
+    this.artigosGruposZotero = [];
     // a biblioteca vem do servidor: chegou algo de outro computador → atualiza a tela (sem interromper quem está lendo um artigo)
     this._cancelarBib = bib.aoMudarBiblioteca(() => {
       this.artigos = carregarArtigosEstudo();
@@ -158,6 +160,7 @@ export class EstudoArtigosView {
       });
     }
     this.carregarCompartilhados();
+    if (this.zoteroClient?.apiKey) this.carregarGruposZotero().catch(() => {});
     if (containerEl && typeof window !== 'undefined') {
       this._atualizarZoteroAoVoltar = () => this.sincronizarZoteroAutomaticamente();
       document.addEventListener('visibilitychange', this._atualizarZoteroAoVoltar);
@@ -264,7 +267,7 @@ export class EstudoArtigosView {
   }
   artigosCatalogo() {
     const proprios = this.artigos.filter(a => !a.compartilhadoComigo);
-    return [...proprios, ...this.artigosCompartilhados];
+    return [...proprios, ...(this.artigosCompartilhados || []), ...(this.artigosGruposZotero || [])];
   }
 
   temLivrinhoAberto() {
@@ -282,22 +285,25 @@ export class EstudoArtigosView {
     else this.atualizarGridCatalogo();
   }
 
-  ehArtigoCompartilhadoZotero(art) {
-    if (!art?.compartilhadoComigo) return false;
-    if (art.chaveZotero || art.zoteroBiblioteca || art.itemTypeZotero) return true;
-    if (/^zot_/.test(String(art.id || ''))) return true;
-    if (/^zot_col_/.test(String(art.pastaOriginalId || art.pastaId || ''))) return true;
-    const listas = [
-      ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
-      ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
-    ];
-    return listas.some(id => /^zot_col_/.test(String(id || '')));
+  coletarPastasCompartilhadasPlanas() {
+    const planas = [{ id: 'compartilhados_comigo', nome: 'Artigos de outras pessoas', tipo: 'bibliografia', origem: 'compartilhada_nuvem' }];
+    const percorrer = (lista, parentId = null) => {
+      for (const p of (Array.isArray(lista) ? lista : [])) {
+        if (!p?.id) continue;
+        planas.push({ ...p, parentId });
+        if (Array.isArray(p.subpastas) && p.subpastas.length) percorrer(p.subpastas, p.id);
+      }
+    };
+    percorrer(this.pastasCompartilhadasRecebidas || [], null);
+    percorrer(this.gruposZoteroRecebidos || [], null);
+    return planas;
   }
 
-  buscarPastaCompartilhadaRecebida(pastaId, lista = this.pastasCompartilhadasRecebidas) {
+  buscarPastaCompartilhadaRecebida(pastaId, lista = null) {
     const alvo = String(pastaId || '');
-    if (!alvo || !Array.isArray(lista)) return null;
-    for (const p of lista) {
+    if (!alvo) return null;
+    const raizes = lista || [...(this.pastasCompartilhadasRecebidas || []), ...(this.gruposZoteroRecebidos || [])];
+    for (const p of raizes) {
       if (!p) continue;
       if (String(p.id) === alvo) return p;
       if (Array.isArray(p.subpastas) && p.subpastas.length) {
@@ -308,40 +314,43 @@ export class EstudoArtigosView {
     return null;
   }
 
+  contarArtigosPastaCompartilhada(pastaId) {
+    const pid = String(pastaId || '');
+    if (!pid) return 0;
+    const pool = (pid === 'zotero_grupos_macro' || pid.startsWith('zot_grp_'))
+      ? (this.artigosGruposZotero || [])
+      : (this.artigosCompartilhados || []);
+    return pool.filter(a => this.artigoPertenceAPastaCompartilhada(a, pid)).length;
+  }
+
   artigoPertenceAPastaCompartilhada(art, pastaId) {
     if (!art?.compartilhadoComigo || !pastaId) return false;
     const pid = String(pastaId);
-    if (pid === 'compartilhados_zotero') return this.ehArtigoCompartilhadoZotero(art);
+    if (pid === 'zotero_grupos_macro') return Boolean(art.origemZoteroGrupo);
+    if (pid.startsWith('zot_grp_')) {
+      if (!art.origemZoteroGrupo) return false;
+      const pasta = this.buscarPastaCompartilhadaRecebida(pid);
+      if (pasta?.zoteroGroupId && String(art.zoteroGroupId || '') !== String(pasta.zoteroGroupId)) return false;
+      if (pasta?.descendentesColecoes) {
+        const colsArt = Array.isArray(art.zoteroGroupColecoes) ? art.zoteroGroupColecoes.map(String) : [];
+        return colsArt.some(k => pasta.descendentesColecoes.has(k));
+      }
+      const grpId = pid.replace(/^zot_grp_/, '').split('::')[0];
+      return String(art.zoteroGroupId || '') === grpId;
+    }
+    if (art.origemZoteroGrupo) return false;
     const pasta = this.buscarPastaCompartilhadaRecebida(pid);
-    if (pasta) {
-      if (pasta.ehSubpastaZoteroAvulsa) {
-        if (!this.ehArtigoCompartilhadoZotero(art)) return false;
-        const origIds = new Set([
-          art.pastaOriginalId,
-          art.pastaId,
-          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
-          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
-        ].map(v => String(v || '')).filter(Boolean));
-        return origIds.has(String(pasta.pastaOriginalId || ''));
-      }
-      if (pasta.pastaRaizCompartilhadaId && pasta.descendentesOriginais) {
-        const raizOk = String(art.pastaCompartilhadaId || '') === String(pasta.pastaRaizCompartilhadaId) ||
-          (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === String(pasta.pastaRaizCompartilhadaId)));
-        if (!raizOk) return false;
-        const origIds = [
-          art.pastaOriginalId,
-          art.pastaId,
-          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
-          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
-        ].map(v => String(v || '')).filter(Boolean);
-        return origIds.some(id => pasta.descendentesOriginais.has(id));
-      }
-      const pertenceRaiz = String(art.pastaCompartilhadaId || '') === pid ||
-        (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === pid));
-      if (!pertenceRaiz) return false;
-      if (pasta.ehZotero) return this.ehArtigoCompartilhadoZotero(art);
-      if (!pasta.incluiZotero && this.ehArtigoCompartilhadoZotero(art)) return false;
-      return true;
+    if (pasta?.pastaRaizCompartilhadaId && pasta?.descendentesOriginais) {
+      const raizOk = String(art.pastaCompartilhadaId || '') === String(pasta.pastaRaizCompartilhadaId) ||
+        (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === String(pasta.pastaRaizCompartilhadaId)));
+      if (!raizOk) return false;
+      const origIds = [
+        art.pastaOriginalId,
+        art.pastaId,
+        ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
+        ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
+      ].map(v => String(v || '')).filter(Boolean);
+      return origIds.some(id => pasta.descendentesOriginais.has(id));
     }
     if (String(art.pastaCompartilhadaId || '') === pid) return true;
     if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === pid)) return true;
@@ -349,17 +358,12 @@ export class EstudoArtigosView {
   }
 
   artigosAvulsosCompartilhados() {
-    const idsPastasNormais = new Set(
-      (this.pastasCompartilhadasRecebidas || [])
-        .filter(p => p && !p.ehMacroZotero)
-        .map(p => String(p.id))
-    );
+    const idsPastasRecebidas = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
     return (this.artigosCompartilhados || []).filter(a => {
-      if (!a?.compartilhadoComigo) return false;
-      if (this.ehArtigoCompartilhadoZotero(a)) return false;
+      if (!a?.compartilhadoComigo || a.origemZoteroGrupo) return false;
       const pId = String(a.pastaCompartilhadaId || '');
-      if (pId && idsPastasNormais.has(pId)) return false;
-      if (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => idsPastasNormais.has(String(id)))) return false;
+      if (pId && idsPastasRecebidas.has(pId)) return false;
+      if (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => idsPastasRecebidas.has(String(id)))) return false;
       return true;
     });
   }
@@ -372,16 +376,10 @@ export class EstudoArtigosView {
       }
       return s;
     };
-    const montarSubpastas = (listaSub, raizDocId, proprietario, permissao, somenteZotero = false, excluirZotero = false) => {
+    const montarSubpastas = (listaSub, raizDocId, proprietario, permissao) => {
       const res = [];
       for (const sub of (Array.isArray(listaSub) ? listaSub : [])) {
         if (!sub?.id) continue;
-        const subEhZot = Boolean(sub.origemZotero || sub.zoteroKey || /^zot_col_/.test(String(sub.id)));
-        if (somenteZotero && !subEhZot) {
-          res.push(...montarSubpastas(sub.subpastas || [], raizDocId, proprietario, permissao, true, false));
-          continue;
-        }
-        if (excluirZotero && subEhZot) continue;
         res.push({
           id: `${raizDocId}::sub::${sub.id}`,
           pastaOriginalId: String(sub.id),
@@ -391,105 +389,120 @@ export class EstudoArtigosView {
           cor: sub.cor || null,
           tipo: 'bibliografia',
           origem: 'compartilhada_nuvem',
-          ehZotero: subEhZot,
           permissao: permissao || 'leitura',
           proprietario: proprietario || null,
-          subpastas: montarSubpastas(sub.subpastas || [], raizDocId, proprietario, permissao, somenteZotero, excluirZotero)
+          subpastas: montarSubpastas(sub.subpastas || [], raizDocId, proprietario, permissao)
         });
       }
       return res;
     };
 
-    const pastasNormais = [];
-    const subpastasMacroZotero = [];
-    const originaisCobertosZotero = new Set();
-    const marcarCobertos = (lista) => {
-      for (const p of (lista || [])) {
-        if (p.pastaOriginalId) originaisCobertosZotero.add(String(p.pastaOriginalId));
-        if (p.descendentesOriginais) p.descendentesOriginais.forEach(id => originaisCobertosZotero.add(String(id)));
-        marcarCobertos(p.subpastas);
-      }
-    };
-
+    const pastasRecebidas = [];
     for (const p of pastasDocsMap.values()) {
-      const artsDestaPasta = (this.artigosCompartilhados || []).filter(a =>
-        String(a.pastaCompartilhadaId || '') === String(p.id) ||
-        (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => String(id) === String(p.id)))
-      );
-      const artsZot = artsDestaPasta.filter(a => this.ehArtigoCompartilhadoZotero(a));
-      const artsNaoZot = artsDestaPasta.filter(a => !this.ehArtigoCompartilhadoZotero(a));
-      const pastaEhSoZotero = Boolean(p.origemZotero || p.zoteroKey || (artsZot.length > 0 && artsNaoZot.length === 0));
-
-      if (pastaEhSoZotero) {
-        const noZot = {
-          ...p,
-          ehZotero: true,
-          incluiZotero: true,
-          subpastas: montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, false, false)
-        };
-        subpastasMacroZotero.push(noZot);
-        if (p.pastaOriginalId) originaisCobertosZotero.add(String(p.pastaOriginalId));
-        marcarCobertos(noZot.subpastas);
-      } else {
-        pastasNormais.push({
-          ...p,
-          ehZotero: false,
-          incluiZotero: false,
-          subpastas: montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, false, true)
-        });
-        const subsZotDentro = montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, true, false);
-        if (subsZotDentro.length) {
-          subpastasMacroZotero.push(...subsZotDentro);
-          marcarCobertos(subsZotDentro);
-        }
-      }
-    }
-
-    const todosArtsZotero = (this.artigosCompartilhados || []).filter(a => this.ehArtigoCompartilhadoZotero(a));
-    if (todosArtsZotero.length > 0 || subpastasMacroZotero.length > 0) {
-      const avulsosPorPastaOrig = new Map();
-      for (const art of todosArtsZotero) {
-        const origIds = [
-          art.pastaOriginalId,
-          art.pastaId,
-          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
-          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
-        ].map(v => String(v || '')).filter(id => id && id !== 'pasta_bib_raiz' && id !== 'todas' && id !== 'compartilhados_comigo');
-        for (const oid of origIds) {
-          if (originaisCobertosZotero.has(oid)) continue;
-          if (!avulsosPorPastaOrig.has(oid)) {
-            const nomeFallback = art.pastaOriginalNome || art.pastaCompartilhadaNome ||
-              (/^zot_col_(.+)$/.test(oid) ? `Coleção Zotero (${oid.replace(/^zot_col_/, '')})` : oid);
-            avulsosPorPastaOrig.set(oid, {
-              id: `comp_zot_sub::${oid}`,
-              pastaOriginalId: oid,
-              ehSubpastaZoteroAvulsa: true,
-              ehZotero: true,
-              nome: nomeFallback,
-              tipo: 'bibliografia',
-              origem: 'compartilhada_nuvem',
-              permissao: art.permissao || 'leitura',
-              proprietario: art.proprietario || null,
-              subpastas: []
-            });
-          }
-        }
-      }
-      subpastasMacroZotero.push(...avulsosPorPastaOrig.values());
-      pastasNormais.push({
-        id: 'compartilhados_zotero',
-        nome: 'Compartilhados do Zotero',
-        icone: 'livro',
-        tipo: 'bibliografia',
+      pastasRecebidas.push({
+        ...p,
         origem: 'compartilhada_nuvem',
-        ehMacroZotero: true,
-        ehZotero: true,
-        permissao: 'leitura',
-        subpastas: subpastasMacroZotero
+        subpastas: montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao)
       });
     }
+    return pastasRecebidas;
+  }
 
-    return pastasNormais;
+  montarArvoreGruposZotero(grupos = []) {
+    if (!Array.isArray(grupos) || !grupos.length) {
+      return { pastas: [], artigos: [] };
+    }
+    const subpastasGrupos = [];
+    const artigosGrupos = [];
+
+    for (const g of grupos) {
+      if (!g?.id) continue;
+      const gid = String(g.id);
+      const cols = Array.isArray(g.colecoes) ? g.colecoes : [];
+      const filhosPorPai = new Map();
+      for (const c of cols) {
+        const pai = c.parentCollection ? String(c.parentCollection) : '__raiz__';
+        if (!filhosPorPai.has(pai)) filhosPorPai.set(pai, []);
+        filhosPorPai.get(pai).push(c);
+      }
+      const coletarDescCols = (key) => {
+        const s = new Set([String(key)]);
+        for (const f of (filhosPorPai.get(String(key)) || [])) {
+          for (const d of coletarDescCols(f.key)) s.add(d);
+        }
+        return s;
+      };
+      const construirCols = (paiKey) => (filhosPorPai.get(paiKey) || []).map(c => ({
+        id: `zot_grp_${gid}::col::${c.key}`,
+        zoteroGroupId: gid,
+        zoteroKey: c.key,
+        descendentesColecoes: coletarDescCols(c.key),
+        nome: c.nome || 'Coleção',
+        tipo: 'bibliografia',
+        origem: 'zotero_grupo',
+        permissao: 'leitura',
+        subpastas: construirCols(String(c.key))
+      }));
+
+      subpastasGrupos.push({
+        id: `zot_grp_${gid}`,
+        zoteroGroupId: gid,
+        nome: g.nome || `Grupo Zotero ${gid}`,
+        tipo: 'bibliografia',
+        origem: 'zotero_grupo',
+        permissao: 'leitura',
+        subpastas: construirCols('__raiz__')
+      });
+
+      for (const it of (Array.isArray(g.itens) ? g.itens : [])) {
+        const base = this.converterItemZoteroParaEstudo(it, `zot_grp_${gid}`);
+        artigosGrupos.push({
+          ...base,
+          id: `zot_grp_${gid}_${it.chave || base.id}`,
+          compartilhadoComigo: true,
+          proprietarioExterno: true,
+          origemZoteroGrupo: true,
+          zoteroGroupId: gid,
+          zoteroGroupNome: g.nome || `Grupo Zotero ${gid}`,
+          zoteroGroupColecoes: Array.isArray(it.colecoes) ? [...it.colecoes] : [],
+          permissao: 'leitura',
+          proprietario: { id: `zot_grp_${gid}`, nome: g.nome || 'Grupo Zotero' }
+        });
+      }
+    }
+
+    const pastas = subpastasGrupos.length ? [{
+      id: 'zotero_grupos_macro',
+      nome: 'Grupos do Zotero',
+      icone: 'livro',
+      tipo: 'bibliografia',
+      origem: 'zotero_grupo',
+      ehMacroZotero: true,
+      permissao: 'leitura',
+      subpastas: subpastasGrupos
+    }] : [];
+
+    return { pastas, artigos: artigosGrupos };
+  }
+
+  async carregarGruposZotero() {
+    if (!this.zoteroClient?.apiKey || typeof this.zoteroClient.lerGruposCompartilhados !== 'function') {
+      this.gruposZoteroRecebidos = [];
+      this.artigosGruposZotero = [];
+      return;
+    }
+    const conta = obterContaAtiva();
+    try {
+      const grupos = await this.zoteroClient.lerGruposCompartilhados();
+      if (this._estudioDestruido || obterContaAtiva() !== conta) return;
+      const { pastas, artigos } = this.montarArvoreGruposZotero(grupos);
+      this.gruposZoteroRecebidos = pastas;
+      this.artigosGruposZotero = artigos;
+      if (!this.artigoAberto && this.container?.isConnected) this.atualizarCatalogoSeLivre(false);
+      this.aoMudarPastas?.();
+    } catch (e) {
+      console.warn('[Athenes] Grupos do Zotero:', e.message);
+    }
   }
 
   async carregarCompartilhados() {
@@ -1703,18 +1716,18 @@ export class EstudoArtigosView {
       if (this.pastaFiltroId && this.pastaFiltroId !== 'todas') {
         const pid = String(this.pastaFiltroId);
         if (pid === 'compartilhados_comigo') {
-          if (!art.compartilhadoComigo || this.ehArtigoCompartilhadoZotero(art)) return false;
-          const pastasNormaisIds = new Set((this.pastasCompartilhadasRecebidas || []).filter(p => !p.ehMacroZotero).map(p => String(p.id)));
+          if (!art.compartilhadoComigo || art.origemZoteroGrupo) return false;
+          const pastasRecebidasIds = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
           const pIdArt = String(art.pastaCompartilhadaId || '');
-          if (pIdArt && pastasNormaisIds.has(pIdArt)) return false;
-          if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => pastasNormaisIds.has(String(id)))) return false;
-        } else if (pid === 'compartilhados_zotero' || this.buscarPastaCompartilhadaRecebida(pid) || pid.startsWith('pasta_bib_') || pid.startsWith('comp_zot_sub::')) {
+          if (pIdArt && pastasRecebidasIds.has(pIdArt)) return false;
+          if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => pastasRecebidasIds.has(String(id)))) return false;
+        } else if (pid === 'zotero_grupos_macro' || pid.startsWith('zot_grp_') || this.buscarPastaCompartilhadaRecebida(pid) || pid.startsWith('pasta_bib_')) {
           if (!this.artigoPertenceAPastaCompartilhada(art, pid)) return false;
         } else {
           if (art.compartilhadoComigo) return false;
           if (!artigoEstaNaPasta(art, this.pastaFiltroId)) return false;
         }
-      } else if (art.compartilhadoComigo && this.filtroAtivo !== 'compartilhados') {
+      } else if (art.compartilhadoComigo && this.filtroStatus !== 'compartilhados') {
         return false;
       }
       if (this.filtroStatus && this.filtroStatus !== 'todos') {
@@ -1989,10 +2002,17 @@ export class EstudoArtigosView {
         pastasOriginaisIds: Array.isArray(resto.pastasIds) ? [...resto.pastasIds] : (origId ? [origId] : [])
       };
     };
+    const proprietarioInfo = {
+      id: sessao?.user_id || '',
+      nome: perfil?.nome || (sessao?.email ? sessao.email.split('@')[0] : 'Pesquisador'),
+      email: sessao?.email || perfil?.email || '',
+      conta: sessao?.email || perfil?.email || ''
+    };
     const docPasta = {
       id: `pasta_bib_${pasta.id}${idSufixo}`,
       titulo: `[Pasta] ${pasta.nome || 'Bibliografia'} (${obras.length} ${obras.length === 1 ? 'obra' : 'obras'})`,
-      autor: perfil?.nome || 'Pesquisador',
+      autor: proprietarioInfo.nome,
+      proprietario: proprietarioInfo,
       norma: 'zotero_pdf',
       secoes: [],
       compartilhamento: pasta.compartilhamento || null,
@@ -2057,6 +2077,7 @@ export class EstudoArtigosView {
             id: idDoc,
             titulo: `[Artigo] ${art.titulo || 'Referência'}`,
             autor: (art.autores || []).map(a => `${a.prenome || ''} ${a.sobrenome || ''}`.trim()).filter(Boolean).join(', ') || 'Autor',
+            proprietario: proprietarioInfo,
             norma: 'zotero_pdf',
             secoes: [],
             artigoEstudo: artPayload
@@ -3218,6 +3239,7 @@ export class EstudoArtigosView {
       this._zoteroVerificado = espelho;
     } catch (e) { console.warn('[Athenes] Anexos e notas do Zotero:', e.message); }
     if (this._estudioDestruido || obterContaAtiva() !== conta) return;
+    this.carregarGruposZotero().catch(() => {});
     if (!automatico) obterTokenDrive().then(tok => {
       if (tok && obterContaAtiva() === conta) {
         reconciliarArtigosComDrive(this.artigos.filter(a => a.zoteroBiblioteca === vigente.biblioteca), tok).catch(() => {});

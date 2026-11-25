@@ -131,7 +131,20 @@ export function restaurarPastaAtiva({ pastas = [], storage = (typeof sessionStor
     return 'todas';
   }
 
-  const existe = salvo === RAIZ_BIBLIOGRAFIA || (Array.isArray(pastas) && pastas.some(p => p && p.id === salvo));
+  const acharPastaNaLista = (lista, id) => {
+    for (const p of (Array.isArray(lista) ? lista : [])) {
+      if (!p) continue;
+      if (String(p.id) === String(id)) return p;
+      if (Array.isArray(p.subpastas) && p.subpastas.length) {
+        const sub = acharPastaNaLista(p.subpastas, id);
+        if (sub) return sub;
+      }
+    }
+    return null;
+  };
+  const ehPastaEspecialCompartilhada = salvo === 'compartilhados_comigo' || salvo === 'zotero_grupos_macro' ||
+    String(salvo).startsWith('pasta_bib_') || String(salvo).startsWith('zot_grp_');
+  const existe = salvo === RAIZ_BIBLIOGRAFIA || ehPastaEspecialCompartilhada || Boolean(acharPastaNaLista(pastas, salvo));
   if (existe) {
     return salvo;
   }
@@ -150,9 +163,34 @@ export function restaurarPastaAtiva({ pastas = [], storage = (typeof sessionStor
  */
 export function selecionarPasta(pastaId, { pastas = [], storage = (typeof sessionStorage !== 'undefined' ? sessionStorage : null), breadcrumbEl = null, onSelect = null } = {}) {
   const idAlvo = (pastaId && typeof pastaId === 'string') ? pastaId.trim() : 'todas';
-  const alvo = (idAlvo === 'todas')
-    ? { id: 'todas', nome: 'Estante Geral' }
-    : ((Array.isArray(pastas) ? pastas.find(p => p && p.id === idAlvo) : null) || { id: 'todas', nome: 'Estante Geral' });
+  const acharRecursivo = (lista, id) => {
+    for (const p of (Array.isArray(lista) ? lista : [])) {
+      if (!p) continue;
+      if (String(p.id) === String(id)) return p;
+      if (Array.isArray(p.subpastas) && p.subpastas.length) {
+        const sub = acharRecursivo(p.subpastas, id);
+        if (sub) return sub;
+      }
+    }
+    return null;
+  };
+  let alvo;
+  if (idAlvo === 'todas') {
+    alvo = { id: 'todas', nome: 'Estante Geral' };
+  } else {
+    const achada = acharRecursivo(pastas, idAlvo);
+    if (achada) {
+      alvo = achada;
+    } else if (idAlvo === 'compartilhados_comigo') {
+      alvo = { id: 'compartilhados_comigo', nome: 'Artigos de outras pessoas' };
+    } else if (idAlvo === 'zotero_grupos_macro') {
+      alvo = { id: 'zotero_grupos_macro', nome: 'Grupos do Zotero' };
+    } else if (idAlvo.startsWith('pasta_bib_') || idAlvo.startsWith('zot_grp_')) {
+      alvo = { id: idAlvo, nome: 'Pasta Compartilhada' };
+    } else {
+      alvo = { id: 'todas', nome: 'Estante Geral' };
+    }
+  }
 
   try {
     storage?.setItem(STORAGE_KEY_BIB_PASTA_ATIVA, alvo.id);
@@ -682,7 +720,10 @@ export const metodosEstudoPastas = {
   },
 
   renderizarBreadcrumb(containerAlvo) {
-    const pastas = coletarPastasBibliografia();
+    const pastas = [
+      ...coletarPastasBibliografia(),
+      ...(typeof this.coletarPastasCompartilhadasPlanas === 'function' ? this.coletarPastasCompartilhadasPlanas() : [])
+    ];
     return renderizarBreadcrumb(containerAlvo, this.pastaFiltroId, {
       pastas,
       onSelect: (pId) => this.selecionarPastaBib(pId)
@@ -690,7 +731,10 @@ export const metodosEstudoPastas = {
   },
 
   selecionarPastaBib(pastaId) {
-    const pastas = coletarPastasBibliografia();
+    const pastas = [
+      ...coletarPastasBibliografia(),
+      ...(typeof this.coletarPastasCompartilhadasPlanas === 'function' ? this.coletarPastasCompartilhadasPlanas() : [])
+    ];
     const breadcrumbEl = this.container?.querySelector('#athBibBreadcrumb');
     const idFinal = selecionarPasta(pastaId, {
       pastas,
