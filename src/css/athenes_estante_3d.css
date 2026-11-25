@@ -1209,23 +1209,23 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
-  .ath-livro-3d,
-  .ath-livro-3d.aberto,
-  .ath-livro-capa,
-  .ath-livro-capa-frente,
-  .ath-livro-paginas-dir,
-  .ath-livro-capa-tras,
-  .ath-livro-folha-interna,
-  .ath-estante-scrim,
-  .ath-livro-sombra-base,
-  .ath-btn-abrir-leitor,
-  .ath-status-btn,
-  .ath-btn-copiar-citacao,
-  .ath-btn-soft,
-  .ath-folha-pagina.ativa,
-  .ath-livro-3d:not(.aberto):hover,
-  .ath-livro-3d-wrap:hover.ath-livro-3d:not(.aberto),
-  .ath-livro-3d-wrap:hover .ath-livro-3d:not(.aberto) {
+  :root.ath-reduzir-movimento .ath-livro-3d,
+  :root.ath-reduzir-movimento .ath-livro-3d.aberto,
+  :root.ath-reduzir-movimento .ath-livro-capa,
+  :root.ath-reduzir-movimento .ath-livro-capa-frente,
+  :root.ath-reduzir-movimento .ath-livro-paginas-dir,
+  :root.ath-reduzir-movimento .ath-livro-capa-tras,
+  :root.ath-reduzir-movimento .ath-livro-folha-interna,
+  :root.ath-reduzir-movimento .ath-estante-scrim,
+  :root.ath-reduzir-movimento .ath-livro-sombra-base,
+  :root.ath-reduzir-movimento .ath-btn-abrir-leitor,
+  :root.ath-reduzir-movimento .ath-status-btn,
+  :root.ath-reduzir-movimento .ath-btn-copiar-citacao,
+  :root.ath-reduzir-movimento .ath-btn-soft,
+  :root.ath-reduzir-movimento .ath-folha-pagina.ativa,
+  :root.ath-reduzir-movimento .ath-livro-3d:not(.aberto):hover,
+  :root.ath-reduzir-movimento .ath-livro-3d-wrap:hover.ath-livro-3d:not(.aberto),
+  :root.ath-reduzir-movimento .ath-livro-3d-wrap:hover .ath-livro-3d:not(.aberto) {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     transition-delay: 0s !important;
