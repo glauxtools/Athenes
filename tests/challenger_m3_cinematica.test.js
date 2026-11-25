@@ -429,11 +429,10 @@ describe('Desafio 1: Concorrência de Aberturas e Exclusividade Estrita (R4)', (
     livroEl.dispatchEvent({ type: 'click', target: fakeTargetNoFolha });
     assert.ok(livroEl.classList.contains('aberto'), 'Clique interno na folha não pode fechar o livro');
 
-    // 3. Clique na capa externa do livro aberto -> deve fechar
+    // 3. Clique na capa do livro já aberto -> NÃO deve fechar (só fecha pelo botão Fechar, Esc ou clique fora)
     const capa = livroEl.querySelector('.ath-livro-capa');
     livroEl.dispatchEvent({ type: 'click', target: capa });
-    assert.ok(!livroEl.classList.contains('aberto'), 'Clique na capa deve fechar o exemplar');
-    assert.equal(livroEl.style.transform, 'rotateY(0deg) translateZ(0)');
+    assert.ok(livroEl.classList.contains('aberto'), 'Clique na capa do exemplar aberto não deve fechá-lo');
   });
 });
 

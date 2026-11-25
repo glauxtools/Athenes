@@ -580,9 +580,7 @@ export function renderizarLivro3D(ref = {}, { callbacks = {} } = {}) {
       return;
     }
     const isAberto = livroEl.classList && (livroEl.classList.contains?.('aberto') || livroEl.classList.has?.('aberto'));
-    if (isAberto) {
-      fecharLivro3D(livroEl);
-    } else {
+    if (!isAberto) {
       abrirLivro3D(livroEl, ref, { callbacks });
     }
   });
