@@ -20,16 +20,68 @@ function garantirConta() {
   if (memoria.conta !== conta) Object.assign(memoria, { conta, docs: [], legadoLido: false }); // outra conta: nada da anterior vaza
 }
 
+/**
+ * Remove duplicatas em uma lista de documentos (mesmo `id` ou mesmo `driveFileId`),
+ * preservando a cópia com conteúdo carregado / id canônico (não `drive_...`) / data mais recente.
+ */
+export function deduplicarDocumentos(lista = []) {
+  if (!Array.isArray(lista) || lista.length <= 1) return Array.isArray(lista) ? [...lista] : [];
+  const ehTemp = (id) => String(id || '').startsWith('drive_');
+  const escolherMelhor = (a, b) => {
+    const score = (d) =>
+      (d.precisaCarregarConteudo ? 0 : 4) +
+      (!ehTemp(d.id) ? 2 : 0) +
+      (d.driveFileId ? 1 : 0);
+    const sa = score(a), sb = score(b);
+    let vencedor = a, perdedor = b;
+    if (sb > sa || (sb === sa && (b.dataModificacao || '') > (a.dataModificacao || ''))) {
+      vencedor = b; perdedor = a;
+    }
+    const id = ehTemp(vencedor.id) && !ehTemp(perdedor.id) ? perdedor.id : vencedor.id;
+    return {
+      ...vencedor,
+      id,
+      driveFileId: vencedor.driveFileId || perdedor.driveFileId || undefined,
+      driveFolderId: vencedor.driveFolderId || perdedor.driveFolderId || undefined,
+      pastaId: vencedor.pastaId || perdedor.pastaId || undefined,
+      salvoNuvem: Boolean(vencedor.salvoNuvem || perdedor.salvoNuvem)
+    };
+  };
+
+  const saida = [];
+  for (const doc of lista) {
+    if (!doc) continue;
+    const idStr = String(doc.id || '');
+    const idx = saida.findIndex(x =>
+      (idStr && String(x.id || '') === idStr) ||
+      (doc.driveFileId && x.driveFileId && x.driveFileId === doc.driveFileId)
+    );
+    if (idx >= 0) saida[idx] = escolherMelhor(saida[idx], doc);
+    else saida.push(doc);
+  }
+  return saida;
+}
+
 export function listar() { garantirConta(); return memoria.docs; }
-export function definir(lista) { garantirConta(); memoria.docs = Array.isArray(lista) ? lista : []; }
+export function definir(lista) { garantirConta(); memoria.docs = deduplicarDocumentos(Array.isArray(lista) ? lista : []); }
 export function reiniciar() { Object.assign(memoria, { conta: undefined, docs: [], legadoLido: false }); }
 
-/** Insere ou substitui um documento na lista da sessão (mais recente primeiro). */
+/** Insere ou substitui um documento na lista da sessão (mais recente primeiro), sem duplicar por id ou driveFileId. */
 export function gravarDocumento(doc) {
   garantirConta();
   sanearDocumentoEstilos(doc); // documento antigo vindo do servidor/Drive: só estilos, sem sobrescritas
-  const i = memoria.docs.findIndex(d => String(d.id) === String(doc.id));
-  if (i >= 0) memoria.docs[i] = doc; else memoria.docs.unshift(doc);
+  const idStr = String(doc.id);
+  let i = memoria.docs.findIndex(d => String(d.id) === idStr);
+  if (i < 0 && doc.driveFileId) {
+    i = memoria.docs.findIndex(d => d.driveFileId === doc.driveFileId);
+  }
+  if (i >= 0) {
+    memoria.docs[i] = doc;
+    // Remove eventuais cópias secundárias que compartilhem o mesmo id ou driveFileId
+    memoria.docs = memoria.docs.filter((d, idx) => idx === i || (String(d.id) !== idStr && (!doc.driveFileId || d.driveFileId !== doc.driveFileId)));
+  } else {
+    memoria.docs.unshift(doc);
+  }
 }
 
 function lerLegado() {

@@ -97,17 +97,54 @@ export function mesclarPerfil(servidor, local) {
   const srv = servidor ? clone(servidor) : { pastas: [], documentos: [], excluidos: {} };
   const excluidos = { ...(srv.excluidos || {}), ...(local.excluidos || {}) };
   const entradas = new Map();           // chave de identidade -> entrada
-  const idParaChave = new Map();
+  const idParaChave = new Map();        // id lógico do documento -> chave atual em `entradas`
   const chaveDe = (e) => (e.driveFileId ? `f:${e.driveFileId}` : `i:${e.id}`);
+  const ehIdTemporarioDrive = (id) => String(id || '').startsWith('drive_');
+  const mesclarDuasEntradas = (a, b) => {
+    // Escolhe o id canônico: nunca substitui um id real por um id temporário `drive_...`
+    const id = ehIdTemporarioDrive(b.id) && !ehIdTemporarioDrive(a.id)
+      ? a.id
+      : (ehIdTemporarioDrive(a.id) && !ehIdTemporarioDrive(b.id) ? b.id : ((b.atualizadoEm || '') >= (a.atualizadoEm || '') ? b.id : a.id));
+    const conteudoEm = [a.conteudoEm, b.conteudoEm].filter(Boolean).sort().at(-1) || '';
+    const bMaisNovo = (b.atualizadoEm || '') >= (a.atualizadoEm || '');
+    const base = bMaisNovo ? b : a;
+    const outro = bMaisNovo ? a : b;
+    // Preserva driveFileId válido: se ambos têm driveFileId diferentes (criados por 2 dispositivos), fica o do conteúdo/atualização mais recente
+    const driveFileId = (a.driveFileId && b.driveFileId && a.driveFileId !== b.driveFileId)
+      ? ((b.conteudoEm || b.atualizadoEm || '') >= (a.conteudoEm || a.atualizadoEm || '') ? b.driveFileId : a.driveFileId)
+      : (base.driveFileId || outro.driveFileId || '');
+    const driveFolderId = driveFileId === b.driveFileId
+      ? (b.driveFolderId || a.driveFolderId || '')
+      : (a.driveFolderId || b.driveFolderId || '');
+    return {
+      ...base,
+      id: String(id),
+      driveFileId,
+      driveFolderId,
+      conteudoEm,
+      salvoNuvem: Boolean(a.salvoNuvem || b.salvoNuvem)
+    };
+  };
   const guardar = (e) => {
+    const idStr = String(e.id);
     const k = chaveDe(e);
-    const atual = entradas.get(k);
-    // mesmo arquivo do Drive com ids diferentes (um computador importou como "drive_…"): fica o id original
-    const id = atual && !String(atual.id).startsWith('drive_') && String(e.id).startsWith('drive_') ? atual.id : e.id;
-    const conteudoEm = [atual?.conteudoEm, e.conteudoEm].filter(Boolean).sort().at(-1) || ''; // o conteúdo mais recente gravado no Drive
-    if (!atual || (e.atualizadoEm || '') >= (atual.atualizadoEm || '')) entradas.set(k, { ...e, id, conteudoEm });
-    else entradas.set(k, { ...atual, id, conteudoEm });
-    idParaChave.set(String(e.id), k);
+    const kPorId = idParaChave.get(idStr);
+    const atualPorChave = entradas.get(k) || null;
+    const atualPorId = (kPorId && kPorId !== k) ? (entradas.get(kPorId) || null) : null;
+
+    let combinado = { ...e, id: idStr };
+    if (atualPorChave) combinado = mesclarDuasEntradas(atualPorChave, combinado);
+    if (atualPorId) combinado = mesclarDuasEntradas(atualPorId, combinado);
+
+    const kFinal = chaveDe(combinado);
+    if (kPorId && kPorId !== kFinal) entradas.delete(kPorId);
+    if (k !== kFinal) entradas.delete(k);
+    if (atualPorChave && chaveDe(atualPorChave) !== kFinal) entradas.delete(chaveDe(atualPorChave));
+    if (atualPorId && chaveDe(atualPorId) !== kFinal) entradas.delete(chaveDe(atualPorId));
+
+    entradas.set(kFinal, combinado);
+    idParaChave.set(String(combinado.id), kFinal);
+    if (idStr !== String(combinado.id)) idParaChave.set(idStr, kFinal);
   };
   for (const e of srv.documentos || []) guardar(e);
 
@@ -126,16 +163,36 @@ export function mesclarPerfil(servidor, local) {
   for (const k of [...entradas.keys()]) if (excluidos[k] || excluidos[`i:${entradas.get(k).id}`]) entradas.delete(k);
 
   const documentos = [...entradas.values()];
-  const idsLocais = new Map(proprios.map(d => [String(d.id), d]));
-  const porArquivoLocal = new Map(proprios.filter(d => d.driveFileId).map(d => [d.driveFileId, d]));
+  const idsLocais = new Map();
+  const porArquivoLocal = new Map();
+  for (const d of proprios) {
+    const idStr = String(d.id);
+    if (!idsLocais.has(idStr) || (idsLocais.get(idStr).precisaCarregarConteudo && !d.precisaCarregarConteudo)) idsLocais.set(idStr, d);
+    if (d.driveFileId) {
+      const ant = porArquivoLocal.get(d.driveFileId);
+      // prefere o documento com id canônico (não `drive_...`) e já carregado
+      if (!ant || (ehIdTemporarioDrive(ant.id) && !ehIdTemporarioDrive(d.id)) || (ant.precisaCarregarConteudo && !d.precisaCarregarConteudo)) {
+        porArquivoLocal.set(d.driveFileId, d);
+      }
+    }
+  }
   const adicionar = []; const atualizar = []; const recarregar = [];
   for (const e of documentos) {
     const l = idsLocais.get(String(e.id)) || (e.driveFileId && porArquivoLocal.get(e.driveFileId));
     if (!l) { adicionar.push(e); continue; }
+    // Se havia cópia local duplicada com id temporário `drive_...` além da entrada canônica, remove o temporário
+    if (e.driveFileId) {
+      for (const d of proprios) {
+        if (d !== l && d.driveFileId === e.driveFileId && String(d.id) !== String(e.id) && !remover.includes(String(d.id))) {
+          remover.push(String(d.id));
+        }
+      }
+    }
     // o conteúdo foi regravado no Drive por outro computador depois do que este tem: baixar de novo (se aqui não há edição pendente)
     if (e.conteudoEm && l.driveSincronizadoEm && e.conteudoEm > l.driveSincronizadoEm && !temAlteracaoPendente(l)) recarregar.push(String(l.id));
     if (!remover.includes(String(l.id)) && (e.atualizadoEm || '') > (l.dataModificacao || '') && !temAlteracaoPendente(l)) atualizar.push({ local: String(l.id), entrada: e });
     else if (String(l.id).startsWith('drive_') && !String(e.id).startsWith('drive_')) atualizar.push({ local: String(l.id), entrada: e });
+    else if (!l.driveFileId && e.driveFileId) atualizar.push({ local: String(l.id), entrada: e });
   }
 
   const pastasExcluidas = { ...(srv.pastasExcluidas || {}), ...(local.pastasExcluidas || {}) };

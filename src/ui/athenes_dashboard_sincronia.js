@@ -9,6 +9,7 @@ import {remapearSelecaoPastas} from './athenes_estudo_artigos_pastas.js';
 import { sincronizarBiblioteca } from '../core/athenes_biblioteca_artigos.js';
 import { sincronizarTemplatesUsuario } from '../core/athenes_templates.js';
 import { sincronizarPerfil } from '../core/athenes_perfil_servidor.js';
+import { deduplicarDocumentos } from '../core/athenes_repositorio.js';
 import { montarEstadoLocal, chaveDoZotero } from '../core/athenes_perfil_local.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import { obterTokenDrive, marcarSessaoDriveExpirada, processarPastasExcluidas, docsRemovidosDoDrive, processarExclusoesPendentes, obterPastaRaizDrive, repararPastaDosDocumentos, sincronizarZoteroComDrive, importarPastasDoDrive, listarBibliotecaDoDrive, mesclarBibliotecaDrive } from '../core/athenes_drive_sync.js';
@@ -107,66 +108,87 @@ export const metodosDashboardSincronia = {
    * neste computador. Sem a nuvem protegida confirmada, cai no comportamento antigo (local + Drive). Devolve o resultado ou null.
    */
   async sincronizarPerfilServidor() {
-    if (!nuvemAutenticada() || this._perfilEmCurso) return null;
+    if (!nuvemAutenticada()) return null;
+    if (this._perfilPromise) return this._perfilPromise;
     const conta = obterContaAtiva();
     this._perfilEmCurso = true;
-    try {
-      const pastasAntes = obterPastasDriveLocais();
-      const r = await sincronizarPerfil(montarEstadoLocal(this.documentos));
-      if (obterContaAtiva() !== conta) return null;
-      sincronizarTemplatesUsuario().catch(e => console.warn('[Athenes] Modelos no servidor:', e.message));
-      this._aplicandoPerfil = true;
-      let mudou = false;
+    const executar = async () => {
+      try {
+        const pastasAntes = obterPastasDriveLocais();
+        const r = await sincronizarPerfil(montarEstadoLocal(this.documentos));
+        if (obterContaAtiva() !== conta) return null;
+        sincronizarTemplatesUsuario().catch(e => console.warn('[Athenes] Modelos no servidor:', e.message));
+        this._aplicandoPerfil = true;
+        let mudou = false;
 
-      if (r.aplicarDrive) { salvarConfigGoogleDrive({ ...obterConfigGoogleDrive(), ...r.aplicarDrive, raizFixa: true }); mudou = true; }
-      if (r.aplicarZotero) {
-        let atual = {}; try { atual = JSON.parse(lerConta('athenes_zotero_cfg') || '{}') || {}; } catch (_) {}
-        gravarConta('athenes_zotero_cfg', JSON.stringify({ ...atual, ...r.aplicarZotero }));
-      }
-      const cz = r.indice.zotero?.cfg;
-      if (cz) gravarConta('athenes_zotero_sync', JSON.stringify({ hash: chaveDoZotero(cz), em: new Date().toISOString() }));
+        if (r.aplicarDrive) { salvarConfigGoogleDrive({ ...obterConfigGoogleDrive(), ...r.aplicarDrive, raizFixa: true }); mudou = true; }
+        if (r.aplicarZotero) {
+          let atual = {}; try { atual = JSON.parse(lerConta('athenes_zotero_cfg') || '{}') || {}; } catch (_) {}
+          gravarConta('athenes_zotero_cfg', JSON.stringify({ ...atual, ...r.aplicarZotero }));
+        }
+        const cz = r.indice.zotero?.cfg;
+        if (cz) gravarConta('athenes_zotero_sync', JSON.stringify({ hash: chaveDoZotero(cz), em: new Date().toISOString() }));
 
-      if (r.remover.length) { const rm = new Set(r.remover); this.documentos = this.documentos.filter(x => !rm.has(String(x.id))); mudou = true; }
-      for (const e of r.adicionar) {
-        if (!e.driveFileId && !e.salvoNuvem) continue; // ainda sem conteúdo em lugar nenhum: aparece quando o computador de origem enviar
-        this.documentos.unshift({ id: e.id, titulo: e.titulo, subtitulo: e.subtitulo || (e.driveFileId ? 'Do seu Google Drive' : 'Da sua nuvem'), tipoDoc: e.tipoDoc, perfilId: e.perfilId, pastaId: e.pastaId || undefined, driveFileId: e.driveFileId || undefined, driveFolderId: e.driveFolderId || undefined, dataModificacao: e.atualizadoEm, driveSincronizadoEm: e.driveFileId ? (e.conteudoEm || e.atualizadoEm) : undefined, origemDrive: Boolean(e.driveFileId), salvoNuvem: Boolean(e.salvoNuvem), precisaCarregarConteudo: true });
-        mudou = true;
+        if (r.remover.length) { const rm = new Set(r.remover); this.documentos = this.documentos.filter(x => !rm.has(String(x.id))); mudou = true; }
+        for (const e of r.adicionar) {
+          if (!e.driveFileId && !e.salvoNuvem) continue; // ainda sem conteúdo em lugar nenhum: aparece quando o computador de origem enviar
+          const jaExiste = this.documentos.find(x => String(x.id) === String(e.id) || (e.driveFileId && x.driveFileId === e.driveFileId));
+          if (jaExiste) {
+            Object.assign(jaExiste, {
+              id: String(jaExiste.id).startsWith('drive_') && !String(e.id).startsWith('drive_') ? e.id : jaExiste.id,
+              titulo: e.titulo || jaExiste.titulo,
+              pastaId: e.pastaId || jaExiste.pastaId || undefined,
+              driveFileId: e.driveFileId || jaExiste.driveFileId || undefined,
+              driveFolderId: e.driveFolderId || jaExiste.driveFolderId || undefined,
+              salvoNuvem: Boolean(e.salvoNuvem || jaExiste.salvoNuvem)
+            });
+          } else {
+            this.documentos.unshift({ id: e.id, titulo: e.titulo, subtitulo: e.subtitulo || (e.driveFileId ? 'Do seu Google Drive' : 'Da sua nuvem'), tipoDoc: e.tipoDoc, perfilId: e.perfilId, pastaId: e.pastaId || undefined, driveFileId: e.driveFileId || undefined, driveFolderId: e.driveFolderId || undefined, dataModificacao: e.atualizadoEm, driveSincronizadoEm: e.driveFileId ? (e.conteudoEm || e.atualizadoEm) : undefined, origemDrive: Boolean(e.driveFileId), salvoNuvem: Boolean(e.salvoNuvem), precisaCarregarConteudo: true });
+          }
+          mudou = true;
+        }
+        for (const { local, entrada: e } of r.atualizar) {
+          const doc = this.documentos.find(x => String(x.id) === local);
+          if (!doc) continue;
+          Object.assign(doc, { id: e.id, titulo: e.titulo, subtitulo: e.subtitulo || doc.subtitulo, pastaId: e.pastaId || undefined, driveFileId: e.driveFileId || doc.driveFileId, driveFolderId: e.driveFolderId || doc.driveFolderId, dataModificacao: e.atualizadoEm });
+          mudou = true;
+        }
+        for (const id of r.recarregar) {
+          const doc = this.documentos.find(x => String(x.id) === id);
+          if (doc?.driveFileId) { doc.origemDrive = true; doc.precisaCarregarConteudo = true; mudou = true; }
+        }
+        const antesDedup = this.documentos.length;
+        this.documentos = deduplicarDocumentos(this.documentos);
+        if (this.documentos.length !== antesDedup) mudou = true;
+        // pasta duplicada que foi unificada ou pasta excluída em outro computador: os documentos seguem para a pasta que ficou
+        for (const doc of this.documentos) {
+          if (r.mapaIds[doc.pastaId]) { doc.pastaId = r.mapaIds[doc.pastaId]; mudou = true; }
+          else if (doc.pastaId && r.pastasExcluidas[doc.pastaId]) { doc.pastaId = undefined; mudou = true; }
+        }
+        if (Object.keys(r.mapaIds).length) {
+          remapearSelecaoPastas(r.mapaIds);
+          if (r.mapaIds[this.pastaAtivaId]) { this.pastaAtivaId = r.mapaIds[this.pastaAtivaId]; mudou = true; }
+          if (this.estudoView && r.mapaIds[this.estudoView.pastaFiltroId]) this.estudoView.pastaFiltroId = r.mapaIds[this.estudoView.pastaFiltroId];
+        }
+        const arvoreMudou = JSON.stringify(r.pastas) !== JSON.stringify(pastasAntes);
+        if (arvoreMudou) { salvarPastasDriveLocais(r.pastas); this.pastasDrive = obterPastasDriveLocais(); mudou = true; }
+        if (mudou) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
+        sincronizarBiblioteca({ mapaPastas: r.mapaIds }).then(res => {
+          if (res?.mudou && obterContaAtiva() === conta) { this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
+          if (r.aplicarZotero && obterContaAtiva() === conta) this.estudoView?.sincronizarZoteroAutomaticamente();
+        }).catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
+        this._aplicandoPerfil = false;
+        return r;
+      } catch (e) {
+        console.warn('[Athenes] Índice do perfil no servidor:', e.message);
+        return null;
+      } finally {
+        this._aplicandoPerfil = false;
+        this._perfilEmCurso = false;
+        this._perfilPromise = null;
       }
-      for (const { local, entrada: e } of r.atualizar) {
-        const doc = this.documentos.find(x => String(x.id) === local);
-        if (!doc) continue;
-        Object.assign(doc, { id: e.id, titulo: e.titulo, subtitulo: e.subtitulo || doc.subtitulo, pastaId: e.pastaId || undefined, driveFileId: e.driveFileId || doc.driveFileId, driveFolderId: e.driveFolderId || doc.driveFolderId, dataModificacao: e.atualizadoEm });
-        mudou = true;
-      }
-      for (const id of r.recarregar) {
-        const doc = this.documentos.find(x => String(x.id) === id);
-        if (doc?.driveFileId) { doc.origemDrive = true; doc.precisaCarregarConteudo = true; mudou = true; }
-      }
-      // pasta duplicada que foi unificada ou pasta excluída em outro computador: os documentos seguem para a pasta que ficou
-      for (const doc of this.documentos) {
-        if (r.mapaIds[doc.pastaId]) { doc.pastaId = r.mapaIds[doc.pastaId]; mudou = true; }
-        else if (doc.pastaId && r.pastasExcluidas[doc.pastaId]) { doc.pastaId = undefined; mudou = true; }
-      }
-      if (Object.keys(r.mapaIds).length) {
-        remapearSelecaoPastas(r.mapaIds);
-        if (r.mapaIds[this.pastaAtivaId]) { this.pastaAtivaId = r.mapaIds[this.pastaAtivaId]; mudou = true; }
-        if (this.estudoView && r.mapaIds[this.estudoView.pastaFiltroId]) this.estudoView.pastaFiltroId = r.mapaIds[this.estudoView.pastaFiltroId];
-      }
-      const arvoreMudou = JSON.stringify(r.pastas) !== JSON.stringify(pastasAntes);
-      if (arvoreMudou) { salvarPastasDriveLocais(r.pastas); this.pastasDrive = obterPastasDriveLocais(); mudou = true; }
-      if (mudou) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
-      sincronizarBiblioteca({ mapaPastas: r.mapaIds }).then(res => {
-        if (res?.mudou && obterContaAtiva() === conta) { this.renderizarPastasLateral(); this.renderizarBannerPasta(); }
-        if (r.aplicarZotero && obterContaAtiva() === conta) this.estudoView?.sincronizarZoteroAutomaticamente();
-      }).catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message));
-      this._aplicandoPerfil = false;
-      return r;
-    } catch (e) {
-      console.warn('[Athenes] Índice do perfil no servidor:', e.message);
-      return null;
-    } finally {
-      this._aplicandoPerfil = false;
-      this._perfilEmCurso = false;
-    }
+    };
+    this._perfilPromise = executar();
+    return this._perfilPromise;
   }
 };

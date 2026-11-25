@@ -913,7 +913,8 @@ export async function salvarArquivoNoGoogleDrive({
   mimeType = 'application/json',
   accessToken,
   driveFileId = null,
-  pastaId = null
+  pastaId = null,
+  appProperties = null
 }, fetchImpl = globalThis.fetch) {
   if (!accessToken) throw new Error('Token de acesso do Google Drive ausente.');
   if (typeof fetchImpl !== 'function') throw new Error('API fetch indisponível.');
@@ -922,6 +923,9 @@ export async function salvarArquivoNoGoogleDrive({
     name: nomeArquivo || 'Documento_Athenes.athenes',
     mimeType
   };
+  if (appProperties && typeof appProperties === 'object') {
+    metadados.appProperties = appProperties;
+  }
 
   // Se uma pasta do Google Drive foi indicada e é um novo upload, define a pasta de destino
   const idDestinoPasta = (pastaId || obterConfigGoogleDrive().pastaId || '').trim();

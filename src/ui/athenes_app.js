@@ -446,8 +446,13 @@ export class AthenesApp {
           return;
         }
         this._avisouReconectar = false;
+        const driveIdAntes = doc.driveFileId || '';
         await this._filaPersistencia.executar(doc.id,()=>conta===obterContaAtiva()?enviarDocumentoAoDrive(doc,token):undefined);
         this.autoSalvar({ semDrive: true });
+        if (!driveIdAntes && doc.driveFileId && nuvemAutenticada()) {
+          // Propaga o driveFileId recém-criado para a cópia no Supabase para que outros dispositivos nunca criem um 2º arquivo no Drive
+          this.agendarEnvioNuvem(doc);
+        }
         this.avisarServidorDoPerfil(); // grava driveFileId/driveFolderId sem reagendar nem mudar dataModificacao
       } catch (e) {
         if (e.sessaoExpirada) marcarSessaoDriveExpirada();

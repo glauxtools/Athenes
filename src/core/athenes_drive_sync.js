@@ -178,6 +178,14 @@ async function enviarDocumentoAoDriveInterno(doc, token, { fetchImpl = globalThi
   const conteudo = JSON.stringify(doc, (k, v) => (k === 'paginas' ? undefined : v));
 
   let id = doc.driveFileId || null;
+  if (!id && doc.id && !String(doc.id).startsWith('drive_')) {
+    // Antes de criar novo arquivo no Drive (POST), verifica se outro dispositivo já subiu este mesmo doc.id
+    try {
+      const q = `trashed = false and appProperties has { key='athenesDocId' and value='${aspas(String(doc.id))}' }`;
+      const achados = await chamar(fetchImpl, `${API}?q=${encodeURIComponent(q)}&fields=files(id,parents,modifiedTime)&orderBy=modifiedTime desc&pageSize=1`, {}, token);
+      if (achados?.files?.[0]?.id) id = achados.files[0].id;
+    } catch (_) {}
+  }
   if (id) {
     // confere ONDE o arquivo está de verdade no Drive (o registro local podia dizer "na pasta X" sem o arquivo ter sido movido) e leva para a pasta certa
     try {
@@ -189,8 +197,9 @@ async function enviarDocumentoAoDriveInterno(doc, token, { fetchImpl = globalThi
       }
     } catch (e) { if (e.status === 404) id = null; else throw e; }
   }
+  const appProps = doc.id && !String(doc.id).startsWith('drive_') ? { athenesDocId: String(doc.id) } : null;
   const enviar = (fileId) => salvarArquivoNoGoogleDrive({
-    nomeArquivo: nomeArquivoDoDocumento(doc), conteudoBlobOuTexto: conteudo, mimeType: 'application/json', accessToken: token, driveFileId: fileId, pastaId: alvo
+    nomeArquivo: nomeArquivoDoDocumento(doc), conteudoBlobOuTexto: conteudo, mimeType: 'application/json', accessToken: token, driveFileId: fileId, pastaId: alvo, appProperties: appProps
   }, fetchImpl);
   let salvo;
   try { salvo = await enviar(id); } catch (e) {

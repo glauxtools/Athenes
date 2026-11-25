@@ -136,8 +136,14 @@ export class DashboardView {
         }
         if (remoto) {
           docParaAbrir = remoto;
+          // Preserva vínculos de nuvem/Drive que o índice do servidor já conhecia mesmo que o JSON antigo não tivesse
+          if (doc.driveFileId && !docParaAbrir.driveFileId) docParaAbrir.driveFileId = doc.driveFileId;
+          if (doc.driveFolderId && !docParaAbrir.driveFolderId) docParaAbrir.driveFolderId = doc.driveFolderId;
+          if (doc.driveSincronizadoEm && !docParaAbrir.driveSincronizadoEm) docParaAbrir.driveSincronizadoEm = doc.driveSincronizadoEm;
+          if (doc.pastaId && !docParaAbrir.pastaId) docParaAbrir.pastaId = doc.pastaId;
           const idx = this.documentos.findIndex(d => String(d.id) === String(doc.id));
           if (idx >= 0) this.documentos[idx] = docParaAbrir;
+          this.documentos = repositorio.deduplicarDocumentos(this.documentos);
           this.salvarDocumentosLocais();
         }
         if (btnAbrir) btnAbrir.textContent = rotuloAnterior;
