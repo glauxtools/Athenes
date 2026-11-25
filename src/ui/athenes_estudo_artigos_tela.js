@@ -795,7 +795,8 @@ export const metodosEstudoTela = {
                : art.anexoPdfZotero ? `<p><b>PDF só no seu computador:</b> no Zotero ele é um arquivo vinculado (não baixável pela web). Selecione o arquivo abaixo.</p>${htmlLocalDoPdf(art.anexoPdfZotero)}` : ''}
              <div class="ath-pdf-sem-arquivo-acoes">
                ${art.anexoPdfZotero?.baixavel ? `<button type="button" class="glx-btn glx-btn-primary glx-btn-sm" data-baixar-pdf-zotero>${svgIcone('drive', 14)} Baixar do Zotero</button>` : ''}
-               ${art.doi || art.isbn || art.camposZotero?.ISBN ? `<button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-buscar-pdf-identificador>${svgIcone('sincronizar', 14)} Buscar PDF pelo DOI/ISBN</button>` : ''}
+               ${art.doi || art.isbn || art.camposZotero?.ISBN ? `<button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-buscar-pdf-identificador>${svgIcone('sincronizar', 14)} Buscar PDF aberto (DOI/ISBN)</button>` : ''}
+               ${art.doi ? `<a class="glx-btn glx-btn-soft glx-btn-sm" href="https://doi.org/${encodeURIComponent(String(art.doi).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').trim())}" target="_blank" rel="noopener noreferrer" title="Abrir página oficial do DOI (para acesso institucional / CAPES)">${svgIcone('globo', 14)} Abrir DOI / CAPES ↗</a>` : ''}
                <label class="glx-btn glx-btn-primary glx-btn-sm" style="cursor:pointer;">${svgIcone('upload', 14)} Selecionar PDF no computador<input type="file" accept="application/pdf,.pdf" hidden></label>
                <button type="button" class="glx-btn glx-btn-soft glx-btn-sm" data-sem-pdf-drive>${svgIcone('drive', 14)} Do Google Drive…</button>
              </div>`;

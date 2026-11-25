@@ -30,7 +30,7 @@ async function buscar(fetchImpl, url) {
   throw new Error('Redirecionamentos demais.');
 }
 
-async function candidatosDoi(doi, fetchImpl) {
+async function candidatosOpenAlex(doi, fetchImpl) {
   const resposta = await buscar(fetchImpl, `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`);
   if (!resposta.ok) return [];
   const obra = await resposta.json();
@@ -38,6 +38,76 @@ async function candidatosDoi(doi, fetchImpl) {
   return [obra.best_oa_location, ...(obra.locations || [])]
     .filter(local => local?.is_oa && local.pdf_url)
     .map(local => local.pdf_url);
+}
+
+function candidatosArxivPorDoi(doi) {
+  const m = /^10\.48550\/arxiv\.([a-z0-9.\-/]+)$/i.exec(doi);
+  return m ? [`https://arxiv.org/pdf/${encodeURIComponent(m[1])}.pdf`] : [];
+}
+
+async function candidatosUnpaywall(doi, fetchImpl) {
+  const email = process.env.UNPAYWALL_EMAIL || 'contato@athenes.app';
+  const resposta = await buscar(fetchImpl, `https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`);
+  if (!resposta.ok) return [];
+  const dados = await resposta.json();
+  if (String(dados.doi || '').toLowerCase() !== doi.toLowerCase()) return [];
+  return [dados.best_oa_location, ...(dados.oa_locations || [])]
+    .map(loc => loc?.url_for_pdf)
+    .filter(Boolean);
+}
+
+async function candidatosSemanticScholar(doi, fetchImpl) {
+  const resposta = await buscar(fetchImpl, `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}?fields=openAccessPdf,externalIds`);
+  if (!resposta.ok) return [];
+  const dados = await resposta.json();
+  const urls = [];
+  if (dados?.openAccessPdf?.url) urls.push(dados.openAccessPdf.url);
+  if (dados?.externalIds?.ArXiv) urls.push(`https://arxiv.org/pdf/${encodeURIComponent(String(dados.externalIds.ArXiv))}.pdf`);
+  return urls;
+}
+
+async function candidatosEuropePmc(doi, fetchImpl) {
+  const q = `DOI:"${doi}"`;
+  const resposta = await buscar(fetchImpl, `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(q)}&format=json&resultType=core&pageSize=3`);
+  if (!resposta.ok) return [];
+  const dados = await resposta.json();
+  const lista = dados?.resultList?.result || [];
+  const urls = [];
+  for (const item of lista) {
+    if (String(item?.doi || '').toLowerCase() !== doi.toLowerCase()) continue;
+    const links = item?.fullTextUrlList?.fullTextUrl || [];
+    for (const l of links) {
+      if (l?.documentStyle === 'pdf' && l?.availabilityCode === 'OA' && l?.url) urls.push(l.url);
+    }
+    if (item?.isOpenAccess === 'Y' && item?.pmcid) {
+      urls.push(`https://europepmc.org/backend/ptpmcrender.fcgi?accid=${encodeURIComponent(item.pmcid)}&blobtype=pdf`);
+    }
+  }
+  return urls;
+}
+
+async function candidatosCrossref(doi, fetchImpl) {
+  const resposta = await buscar(fetchImpl, `https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+  if (!resposta.ok) return [];
+  const dados = await resposta.json();
+  const msg = dados?.message || {};
+  if (String(msg.DOI || '').toLowerCase() !== doi.toLowerCase()) return [];
+  return (msg.link || [])
+    .filter(l => /pdf/i.test(String(l?.['content-type'] || '')) && l?.URL)
+    .map(l => l.URL);
+}
+
+async function tentarBaixarCandidatos(urls, tentadas, fetchImpl) {
+  for (const url of urls) {
+    if (!url || tentadas.has(url) || !urlPublica(url)) continue;
+    tentadas.add(url);
+    if (tentadas.size > 12) break;
+    try {
+      const pdf = await baixarPdf(url, fetchImpl);
+      if (pdf) return { status: 200, pdf, fonte: new URL(url).hostname };
+    } catch { /* Outra localização de acesso aberto pode funcionar. */ }
+  }
+  return null;
 }
 
 async function candidatosIsbn(isbn, fetchImpl) {
@@ -79,15 +149,34 @@ export async function resolverPdfAberto({ doi: doiBruto = '', isbn: isbnBruto = 
   const doi = normalizarDoi(doiBruto);
   const isbn = normalizarIsbn(isbnBruto);
   if (!doi && !isbn) return { status: 400, mensagem: 'Informe um DOI ou ISBN válido.' };
-  try {
-    const urls = [...new Set(doi ? await candidatosDoi(doi, fetchImpl) : await candidatosIsbn(isbn, fetchImpl))];
-    for (const url of urls.slice(0, 5)) {
-      if (!urlPublica(url)) continue;
+  const tentadas = new Set();
+  if (doi) {
+    const etapas = [
+      () => candidatosOpenAlex(doi, fetchImpl),
+      () => Promise.resolve(candidatosArxivPorDoi(doi)),
+      () => candidatosUnpaywall(doi, fetchImpl),
+      () => candidatosSemanticScholar(doi, fetchImpl),
+      () => candidatosEuropePmc(doi, fetchImpl),
+      () => candidatosCrossref(doi, fetchImpl)
+    ];
+    let algumaRespondeu = false;
+    for (const etapa of etapas) {
+      let urls = [];
       try {
-        const pdf = await baixarPdf(url, fetchImpl);
-        if (pdf) return { status: 200, pdf, fonte: new URL(url).hostname };
-      } catch { /* Outra localização de acesso aberto pode funcionar. */ }
+        urls = await etapa();
+        algumaRespondeu = true;
+      } catch { continue; }
+      const achado = await tentarBaixarCandidatos(urls, tentadas, fetchImpl);
+      if (achado) return achado;
     }
+    return algumaRespondeu
+      ? { status: 404, mensagem: 'Não foi encontrado PDF de acesso aberto para este DOI.' }
+      : { status: 502, mensagem: 'A consulta aos catálogos abertos falhou. Tente novamente mais tarde.' };
+  }
+  try {
+    const urls = [...new Set(await candidatosIsbn(isbn, fetchImpl))];
+    const achado = await tentarBaixarCandidatos(urls, tentadas, fetchImpl);
+    if (achado) return achado;
     return { status: 404, mensagem: 'Não foi encontrado PDF público para esta obra.' };
   } catch {
     return { status: 502, mensagem: 'A consulta ao catálogo público falhou. Tente novamente mais tarde.' };
