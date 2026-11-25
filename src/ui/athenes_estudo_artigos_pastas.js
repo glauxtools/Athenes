@@ -293,6 +293,13 @@ export function renderizarPastasCronos(pastas = [], pastaAtivaId = 'todas', mapa
       });
       topActions.appendChild(btnOpt);
     }
+    if (typeof onOpcoesPasta === 'function') {
+      card.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onOpcoesPasta(p.id, card, { x: ev.clientX, y: ev.clientY });
+      });
+    }
     topo.appendChild(topActions);
     body.appendChild(topo);
 
@@ -663,7 +670,7 @@ export const metodosEstudoPastas = {
     const faixaCards = renderizarPastasCronos(pastasDoNivel(pastas,pastaAtiva), pastaAtiva, mapaAgrupado, {
       todasPastas:pastas,
       onSelecionarPasta: (pId) => this.selecionarPastaBib(pId),
-      onOpcoesPasta: (pId, anchor) => this.abrirMenuOpcoesPasta(pId, anchor),
+      onOpcoesPasta: (pId, anchor, pos) => this.abrirMenuOpcoesPasta(pId, anchor, pos),
       onMoverLivro: (livroId, pId) => this.moverArtigoParaPasta(livroId, pId)
     });
 
@@ -821,39 +828,55 @@ export const metodosEstudoPastas = {
     return resultado;
   },
 
-  abrirMenuOpcoesPasta(pastaId, anchorEl) {
+  abrirMenuOpcoesPasta(pastaId, anchorEl, pos = null) {
     const pastas = coletarPastasBibliografia();
     const pasta = pastas.find(p => p && p.id === pastaId);
     if (!pasta) return;
     const espelho = pastas.find(p => p.id === RAIZ_BIBLIOGRAFIA)?.zoteroEspelho;
     const nomeGerenciado = pastaDoEspelhoZotero(espelho, pasta) || pasta.id === PASTA_BIBLIOGRAFIA_LOCAL;
+    const ehCompartilhada = pasta.origem === 'compartilhada';
 
     // Remove menu anterior se houver
     document.querySelector('.ath-menu-pasta-contexto')?.remove();
 
     const menu = document.createElement('div');
     menu.className = 'ath-menu-pasta-contexto ath-artigo-menu-contexto';
-    menu.style.position = 'absolute';
+    menu.style.position = 'fixed';
     menu.style.zIndex = '100005';
 
     menu.innerHTML = `
+      ${ehCompartilhada ? '' : `<button type="button" data-acao="compartilhar">${svgIcone('usuarios', 15)}<span>Compartilhar pasta</span></button>`}
       <button type="button" data-acao="mudar-cor">${svgIcone('pincel', 15)}<span>Alterar cor</span></button>
-      ${nomeGerenciado ? '' : `<button type="button" data-acao="renomear">${svgIcone('lapis', 15)}<span>Renomear</span></button>
+      ${(nomeGerenciado || ehCompartilhada) ? '' : `<button type="button" data-acao="renomear">${svgIcone('lapis', 15)}<span>Renomear</span></button>
       <hr>
       <button type="button" data-acao="excluir" class="ath-menu-pasta-excluir">${svgIcone('lixeira', 15)}<span>Excluir pasta</span></button>`}
     `;
 
-    const fecharMenu = () => menu.remove();
+    const fecharMenu = () => {
+      menu.remove();
+      document.removeEventListener('click', fecharMenu);
+      document.removeEventListener('keydown', aoEsc);
+    };
+    const aoEsc = (e) => { if (e.key === 'Escape') fecharMenu(); };
     setTimeout(() => {
-      document.addEventListener('click', fecharMenu, { once: true });
+      document.addEventListener('click', fecharMenu);
+      document.addEventListener('keydown', aoEsc);
     }, 10);
 
-    // Posiciona próximo ao anchor
-    if (anchorEl) {
+    // Posiciona próximo ao cursor (botão direito) ou abaixo do anchor
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+      menu.style.top = `${Math.min(pos.y, Math.max(8, window.innerHeight - 190))}px`;
+      menu.style.left = `${Math.min(pos.x, Math.max(8, window.innerWidth - 220))}px`;
+    } else if (anchorEl) {
       const rect = anchorEl.getBoundingClientRect();
-      menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-      menu.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 220)}px`;
+      menu.style.top = `${Math.min(rect.bottom + 4, Math.max(8, window.innerHeight - 190))}px`;
+      menu.style.left = `${Math.min(rect.left, Math.max(8, window.innerWidth - 220))}px`;
     }
+
+    menu.querySelector('[data-acao="compartilhar"]')?.addEventListener('click', () => {
+      fecharMenu();
+      this.abrirModalCompartilharPasta?.(pastaId);
+    });
 
     menu.querySelector('[data-acao="mudar-cor"]')?.addEventListener('click', () => {
       fecharMenu();

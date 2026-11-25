@@ -232,6 +232,11 @@ export const metodosDashboardPastas = {
 
     no.appendChild(item);
     container.appendChild(no);
+    item.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.abrirMenuContextoPastaLateral(pasta, ehCompartilhada, ev.clientX, ev.clientY);
+    });
     if (!ehAbaBib) this.arquivos.tornarAlvoDeSolta(item, pasta.id);
 
     if (Array.isArray(pasta.subpastas) && pasta.subpastas.length > 0) {
@@ -263,6 +268,83 @@ export const metodosDashboardPastas = {
         this.montarItemPastaComSubpastas(filhos, sub, nivel + 1, ehCompartilhada, revelarSelecao);
       }
     }
+  },
+
+  abrirMenuContextoPastaLateral(pasta, ehCompartilhada, x, y) {
+    if (!pasta) return;
+    document.querySelector('.ath-menu-pasta-contexto')?.remove();
+    const ehAbaBib = this.abaAtiva === 'artigos_zotero';
+    const podeExcluir = this.pastaPodeSerExcluida?.(pasta);
+
+    const menu = document.createElement('div');
+    menu.className = 'ath-menu-pasta-contexto ath-artigo-menu-contexto';
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '100005';
+    menu.style.top = `${Math.min(y, Math.max(8, window.innerHeight - 230))}px`;
+    menu.style.left = `${Math.min(x, Math.max(8, window.innerWidth - 220))}px`;
+
+    const itens = [
+      `<button type="button" data-acao="abrir">${svgIcone('pasta', 15)}<span>Abrir pasta</span></button>`
+    ];
+    if (!ehCompartilhada && ehAbaBib) {
+      itens.push(`<button type="button" data-acao="compartilhar">${svgIcone('usuarios', 15)}<span>Compartilhar pasta</span></button>`);
+      itens.push(`<button type="button" data-acao="cor">${svgIcone('pincel', 15)}<span>Alterar cor</span></button>`);
+    } else if (!ehCompartilhada && pasta.driveId) {
+      itens.push(`<button type="button" data-acao="abrir-drive">${svgIcone('drive', 15)}<span>Abrir no Google Drive</span></button>`);
+    }
+    if (!ehCompartilhada) {
+      itens.push(`<button type="button" data-acao="subpasta">${svgIcone('mais', 15)}<span>Nova subpasta</span></button>`);
+    }
+    if (ehCompartilhada) {
+      itens.push('<hr>');
+      itens.push(`<button type="button" data-acao="desvincular" class="ath-menu-pasta-excluir">${svgIcone('fechar', 15)}<span>Desvincular pasta</span></button>`);
+    } else if (podeExcluir) {
+      itens.push('<hr>');
+      itens.push(`<button type="button" data-acao="excluir" class="ath-menu-pasta-excluir">${svgIcone('lixeira', 15)}<span>Excluir pasta</span></button>`);
+    }
+    menu.innerHTML = itens.join('');
+
+    const fechar = () => {
+      menu.remove();
+      document.removeEventListener('click', fechar);
+      document.removeEventListener('keydown', aoEsc);
+    };
+    const aoEsc = (e) => { if (e.key === 'Escape') fechar(); };
+    setTimeout(() => {
+      document.addEventListener('click', fechar);
+      document.addEventListener('keydown', aoEsc);
+    }, 10);
+
+    menu.querySelector('[data-acao="abrir"]')?.addEventListener('click', () => {
+      fechar();
+      this.selecionarPasta(pasta.id);
+    });
+    menu.querySelector('[data-acao="compartilhar"]')?.addEventListener('click', () => {
+      fechar();
+      this.estudoView?.abrirModalCompartilharPasta?.(pasta.id);
+    });
+    menu.querySelector('[data-acao="cor"]')?.addEventListener('click', () => {
+      fechar();
+      this.estudoView?.abrirModalAlterarCorPasta?.(pasta.id);
+    });
+    menu.querySelector('[data-acao="abrir-drive"]')?.addEventListener('click', () => {
+      fechar();
+      window.open(`https://drive.google.com/drive/folders/${encodeURIComponent(pasta.driveId)}`, '_blank', 'noopener,noreferrer');
+    });
+    menu.querySelector('[data-acao="subpasta"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalNovaSubpasta?.(pasta.id);
+    });
+    menu.querySelector('[data-acao="excluir"]')?.addEventListener('click', () => {
+      fechar();
+      this.excluirPasta?.(pasta);
+    });
+    menu.querySelector('[data-acao="desvincular"]')?.addEventListener('click', () => {
+      fechar();
+      this.container?.querySelector(`[data-pasta-lateral="${CSS.escape(pasta.id)}"] .ath-btn-remover-comp`)?.click();
+    });
+
+    document.body.appendChild(menu);
   },
 
   renderizarBannerPasta() {

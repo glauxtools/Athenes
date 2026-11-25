@@ -46,7 +46,7 @@ import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
 import { listarCompartilhadosComigo, carregarDocumentoCompartilhado } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
-import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
 import { metodosEstudoTela } from './athenes_estudo_artigos_tela.js';
 import { metodosEstudoPainelDireito } from './athenes_estudo_artigos_painel_direito.js';
 import { metodosEstudoAnotacoes } from './athenes_estudo_artigos_anotacoes.js';
@@ -1435,6 +1435,67 @@ export class EstudoArtigosView {
       salvarArtigosEstudo(this.artigos, art);
       this.abrirArtigoNoEstudio(art);
     }
+  }
+
+  async abrirModalCompartilharPasta(pastaId) {
+    const arvore = obterPastasDriveLocais();
+    const pasta = buscarPastaNaArvore(arvore, pastaId) || coletarPastasBibliografia().find(p => p && p.id === pastaId);
+    if (!pasta) return;
+    const obras = this.artigosCatalogo().filter(a => !a.compartilhadoComigo && artigoEstaNasPastas(a, [pastaId], { pastas: arvore, incluirSubpastas: true }));
+    const sessao = lerSessaoSupabase();
+    const idSufixo = sessao?.user_id ? `_${sessao.user_id.slice(0, 8)}` : '';
+    const docPasta = {
+      id: `pasta_bib_${pasta.id}${idSufixo}`,
+      titulo: `[Pasta] ${pasta.nome || 'Bibliografia'} (${obras.length} ${obras.length === 1 ? 'obra' : 'obras'})`,
+      autor: obterPerfilColaborador()?.nome || 'Pesquisador',
+      norma: 'zotero_pdf',
+      secoes: [],
+      compartilhamento: pasta.compartilhamento || null
+    };
+
+    new ModalCompartilhar(docPasta, obterPerfilColaborador(), {
+      aoSalvar: async ({ pessoas, publico }) => {
+        pasta.compartilhamento = { pessoas, publico };
+        salvarPastasDriveLocais(arvore);
+        const arrPessoas = Object.entries(pessoas || {}).map(([email, papel]) => ({ email, papel }));
+        const token = await obterTokenDrive().catch(() => null);
+        if (token) {
+          const driveFolderId = pasta.driveId || await obterOuCriarPastaDoArtigoNoDrive(pastaId, token).catch(() => null);
+          if (driveFolderId) {
+            pasta.driveId = driveFolderId;
+            salvarPastasDriveLocais(arvore);
+            await compartilharPdfNoDrive(driveFolderId, { pessoas: arrPessoas, publico: Boolean(publico) }, token).catch(() => {});
+          }
+        }
+        let compartilhados = 0;
+        for (const art of obras) {
+          const idAtualDrive = String(art.driveFileId || '').trim();
+          if (token && (!idAtualDrive || /^drive_pdf_/.test(idAtualDrive))) {
+            const local = await obterPdfLocal(art.id).catch(() => null);
+            if (local) await enviarPdfDoArtigoAoDrive(art, local).catch(() => {});
+          }
+          if (art.driveFileId && !/^drive_pdf_/.test(String(art.driveFileId))) {
+            await compartilharPdfNoDrive(art.driveFileId, { pessoas: arrPessoas, publico: true }, token).catch(() => {});
+          }
+          const idDoc = art.docCompartilhadoId || `artigo_${art.id || 'ref'}${idSufixo}`;
+          art.docCompartilhadoId = idDoc;
+          art.compartilhamento = { pessoas, publico };
+          const docRef = {
+            id: idDoc,
+            titulo: `[Artigo] ${art.titulo || 'Referência'}`,
+            autor: (art.autores || []).map(a => `${a.prenome || ''} ${a.sobrenome || ''}`.trim()).filter(Boolean).join(', ') || 'Autor',
+            norma: 'zotero_pdf',
+            secoes: [],
+            artigoEstudo: { ...art, compartilhamento: { pessoas, publico } }
+          };
+          await salvarDocumentoNoSupabase(docRef, obterPerfilColaborador()).catch(() => {});
+          compartilhados++;
+        }
+        salvarArtigosEstudo(this.artigos);
+        sincronizarBibliotecaArtigosAgora();
+        mostrarAviso(`Pasta "${pasta.nome}" compartilhada (${compartilhados} ${compartilhados === 1 ? 'obra' : 'obras'} e PDFs vinculados)!`, { tipo: 'sucesso', ms: 6000 });
+      }
+    });
   }
 
   async abrirModalCompartilharArtigo(art) {
