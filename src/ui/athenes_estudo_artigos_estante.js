@@ -849,6 +849,12 @@ export function fecharLivro3D(livroEl) {
   } else if (typeof livroEl.focus === 'function') {
     try { livroEl.focus(); } catch (_) {}
   }
+
+  try {
+    if (typeof CustomEvent === 'function' && typeof livroEl.dispatchEvent === 'function') {
+      livroEl.dispatchEvent(new CustomEvent('athenes:livro-3d-fechado', { bubbles: true }));
+    }
+  } catch (_) {}
 }
 
 /**

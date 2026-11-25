@@ -76,7 +76,7 @@ export class EstudoArtigosView {
         if (colEsq) this.renderizarColunaEsquerdaEstudio(colEsq, this.artigoAberto, this.artigoAberto.conteudoPaginasPdf || []);
       } else {
         this.restaurarArtigoAbertoSessao();
-        if (!this.artigoAberto && typeof this.renderizar === 'function') this.renderizar();
+        if (!this.artigoAberto && typeof this.renderizar === 'function') this.atualizarCatalogoSeLivre(true);
       }
     });
     this._bibliotecaInicial = bib.sincronizarBiblioteca()
@@ -143,6 +143,17 @@ export class EstudoArtigosView {
     this.hidratarSnapshotIndexedDb();
     this.restaurarArtigoAbertoSessao();
     if (!this.artigoAberto) this.renderizar();
+    this._atualizacaoCatalogoPendente = null;
+    if (containerEl && typeof containerEl.addEventListener === 'function' && !containerEl.dataset?.athOuvinteLivroFechado) {
+      if (containerEl.dataset) containerEl.dataset.athOuvinteLivroFechado = '1';
+      containerEl.addEventListener('athenes:livro-3d-fechado', () => {
+        const pendente = this._atualizacaoCatalogoPendente;
+        if (!pendente || this.artigoAberto || this.temLivrinhoAberto()) return;
+        this._atualizacaoCatalogoPendente = null;
+        if (pendente === 'renderizar') this.renderizar();
+        else this.atualizarGridCatalogo();
+      });
+    }
     this.carregarCompartilhados();
     if (containerEl && typeof window !== 'undefined') {
       this._atualizarZoteroAoVoltar = () => this.sincronizarZoteroAutomaticamente();
@@ -253,11 +264,26 @@ export class EstudoArtigosView {
     return [...proprios, ...this.artigosCompartilhados];
   }
 
+  temLivrinhoAberto() {
+    return Boolean(this.container?.querySelector?.('.ath-livro-3d.aberto'));
+  }
+
+  atualizarCatalogoSeLivre(reconstruirTela = false) {
+    if (this.artigoAberto) return;
+    if (this.temLivrinhoAberto()) {
+      this._atualizacaoCatalogoPendente = reconstruirTela ? 'renderizar' : (this._atualizacaoCatalogoPendente || 'grid');
+      return;
+    }
+    this._atualizacaoCatalogoPendente = null;
+    if (reconstruirTela) this.renderizar();
+    else this.atualizarGridCatalogo();
+  }
+
   async carregarCompartilhados() {
     const conta = obterContaAtiva();
     if (!lerSessaoSupabase()?.email) {
       this.artigosCompartilhados = [];
-      if (!this.artigoAberto && this.container?.isConnected) this.atualizarGridCatalogo();
+      if (!this.artigoAberto && this.container?.isConnected) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
       return;
     }
@@ -270,7 +296,7 @@ export class EstudoArtigosView {
         const art = doc?.artigoEstudo;
         return art ? [{ ...art, compartilhadoComigo: true, proprietarioExterno: true, docCompartilhadoId: doc.id, permissao: doc.permissao, proprietario: doc.proprietario }] : [];
       });
-      if (!this.artigoAberto) this.atualizarGridCatalogo();
+      if (!this.artigoAberto) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
     } catch (e) { console.warn('[Athenes] Artigos compartilhados:', e.message); }
   }
@@ -974,16 +1000,17 @@ export class EstudoArtigosView {
   }
 
   ordenarArtigos(artigos) {
+    const parseTs = (dt) => {
+      const t = dt ? new Date(dt).getTime() : 0;
+      return Number.isFinite(t) ? t : 0;
+    };
     const obterTimestampArt = (a) => {
-      return Math.max(0, ...[
-        a.ultimoAcessoEm, a.atualizadoEm, a.fichamento?.atualizadoEm,
-        a.modificadoEm, a.fichamento?.modificadoEm, a.atualizado_em,
-        a.camposZotero?.dateModified, a.dataAdicionado,
-        a.camposZotero?.dateAdded, a.data
-      ].map(dt => {
-        const t = dt ? new Date(dt).getTime() : 0;
-        return Number.isFinite(t) ? t : 0;
-      }));
+      const primarios = Math.max(0, ...[
+        a.ultimoAcessoEm, a.fichamento?.atualizadoEm, a.fichamento?.modificadoEm,
+        a.camposZotero?.dateModified, a.dataAdicionado, a.camposZotero?.dateAdded, a.data
+      ].map(parseTs));
+      if (primarios > 0) return primarios;
+      return Math.max(0, parseTs(a.atualizadoEm), parseTs(a.modificadoEm), parseTs(a.atualizado_em));
     };
 
     const obterAnoArt = (a) => {
@@ -999,25 +1026,29 @@ export class EstudoArtigosView {
         .trim();
     };
 
+    const desempate = (a, b) =>
+      (a.titulo || '').localeCompare(b.titulo || '', 'pt-BR', { sensitivity: 'base' })
+      || String(a.id || '').localeCompare(String(b.id || ''));
+
     const ordem = this.ordemReferencias || 'recente_desc';
 
     return artigos.slice().sort((a, b) => {
       switch (ordem) {
         case 'recente_asc':
-          return obterTimestampArt(a) - obterTimestampArt(b);
+          return (obterTimestampArt(a) - obterTimestampArt(b)) || desempate(a, b);
         case 'titulo_asc':
-          return (a.titulo || '').localeCompare(b.titulo || '', 'pt-BR', { sensitivity: 'base' });
+          return (a.titulo || '').localeCompare(b.titulo || '', 'pt-BR', { sensitivity: 'base' }) || String(a.id || '').localeCompare(String(b.id || ''));
         case 'titulo_desc':
-          return (b.titulo || '').localeCompare(a.titulo || '', 'pt-BR', { sensitivity: 'base' });
+          return (b.titulo || '').localeCompare(a.titulo || '', 'pt-BR', { sensitivity: 'base' }) || String(b.id || '').localeCompare(String(a.id || ''));
         case 'autor_asc':
-          return obterPrimeiroAutor(a).localeCompare(obterPrimeiroAutor(b), 'pt-BR', { sensitivity: 'base' });
+          return obterPrimeiroAutor(a).localeCompare(obterPrimeiroAutor(b), 'pt-BR', { sensitivity: 'base' }) || desempate(a, b);
         case 'ano_desc':
-          return (obterAnoArt(b) || -Infinity) - (obterAnoArt(a) || -Infinity) || 0;
+          return ((obterAnoArt(b) || -Infinity) - (obterAnoArt(a) || -Infinity)) || desempate(a, b);
         case 'ano_asc':
-          return (obterAnoArt(a) || Infinity) - (obterAnoArt(b) || Infinity) || 0;
+          return ((obterAnoArt(a) || Infinity) - (obterAnoArt(b) || Infinity)) || desempate(a, b);
         case 'recente_desc':
         default:
-          return obterTimestampArt(b) - obterTimestampArt(a);
+          return (obterTimestampArt(b) - obterTimestampArt(a)) || desempate(a, b);
       }
     });
   }
@@ -1037,7 +1068,7 @@ export class EstudoArtigosView {
       this._observadorEstante = new ResizeObserver(entradas => {
         const largura = entradas[0]?.contentRect?.width;
         if (!this.artigoAberto && calcularLivrosPorPrateleira(largura, espacamentoEstante()) !== this._livrosPorPrateleira) {
-          this.atualizarGridCatalogo();
+          this.atualizarCatalogoSeLivre(false);
         }
       });
       this._observadorEstante.observe(grid);
@@ -2366,8 +2397,9 @@ export class EstudoArtigosView {
       novos++;
     });
     const { removidos } = aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
+    const houveMudancaCatalogo = novos > 0 || (removidos?.length || 0) > 0 || (esp.criadas?.length || 0) > 0;
     salvarArtigosEstudo(this.artigos);
-    if (automatico && !this.artigoAberto) this.renderizar();
+    if (automatico && !this.artigoAberto && houveMudancaCatalogo) this.atualizarCatalogoSeLivre(true);
     if (automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });
     // PDFs vinculados, notas e anotações de PDF do Zotero (só metadados: o arquivo é baixado sob demanda)
     try {
@@ -2385,7 +2417,8 @@ export class EstudoArtigosView {
       }
     });
     if (!automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });
-    if (!automatico || !this.artigoAberto) this.renderizar();
+    if (!automatico) this.renderizar();
+    else if (!this.artigoAberto && houveMudancaCatalogo) this.atualizarCatalogoSeLivre(true);
     if (!silencioso) {
       if (!itens || itens.length === 0) {
         alert(
