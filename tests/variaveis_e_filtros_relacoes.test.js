@@ -523,4 +523,21 @@ describe('Variáveis personalizadas, filtros combinados e gráficos de relaçõe
     const radiiHigh = [...high.matchAll(/<circle[^>]*r="([\d.]+)"/g)].map(m => Number(m[1]));
     assert.ok(Math.max(...radiiHigh) > Math.max(...radiiFlat), 'Hub com mais conexões deve escalar mais com sizeContrast=2');
   });
+
+  it('15. Ordenação por variável personalizada (var_asc / var_desc) respeita ordem numérica e mantém vazios ao final', async () => {
+    const { EstudoArtigosView } = await import('../src/ui/athenes_estudo_artigos.js');
+    const arts = [
+      { id: 'a1', titulo: 'Sem Nota', variaveisPersonalizadas: {} },
+      { id: 'a2', titulo: 'Nota 10', variaveisPersonalizadas: { Nota: '10' } },
+      { id: 'a3', titulo: 'Nota 2', variaveisPersonalizadas: { Nota: '2' } },
+      { id: 'a4', titulo: 'Nota 5', variaveisPersonalizadas: { Nota: '5' } }
+    ];
+    const ctxAsc = { ordemReferencias: 'var_asc:Nota' };
+    const asc = EstudoArtigosView.prototype.ordenarArtigos.call(ctxAsc, arts).map(a => a.id);
+    assert.deepEqual(asc, ['a3', 'a4', 'a2', 'a1']);
+
+    const ctxDesc = { ordemReferencias: 'var_desc:Nota' };
+    const desc = EstudoArtigosView.prototype.ordenarArtigos.call(ctxDesc, arts).map(a => a.id);
+    assert.deepEqual(desc, ['a2', 'a4', 'a3', 'a1']);
+  });
 });
