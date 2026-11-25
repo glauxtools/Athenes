@@ -43,7 +43,7 @@ import { aplicarFilhosZoteroAoArtigo } from '../core/athenes_zotero_anexos_notas
 import { tokenPodeLerTodoODrive, listarConteudoDoDrive, copiarPdfDoDriveParaAthenes, ESCOPOS_COM_LEITURA } from '../core/athenes_drive_navegar.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
-import { listarCompartilhadosComigo, carregarDocumentoCompartilhado } from '../core/athenes_compartilhamento.js';
+import { listarCompartilhadosComigo, carregarDocumentoCompartilhado, salvarCompartilhamento } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
 import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
@@ -293,14 +293,74 @@ export class EstudoArtigosView {
       const lista = (await listarCompartilhadosComigo()).filter(x => x.norma === 'zotero_pdf');
       const resultados = await Promise.allSettled(lista.map(x => carregarDocumentoCompartilhado(x.id)));
       if (obterContaAtiva() !== conta || !this.container?.isConnected) return;
-      this.artigosCompartilhados = resultados.flatMap(r => {
+      const porChave = new Map();
+      const registrar = (artBase, doc, priorizar = false) => {
+        if (!artBase) return;
+        const chave = String(artBase.docCompartilhadoId || artBase.id || '').trim();
+        if (!chave) return;
+        if (!priorizar && porChave.has(chave)) return;
+        porChave.set(chave, {
+          ...artBase,
+          compartilhadoComigo: true,
+          proprietarioExterno: true,
+          docCompartilhadoId: artBase.docCompartilhadoId || doc.id,
+          permissao: doc.permissao || artBase.permissao || 'leitura',
+          proprietario: doc.proprietario || artBase.proprietario
+        });
+      };
+      for (const r of resultados) {
         const doc = r.status === 'fulfilled' ? r.value?.doc : null;
-        const art = doc?.artigoEstudo;
-        return art ? [{ ...art, compartilhadoComigo: true, proprietarioExterno: true, docCompartilhadoId: doc.id, permissao: doc.permissao, proprietario: doc.proprietario }] : [];
-      });
+        if (!doc) continue;
+        if (doc.artigoEstudo) {
+          registrar(doc.artigoEstudo, doc, true);
+        } else if (Array.isArray(doc.pastaCompartilhada?.artigos)) {
+          for (const artPasta of doc.pastaCompartilhada.artigos) {
+            registrar({
+              ...artPasta,
+              pastaCompartilhadaId: artPasta.pastaCompartilhadaId || doc.id,
+              pastaCompartilhadaNome: artPasta.pastaCompartilhadaNome || doc.pastaCompartilhada.nome || ''
+            }, doc, false);
+          }
+        }
+      }
+      this.artigosCompartilhados = Array.from(porChave.values());
       if (!this.artigoAberto) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
     } catch (e) { console.warn('[Athenes] Artigos compartilhados:', e.message); }
+  }
+
+  abrirPastaCompartilhadaRecebida(docPasta) {
+    if (!docPasta) return;
+    const itensPasta = Array.isArray(docPasta.pastaCompartilhada?.artigos) ? docPasta.pastaCompartilhada.artigos : [];
+    const nomePasta = docPasta.pastaCompartilhada?.nome || String(docPasta.titulo || '').replace(/^\[Pasta\]\s*/i, '').trim() || 'Pasta compartilhada';
+    if (itensPasta.length) {
+      const porChave = new Map((this.artigosCompartilhados || []).map(a => [String(a.docCompartilhadoId || a.id || ''), a]));
+      for (const artPasta of itensPasta) {
+        const chave = String(artPasta.docCompartilhadoId || artPasta.id || '').trim();
+        if (!chave) continue;
+        if (!porChave.has(chave)) {
+          porChave.set(chave, {
+            ...artPasta,
+            compartilhadoComigo: true,
+            proprietarioExterno: true,
+            docCompartilhadoId: artPasta.docCompartilhadoId || docPasta.id,
+            permissao: docPasta.permissao || artPasta.permissao || 'leitura',
+            proprietario: docPasta.proprietario || artPasta.proprietario,
+            pastaCompartilhadaId: docPasta.id,
+            pastaCompartilhadaNome: nomePasta
+          });
+        }
+      }
+      this.artigosCompartilhados = Array.from(porChave.values());
+    }
+    this.artigoAberto = null;
+    this.filtrarPorPasta('compartilhados_comigo');
+    this.carregarCompartilhados().catch(() => {});
+    const qtd = itensPasta.length;
+    mostrarAviso(
+      qtd ? `Pasta compartilhada "${nomePasta}" aberta (${qtd} ${qtd === 1 ? 'obra' : 'obras'}).` : `Pasta compartilhada "${nomePasta}" aberta.`,
+      { tipo: 'sucesso', ms: 5000 }
+    );
   }
 
   salvarCacheArtigoAbertoSessao(art) {
@@ -1612,16 +1672,27 @@ export class EstudoArtigosView {
     const obras = this.artigosCatalogo().filter(a => !a.compartilhadoComigo && artigoEstaNasPastas(a, [pastaId], { pastas: arvore, incluirSubpastas: true }));
     const sessao = lerSessaoSupabase();
     const idSufixo = sessao?.user_id ? `_${sessao.user_id.slice(0, 8)}` : '';
+    const perfil = obterPerfilColaborador();
+    const sanitizarArtigoParaPasta = (art) => {
+      const { pdfBlobUrl, pdfBlob, pdfDataUrl, ...resto } = art || {};
+      return resto;
+    };
     const docPasta = {
       id: `pasta_bib_${pasta.id}${idSufixo}`,
       titulo: `[Pasta] ${pasta.nome || 'Bibliografia'} (${obras.length} ${obras.length === 1 ? 'obra' : 'obras'})`,
-      autor: obterPerfilColaborador()?.nome || 'Pesquisador',
+      autor: perfil?.nome || 'Pesquisador',
       norma: 'zotero_pdf',
       secoes: [],
-      compartilhamento: pasta.compartilhamento || null
+      compartilhamento: pasta.compartilhamento || null,
+      pastaCompartilhada: {
+        pastaOriginalId: pasta.id,
+        nome: pasta.nome || 'Bibliografia',
+        driveFolderId: pasta.driveId || null,
+        artigos: obras.map(sanitizarArtigoParaPasta)
+      }
     };
 
-    new ModalCompartilhar(docPasta, obterPerfilColaborador(), {
+    new ModalCompartilhar(docPasta, perfil, {
       aoSalvar: async ({ pessoas, publico }) => {
         pasta.compartilhamento = { pessoas, publico };
         salvarPastasDriveLocais(arvore);
@@ -1636,32 +1707,79 @@ export class EstudoArtigosView {
           }
         }
         let compartilhados = 0;
+        let pdfsLiberados = 0;
+        const artigosResumoPasta = [];
         for (const art of obras) {
-          const idAtualDrive = String(art.driveFileId || '').trim();
-          if (token && (!idAtualDrive || /^drive_pdf_/.test(idAtualDrive))) {
-            const local = await obterPdfLocal(art.id).catch(() => null);
-            if (local) await enviarPdfDoArtigoAoDrive(art, local).catch(() => {});
+          let idAtualDrive = String(art.driveFileId || '').trim();
+          let pdfLocalBlob = null;
+          if (!idAtualDrive || /^drive_pdf_/.test(idAtualDrive)) {
+            pdfLocalBlob = await obterPdfLocal(art.id).catch(() => null);
+            if (token && pdfLocalBlob) {
+              await enviarPdfDoArtigoAoDrive(art, pdfLocalBlob).catch(() => {});
+              idAtualDrive = String(art.driveFileId || '').trim();
+            }
           }
-          if (art.driveFileId && !/^drive_pdf_/.test(String(art.driveFileId))) {
-            await compartilharPdfNoDrive(art.driveFileId, { pessoas: arrPessoas, publico: true }, token).catch(() => {});
+          if (idAtualDrive && !/^drive_pdf_/.test(idAtualDrive)) {
+            const okDrive = await compartilharPdfNoDrive(idAtualDrive, { pessoas: arrPessoas, publico: true }, token).catch(() => false);
+            if (okDrive) pdfsLiberados++;
           }
-          const idDoc = art.docCompartilhadoId || `artigo_${art.id || 'ref'}${idSufixo}`;
+          let pdfDataUrlFallback = null;
+          if ((!idAtualDrive || /^drive_pdf_/.test(idAtualDrive)) && pdfLocalBlob && pdfLocalBlob.size <= 6 * 1024 * 1024) {
+            pdfDataUrlFallback = await obterPdfComoDataUrl(art.id).catch(() => null);
+            if (pdfDataUrlFallback) pdfsLiberados++;
+          }
+          let idDoc = art.docCompartilhadoId || `artigo_${art.id || 'ref'}${idSufixo}`;
           art.docCompartilhadoId = idDoc;
           art.compartilhamento = { pessoas, publico };
+          const artPayload = {
+            ...sanitizarArtigoParaPasta(art),
+            ...(pdfDataUrlFallback ? { pdfDataUrl: pdfDataUrlFallback } : {}),
+            compartilhamento: { pessoas, publico },
+            pastaCompartilhadaId: docPasta.id,
+            pastaCompartilhadaNome: pasta.nome || 'Bibliografia'
+          };
           const docRef = {
             id: idDoc,
             titulo: `[Artigo] ${art.titulo || 'Referência'}`,
             autor: (art.autores || []).map(a => `${a.prenome || ''} ${a.sobrenome || ''}`.trim()).filter(Boolean).join(', ') || 'Autor',
             norma: 'zotero_pdf',
             secoes: [],
-            artigoEstudo: { ...art, compartilhamento: { pessoas, publico } }
+            artigoEstudo: artPayload
           };
-          await salvarDocumentoNoSupabase(docRef, obterPerfilColaborador()).catch(() => {});
+          try {
+            await salvarDocumentoNoSupabase(docRef, perfil);
+          } catch (errSave) {
+            if (String(errSave?.message || '').includes('42501') || String(errSave?.message || '').includes('row-level security')) {
+              idDoc = `${idDoc}_${Math.random().toString(36).slice(2, 7)}`;
+              docRef.id = idDoc;
+              art.docCompartilhadoId = idDoc;
+              docRef.artigoEstudo.docCompartilhadoId = idDoc;
+              await salvarDocumentoNoSupabase(docRef, perfil).catch(() => {});
+            }
+          }
+          await salvarCompartilhamento(docRef.id, { pessoas, publico }).catch(() => {});
+          artigosResumoPasta.push({
+            ...sanitizarArtigoParaPasta(art),
+            docCompartilhadoId: docRef.id,
+            pastaCompartilhadaId: docPasta.id,
+            pastaCompartilhadaNome: pasta.nome || 'Bibliografia'
+          });
           compartilhados++;
         }
+        docPasta.pastaCompartilhada = {
+          id: docPasta.id,
+          pastaOriginalId: pasta.id,
+          nome: pasta.nome || 'Bibliografia',
+          driveFolderId: pasta.driveId || null,
+          compartilhamento: { pessoas, publico },
+          artigos: artigosResumoPasta
+        };
+        await salvarDocumentoNoSupabase(docPasta, perfil).catch(() => {});
+        await salvarCompartilhamento(docPasta.id, { pessoas, publico }).catch(() => {});
         salvarArtigosEstudo(this.artigos);
         sincronizarBibliotecaArtigosAgora();
-        mostrarAviso(`Pasta "${pasta.nome}" compartilhada (${compartilhados} ${compartilhados === 1 ? 'obra' : 'obras'} e PDFs vinculados)!`, { tipo: 'sucesso', ms: 6000 });
+        const detalhePdf = pdfsLiberados ? ` e ${pdfsLiberados} ${pdfsLiberados === 1 ? 'PDF liberado' : 'PDFs liberados'}` : '';
+        mostrarAviso(`Pasta "${pasta.nome}" compartilhada (${compartilhados} ${compartilhados === 1 ? 'obra' : 'obras'}${detalhePdf})!`, { tipo: 'sucesso', ms: 6000 });
       }
     });
   }

@@ -115,6 +115,19 @@ export class AthenesApp {
         const emailInfo = sessao?.email ? `com a conta ${sessao.email}` : 'sem estar conectado';
         throw new Error(`Você está conectado ${emailInfo}, mas este documento não foi compartilhado com este e-mail (ou o link público ainda não foi ativado pelo dono). Peça ao dono para compartilhar com ${sessao?.email || 'seu e-mail'}.`);
       }
+      if (res.doc?.pastaCompartilhada || String(res.doc?.id || docIdLink).startsWith('pasta_bib_')) {
+        const docPasta = {
+          ...res.doc,
+          compartilhadoComigo: Boolean(res.doc.compartilhadoComigo),
+          proprietarioExterno: Boolean(res.doc.proprietarioExterno),
+          permissao: res.doc.permissao || res.papel || (res.doc.compartilhadoComigo ? 'leitura' : 'dono')
+        };
+        this.navegarParaDashboard();
+        setTimeout(() => {
+          this.dashboardView?.abrirAbaArtigosZoteroComPastaCompartilhada?.(docPasta);
+        }, 120);
+        return;
+      }
       if (res.doc?.norma === 'zotero_pdf' || res.doc?.artigoEstudo || String(res.doc?.id || docIdLink).startsWith('artigo_')) {
         const art = res.doc.artigoEstudo ? { ...res.doc.artigoEstudo } : { ...res.doc };
         art.compartilhadoComigo = Boolean(res.doc.compartilhadoComigo);
@@ -227,6 +240,10 @@ export class AthenesApp {
       artigoInicialId,
       diretoEstudio,
       onAbrirDocumento: (doc) => {
+        if (doc?.pastaCompartilhada || String(doc?.id || '').startsWith('pasta_bib_')) {
+          this.dashboardView?.abrirAbaArtigosZoteroComPastaCompartilhada?.(doc);
+          return;
+        }
         if (doc?.norma === 'zotero_pdf' || doc?.artigoEstudo || String(doc?.id || '').startsWith('artigo_')) {
           const art = doc.artigoEstudo ? { ...doc.artigoEstudo } : { ...doc };
           if (doc.compartilhadoComigo !== undefined) art.compartilhadoComigo = Boolean(doc.compartilhadoComigo);

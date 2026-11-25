@@ -676,6 +676,22 @@ export class DashboardView {
     }
   }
 
+  abrirAbaArtigosZoteroComPastaCompartilhada(docPasta) {
+    if (!docPasta) return;
+    this.abaAtiva = 'artigos_zotero';
+    this.pastaAtivaId = 'compartilhados_comigo';
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('athenes_dash_aba', 'artigos_zotero');
+        sessionStorage.setItem('athenes_dash_pasta', 'compartilhados_comigo');
+      }
+    } catch (_) {}
+    this.renderizar();
+    if (this.estudoView && typeof this.estudoView.abrirPastaCompartilhadaRecebida === 'function') {
+      this.estudoView.abrirPastaCompartilhadaRecebida(docPasta);
+    }
+  }
+
   abrirModalLogin() {
     this.abrirModalIdentificacaoLogin();
   }
