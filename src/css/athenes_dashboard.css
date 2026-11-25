@@ -2709,6 +2709,15 @@ button.ath-dn-pasta:hover { background: #EEF4FA; border-color: #C8D7E6; }
 .ath-filtros-anos { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .ath-filtros-obra input, .ath-filtros-obra select { width:100%; box-sizing:border-box; min-width:0; border:1px solid #CBD5E1; border-radius:7px; padding:6px 7px; font:inherit; font-size:12px; background:#fff; color:#1E293B; }
 .ath-filtros-obra input:focus, .ath-filtros-obra select:focus { outline:2px solid #93B5DC; border-color:#314F79; }
+.ath-filtro-var-grupo { display: grid; gap: 5px; padding: 6px 0 2px; border-top: 1px dashed #E2E8F0; }
+.ath-filtro-var-grupo:first-of-type { border-top: 0; padding-top: 2px; }
+.ath-filtro-var-titulo { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 700; font-size: 11.5px; color: #1E293B; }
+.ath-filtro-var-qtd { font-size: 10px; font-weight: 800; color: #314F79; background: #E8F0FA; border-radius: 999px; padding: 1px 6px; }
+.ath-filtro-var-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ath-filtro-var-chip { border: 1px solid #CBD5E1; border-radius: 999px; background: #F8FAFC; color: #334155; padding: 3px 8px; font: 600 11px/1.2 var(--glx-font, inherit); cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
+.ath-filtro-var-chip:hover { background: #EEF4FA; border-color: #93B5DC; }
+.ath-filtro-var-chip[aria-pressed="true"] { background: #314F79; border-color: #314F79; color: #FFFFFF; }
+.ath-filtro-var-chip.is-meta { border-style: dashed; }
 .ath-filtros-limpar { justify-self:start; border:0; background:transparent; color:#314F79; padding:3px 0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:700; }
 .ath-artigo-menu-contexto { position:fixed; z-index:100003; min-width:205px; padding:5px; background:#fff; border:1px solid #C8D7E6; border-radius:11px; box-shadow:0 12px 32px rgba(15,23,42,.2); font:500 12.5px var(--glx-font,system-ui); color:#1F2733; }
 .ath-artigo-menu-contexto button { display:block; width:100%; padding:8px 10px; border:0; border-radius:7px; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }

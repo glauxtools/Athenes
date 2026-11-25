@@ -46,7 +46,8 @@ import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
 import { listarCompartilhadosComigo, carregarDocumentoCompartilhado } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
-import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { baixarBibliografiaCsv, construirMapaCaminhosPastas } from '../core/athenes_export_bibliografia_csv.js';
 import { metodosEstudoTela } from './athenes_estudo_artigos_tela.js';
 import { metodosEstudoPainelDireito } from './athenes_estudo_artigos_painel_direito.js';
 import { metodosEstudoAnotacoes } from './athenes_estudo_artigos_anotacoes.js';
@@ -781,6 +782,22 @@ export class EstudoArtigosView {
       fecharTodosLivros3D(this.container);
     });
 
+    wrap.querySelector('#athArtigosZoteroGrid')?.addEventListener('contextmenu', (ev) => {
+      if (ev.target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const livroEl = ev.target?.closest?.('.ath-livro-3d');
+      if (livroEl) {
+        const idLivro = livroEl.dataset?.livroId || livroEl.getAttribute?.('data-livro-id');
+        const art = this.artigosCatalogo().find(a => String(a.id) === String(idLivro));
+        if (art) {
+          this.abrirMenuContextoLivro(art, livroEl, ev.clientX, ev.clientY);
+          return;
+        }
+      }
+      this.abrirMenuContextoEstante(ev.clientX, ev.clientY);
+    });
+
     if (!this._fecharEstanteGlobalConfigurado) {
       this._fecharEstanteGlobalConfigurado = true;
       this.container.addEventListener('pointerdown', (ev) => {
@@ -1048,45 +1065,195 @@ export class EstudoArtigosView {
       box.innerHTML = `<strong>Variáveis personalizadas</strong><small style="color:#64748B;">Nenhuma variável criada ainda. Adicione variáveis no livrinho 3D.</small>`;
       return;
     }
-    const temAtivo = Object.keys(ativos).length > 0;
+    const listaSelecionados = (regra) => Array.isArray(regra?.valores) ? regra.valores : (regra?.valor ? [regra.valor] : []);
+    const temAtivo = Object.values(ativos).some(r => listaSelecionados(r).length > 0);
     box.innerHTML = `
       <strong>Variáveis personalizadas</strong>
+      <small style="color:#64748B; margin-top:-3px;">Escolha um ou mais valores por variável:</small>
       ${variaveis.map(v => {
         const slug = slugVariavel(v.nome);
-        const selAtual = ativos[slug]?.valor || '';
-        const opcoesHtml = (v.opcoes || []).map(op =>
-          `<option value="${escapeHtml(op)}" ${selAtual === op ? 'selected' : ''}>${escapeHtml(op)}</option>`
+        const marcados = new Set(listaSelecionados(ativos[slug]));
+        const chipsOpcoes = (v.opcoes || []).map(op =>
+          `<button type="button" class="ath-filtro-var-chip" data-filtro-var-chip data-slug="${escapeHtml(slug)}" data-nome="${escapeHtml(v.nome)}" data-val="${escapeHtml(op)}" aria-pressed="${marcados.has(op) ? 'true' : 'false'}">${escapeHtml(op)}</button>`
         ).join('');
-        return `<label>${escapeHtml(v.nome)}
-          <select data-filtro-var-slug="${escapeHtml(slug)}" data-filtro-var-nome="${escapeHtml(v.nome)}">
-            <option value="">Todas (sem filtro)</option>
-            <option value="__preenchida__" ${selAtual === '__preenchida__' ? 'selected' : ''}>Preenchida (qualquer valor)</option>
-            <option value="__vazia__" ${selAtual === '__vazia__' ? 'selected' : ''}>Sem valor (vazia)</option>
-            ${opcoesHtml}
-          </select>
-        </label>`;
+        return `<div class="ath-filtro-var-grupo">
+          <div class="ath-filtro-var-titulo">
+            <span>${escapeHtml(v.nome)}</span>
+            ${marcados.size ? `<span class="ath-filtro-var-qtd">${marcados.size}</span>` : ''}
+          </div>
+          <div class="ath-filtro-var-chips">
+            ${chipsOpcoes}
+            <button type="button" class="ath-filtro-var-chip is-meta" data-filtro-var-chip data-slug="${escapeHtml(slug)}" data-nome="${escapeHtml(v.nome)}" data-val="__preenchida__" aria-pressed="${marcados.has('__preenchida__') ? 'true' : 'false'}">Preenchida</button>
+            <button type="button" class="ath-filtro-var-chip is-meta" data-filtro-var-chip data-slug="${escapeHtml(slug)}" data-nome="${escapeHtml(v.nome)}" data-val="__vazia__" aria-pressed="${marcados.has('__vazia__') ? 'true' : 'false'}">Vazia</button>
+          </div>
+        </div>`;
       }).join('')}
       ${temAtivo ? '<button type="button" class="ath-filtros-limpar" data-limpar-filtros-variaveis>Limpar variáveis</button>' : ''}
     `;
-    box.querySelectorAll('[data-filtro-var-slug]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const slug = sel.dataset.filtroVarSlug;
-        const nome = sel.dataset.filtroVarNome;
-        const val = sel.value;
+    box.querySelectorAll('[data-filtro-var-chip]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const slug = btn.dataset.slug;
+        const nome = btn.dataset.nome;
+        const val = btn.dataset.val;
         if (!this.filtrosVariaveis) this.filtrosVariaveis = {};
-        if (!val) delete this.filtrosVariaveis[slug];
-        else this.filtrosVariaveis[slug] = { nome, valor: val };
+        const atuais = new Set(listaSelecionados(this.filtrosVariaveis[slug]));
+        if (atuais.has(val)) atuais.delete(val);
+        else atuais.add(val);
+        if (!atuais.size) delete this.filtrosVariaveis[slug];
+        else this.filtrosVariaveis[slug] = { nome, valores: [...atuais] };
         this.atualizarPopoverFiltrosVariaveis(escopo, aoMudar);
         aoMudar?.();
         this.atualizarGridCatalogo();
       });
     });
-    box.querySelector('[data-limpar-filtros-variaveis]')?.addEventListener('click', () => {
+    box.querySelector('[data-limpar-filtros-variaveis]')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       this.filtrosVariaveis = {};
       this.atualizarPopoverFiltrosVariaveis(escopo, aoMudar);
       aoMudar?.();
       this.atualizarGridCatalogo();
     });
+  }
+
+  abrirMenuContextoLivro(art, livroEl, x, y) {
+    document.querySelector('.ath-menu-pasta-contexto')?.remove();
+    const menu = document.createElement('div');
+    menu.className = 'ath-menu-pasta-contexto ath-artigo-menu-contexto';
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '100005';
+    menu.style.top = `${Math.min(y, Math.max(8, window.innerHeight - 310))}px`;
+    menu.style.left = `${Math.min(x, Math.max(8, window.innerWidth - 230))}px`;
+
+    const estaAberto = livroEl?.classList?.contains?.('aberto');
+    menu.innerHTML = `
+      <button type="button" data-acao="ficha">${svgIcone('livro', 15)}<span>${estaAberto ? 'Fechar ficha (livrinho)' : 'Abrir ficha (livrinho)'}</span></button>
+      <button type="button" data-acao="leitor">${svgIcone('pdf', 15)}<span>Abrir no leitor PDF</span></button>
+      <button type="button" data-acao="compartilhar">${svgIcone('usuarios', 15)}<span>Compartilhar obra / PDF</span></button>
+      <button type="button" data-acao="citar">${svgIcone('copiar', 15)}<span>Copiar citação ABNT</span></button>
+      <button type="button" data-acao="mover">${svgIcone('pasta', 15)}<span>Mover para pasta…</span></button>
+      <button type="button" data-acao="editar">${svgIcone('lapis', 15)}<span>Editar metadados / PDF</span></button>
+      <button type="button" data-acao="csv">${svgIcone('exportar_csv', 15)}<span>Exportar obra (CSV)</span></button>
+      ${art.compartilhadoComigo ? '' : `<hr><button type="button" data-acao="excluir" class="ath-menu-pasta-excluir">${svgIcone('lixeira', 15)}<span>Remover da biblioteca</span></button>`}
+    `;
+
+    const fechar = () => {
+      menu.remove();
+      document.removeEventListener('click', fechar);
+      document.removeEventListener('keydown', aoEsc);
+    };
+    const aoEsc = (e) => { if (e.key === 'Escape') fechar(); };
+    setTimeout(() => {
+      document.addEventListener('click', fechar);
+      document.addEventListener('keydown', aoEsc);
+    }, 10);
+
+    menu.querySelector('[data-acao="ficha"]')?.addEventListener('click', () => {
+      fechar();
+      if (estaAberto) fecharTodosLivros3D(this.container);
+      else livroEl?.click?.();
+    });
+    menu.querySelector('[data-acao="leitor"]')?.addEventListener('click', () => {
+      fechar();
+      if (art.compartilhadoComigo && !this.artigos.includes(art)) this.abrirArtigoCompartilhadoRecebido(art);
+      else this.abrirArtigoNoEstudio(art, 1);
+    });
+    menu.querySelector('[data-acao="compartilhar"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalCompartilharArtigo(art);
+    });
+    menu.querySelector('[data-acao="citar"]')?.addEventListener('click', async () => {
+      fechar();
+      const cit = formatarCitacaoAbntDoArtigo(art);
+      try { await navigator.clipboard?.writeText?.(cit); } catch (_) {}
+      mostrarAviso(`Citação copiada: ${cit}`, { tipo: 'sucesso' });
+    });
+    menu.querySelector('[data-acao="mover"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalMoverArtigo(art);
+    });
+    menu.querySelector('[data-acao="editar"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalVincularArtigo(art);
+    });
+    menu.querySelector('[data-acao="csv"]')?.addEventListener('click', () => {
+      fechar();
+      const mapaPastas = construirMapaCaminhosPastas(coletarPastasBibliografia());
+      baixarBibliografiaCsv([art], { mapaPastas, nomeArquivo: art.titulo || 'obra-athenes' });
+      mostrarAviso('Obra exportada em CSV.', { tipo: 'sucesso' });
+    });
+    menu.querySelector('[data-acao="excluir"]')?.addEventListener('click', () => {
+      fechar();
+      if (!confirm(`Remover "${art.titulo || 'esta obra'}" da biblioteca do Athenes?`)) return;
+      this.artigos = this.artigos.filter(a => String(a.id) !== String(art.id));
+      salvarArtigosEstudo(this.artigos);
+      this.registrarSnapshotCatalogo?.();
+      this.atualizarGridCatalogo();
+      mostrarAviso('Obra removida da biblioteca.', { tipo: 'info' });
+    });
+
+    document.body.appendChild(menu);
+  }
+
+  abrirMenuContextoEstante(x, y) {
+    document.querySelector('.ath-menu-pasta-contexto')?.remove();
+    const menu = document.createElement('div');
+    menu.className = 'ath-menu-pasta-contexto ath-artigo-menu-contexto';
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '100005';
+    menu.style.top = `${Math.min(y, Math.max(8, window.innerHeight - 230))}px`;
+    menu.style.left = `${Math.min(x, Math.max(8, window.innerWidth - 230))}px`;
+
+    const temFiltro = this.filtroStatus !== 'todos'
+      || Object.values(this.filtrosObra || {}).some(Boolean)
+      || Object.keys(this.filtrosVariaveis || {}).length > 0
+      || Boolean(this.filtroBusca);
+
+    menu.innerHTML = `
+      <button type="button" data-acao="novo">${svgIcone('mais', 15)}<span>Vincular artigo & PDF</span></button>
+      <button type="button" data-acao="csv">${svgIcone('exportar_csv', 15)}<span>Exportar bibliografia (CSV)</span></button>
+      <button type="button" data-acao="relacoes">${svgIcone('grafico', 15)}<span>Analisar relações e termos</span></button>
+      <button type="button" data-acao="sync">${svgIcone('sincronizar', 15)}<span>Sincronizar Zotero</span></button>
+      ${temFiltro ? `<hr><button type="button" data-acao="limpar-filtros">${svgIcone('fechar', 15)}<span>Limpar filtros ativos</span></button>` : ''}
+    `;
+
+    const fechar = () => {
+      menu.remove();
+      document.removeEventListener('click', fechar);
+      document.removeEventListener('keydown', aoEsc);
+    };
+    const aoEsc = (e) => { if (e.key === 'Escape') fechar(); };
+    setTimeout(() => {
+      document.addEventListener('click', fechar);
+      document.addEventListener('keydown', aoEsc);
+    }, 10);
+
+    menu.querySelector('[data-acao="novo"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalVincularArtigo({ pastaId: this.pastaFiltroId });
+    });
+    menu.querySelector('[data-acao="csv"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirModalExportarBibliografiaCsv();
+    });
+    menu.querySelector('[data-acao="relacoes"]')?.addEventListener('click', () => {
+      fechar();
+      this.abrirAnaliseRelacoes();
+    });
+    menu.querySelector('[data-acao="sync"]')?.addEventListener('click', () => {
+      fechar();
+      this.sincronizarComZoteroApi();
+    });
+    menu.querySelector('[data-acao="limpar-filtros"]')?.addEventListener('click', () => {
+      fechar();
+      this.filtroStatus = 'todos';
+      this.filtroBusca = '';
+      this.filtrosObra = { anoDe: '', anoAte: '', autor: '', editora: '', palavra: '' };
+      this.filtrosVariaveis = {};
+      this.renderizar();
+    });
+
+    document.body.appendChild(menu);
   }
 
   ordenarArtigos(artigos) {
@@ -1240,14 +1407,15 @@ export class EstudoArtigosView {
               break;
             }
           }
-          if (regra.valor === '__preenchida__') {
-            if (!valores.length) return false;
-          } else if (regra.valor === '__vazia__') {
-            if (valores.length) return false;
-          } else {
-            const alvoNorm = String(regra.valor || '').toLocaleLowerCase('pt-BR');
-            if (!valores.some(v => String(v).toLocaleLowerCase('pt-BR') === alvoNorm)) return false;
-          }
+          const selecionados = Array.isArray(regra?.valores) ? regra.valores : (regra?.valor ? [regra.valor] : []);
+          if (!selecionados.length) continue;
+          const bateuAlgum = selecionados.some(sel => {
+            if (sel === '__preenchida__') return valores.length > 0;
+            if (sel === '__vazia__') return valores.length === 0;
+            const alvoNorm = String(sel || '').toLocaleLowerCase('pt-BR');
+            return valores.some(v => String(v).toLocaleLowerCase('pt-BR') === alvoNorm);
+          });
+          if (!bateuAlgum) return false;
         }
       }
       if (!this.filtroBusca) return true;
