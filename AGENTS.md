@@ -36,6 +36,10 @@ Aplicativo web editorial acadêmico para elaboração de artigos científicos, r
    - Uma junção de diretório transparente (`mklink /J`) foi configurada em `C:\Users\jeffe\.android\avd` apontando para `D:\dev\android-avd`, e a variável de ambiente `ANDROID_AVD_HOME=D:\dev\android-avd` está ativa.
    - Qualquer script, agente ou ferramenta (`adb`, `emulator`, etc.) continua funcionando de forma 100% transparente tanto pelo caminho legado `C:\Users\jeffe\.android\avd` quanto diretamente em `D:\dev\android-avd`.
 
+7. **Repositório Oficial no GitHub (`glauxtools`):**
+   - O repositório oficial do Athenes é `https://github.com/glauxtools/Athenes.git` (organização `glauxtools`, branch `main`), que substituiu o endereço antigo `jeffersonfreireribeiro-hash/Athenes.git`.
+   - Sempre confirmar que o remote `origin` aponta para `https://github.com/glauxtools/Athenes.git` antes de publicar alterações.
+
 ## Comandos
 
 | Para | Comando |

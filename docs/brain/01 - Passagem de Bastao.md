@@ -16,7 +16,7 @@ O **Athenes** é um editor web completo para a escrita e diagramação de artigo
 2. **Escrita Direta na Folha (In-Page WYSIWYG)**: A escrita ocorre diretamente no bloco na folha de papel. A barra lateral serve para propriedades avançadas e ajustes tipográficos finos, nunca como formulário obrigatório para digitar texto.
 3. **Independência de GIS**: O Athenes não depende de bases geográficas ou bancos PostGIS. Todo o modelo é modular e autônomo.
 4. **Licença**: **GPL-3.0-or-later** (`// SPDX-License-Identifier: GPL-3.0-or-later`).
-5. **Repositório Oficial**: `https://github.com/jeffersonfreireribeiro-hash/Athenes.git` (branch `main`).
+5. **Repositório Oficial**: `https://github.com/glauxtools/Athenes.git` (organização `glauxtools`, branch `main`).
 
 ---
 
