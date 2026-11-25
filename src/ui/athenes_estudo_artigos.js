@@ -773,6 +773,7 @@ export class EstudoArtigosView {
     this._observadorEstante = null;
     const palcoAntigo = this.container.querySelector('#athEstudioPalco');
     const scrollSalvo = palcoAntigo ? palcoAntigo.scrollTop : 0;
+    this.liberarBitmapsDoPdf(); // ao sair da leitura (ou redesenhar), devolve já a memória de imagem das páginas: não espera o coletor de lixo
 
     this.carregarConfigZotero();
     this.container.innerHTML = '';
@@ -2367,6 +2368,7 @@ export class EstudoArtigosView {
       if (token !== folha._tokenRender || !folha.isConnected) return; // outra renderização mais nova assumiu
       cv.width = novo.width; cv.height = novo.height;
       cv.getContext('2d').drawImage(novo, 0, 0);
+      novo.width = 0; novo.height = 0; // o canvas de trabalho não fica esperando o coletor de lixo
       folha.dataset.qualidade = String(fator);
       if (folha.dataset.textoPronto === '1') return; // a camada de texto não depende do zoom
 
@@ -2414,6 +2416,15 @@ export class EstudoArtigosView {
     } catch (err) {
       console.warn('Athenes — falha ao desenhar página do PDF:', err);
     }
+  }
+
+  /** Zera todos os bitmaps de página do PDF (um canvas de tamanho zero libera a memória na hora) e desliga os observadores de rolagem. */
+  liberarBitmapsDoPdf() {
+    this._obsPerto?.disconnect(); this._obsLonge?.disconnect();
+    this._obsPerto = null; this._obsLonge = null;
+    clearTimeout(this._tZoomQualidade);
+    this.container?.querySelectorAll('.ath-pdf-render-canvas').forEach(cv => { cv.width = 0; cv.height = 0; });
+    this.container?.querySelectorAll('.ath-pdf-folha-container').forEach(f => { f._tokenRender = (f._tokenRender || 0) + 1; });
   }
 
   /** Páginas muito longe da tela largam o bitmap (um PDF de 30 páginas em alta definição passaria de 1 GB); voltam a ser desenhadas ao se aproximar. */
