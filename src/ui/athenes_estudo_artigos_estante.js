@@ -739,15 +739,25 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
 
   if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !livroEl._fecharAoClicarFora) {
     livroEl._pointerDownDentro = false;
+    livroEl._pointerDownPos = null;
     livroEl._marcarPointerDown = (ev) => {
       livroEl._pointerDownDentro = typeof livroEl.contains === 'function'
         ? livroEl.contains(ev.target)
         : ev.target?.closest?.('.ath-livro-3d') === livroEl;
+      livroEl._pointerDownPos = Number.isFinite(ev?.clientX) && Number.isFinite(ev?.clientY)
+        ? { x: ev.clientX, y: ev.clientY }
+        : null;
     };
     livroEl._fecharAoClicarFora = (ev) => {
       const iniciouDentro = livroEl._pointerDownDentro;
+      const posInicio = livroEl._pointerDownPos;
       livroEl._pointerDownDentro = false;
+      livroEl._pointerDownPos = null;
       if (iniciouDentro) return;
+      if (posInicio && Number.isFinite(ev?.clientX) && Number.isFinite(ev?.clientY)
+        && Math.hypot(ev.clientX - posInicio.x, ev.clientY - posInicio.y) > 6) {
+        return;
+      }
       const dentro = typeof livroEl.contains === 'function'
         ? livroEl.contains(ev.target)
         : ev.target?.closest?.('.ath-livro-3d') === livroEl;

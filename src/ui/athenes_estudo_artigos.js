@@ -764,13 +764,32 @@ export class EstudoArtigosView {
 
     this.container.appendChild(wrap);
 
-    wrap.querySelector('#athEstanteScrim')?.addEventListener('click', () => {
+    const cliqueFoiArrasteOuDentroDoLivro = (ev) => {
+      const d = this._ultimoPointerDownEstante;
+      if (!d) return false;
+      if (d.dentroLivro) return true;
+      if (Number.isFinite(d.x) && Number.isFinite(d.y) && Number.isFinite(ev?.clientX) && Number.isFinite(ev?.clientY)) {
+        if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 6) return true;
+      }
+      return false;
+    };
+
+    wrap.querySelector('#athEstanteScrim')?.addEventListener('click', (ev) => {
+      if (cliqueFoiArrasteOuDentroDoLivro(ev)) return;
       fecharTodosLivros3D(this.container);
     });
 
     if (!this._fecharEstanteGlobalConfigurado) {
       this._fecharEstanteGlobalConfigurado = true;
+      this.container.addEventListener('pointerdown', (ev) => {
+        this._ultimoPointerDownEstante = {
+          dentroLivro: Boolean(ev.target?.closest?.('.ath-livro-3d')),
+          x: ev.clientX,
+          y: ev.clientY
+        };
+      }, true);
       this.container.addEventListener('click', (ev) => {
+        if (cliqueFoiArrasteOuDentroDoLivro(ev)) return;
         if (!ev.target?.closest?.('.ath-livro-3d')) {
           fecharTodosLivros3D(this.container);
         }
