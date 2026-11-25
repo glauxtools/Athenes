@@ -393,9 +393,9 @@ export const metodosDashboardPastas = {
         `;
       }
     } else {
-      const pastaCompNuvem = (this.estudoView?.pastasCompartilhadasRecebidas || []).find(p => String(p.id) === String(this.pastaAtivaId));
+      const pastaCompNuvem = this.estudoView?.buscarPastaCompartilhadaRecebida?.(this.pastaAtivaId) || null;
       const pastaInfo = pastaCompNuvem || buscarPastaNaArvore(this.pastasDrive, this.pastaAtivaId) || {
-        nome: this.pastaAtivaId === 'compartilhados_comigo' ? 'Artigos de outras pessoas' : 'Pasta Selecionada',
+        nome: this.pastaAtivaId === 'compartilhados_comigo' ? 'Artigos de outras pessoas' : (this.pastaAtivaId === 'compartilhados_zotero' ? 'Compartilhados do Zotero' : 'Pasta Selecionada'),
         tipo: ehAbaBib ? 'bibliografia' : 'relatorios'
       };
 

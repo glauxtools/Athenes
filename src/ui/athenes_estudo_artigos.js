@@ -282,23 +282,214 @@ export class EstudoArtigosView {
     else this.atualizarGridCatalogo();
   }
 
+  ehArtigoCompartilhadoZotero(art) {
+    if (!art?.compartilhadoComigo) return false;
+    if (art.chaveZotero || art.zoteroBiblioteca || art.itemTypeZotero) return true;
+    if (/^zot_/.test(String(art.id || ''))) return true;
+    if (/^zot_col_/.test(String(art.pastaOriginalId || art.pastaId || ''))) return true;
+    const listas = [
+      ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
+      ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
+    ];
+    return listas.some(id => /^zot_col_/.test(String(id || '')));
+  }
+
+  buscarPastaCompartilhadaRecebida(pastaId, lista = this.pastasCompartilhadasRecebidas) {
+    const alvo = String(pastaId || '');
+    if (!alvo || !Array.isArray(lista)) return null;
+    for (const p of lista) {
+      if (!p) continue;
+      if (String(p.id) === alvo) return p;
+      if (Array.isArray(p.subpastas) && p.subpastas.length) {
+        const achou = this.buscarPastaCompartilhadaRecebida(alvo, p.subpastas);
+        if (achou) return achou;
+      }
+    }
+    return null;
+  }
+
   artigoPertenceAPastaCompartilhada(art, pastaId) {
     if (!art?.compartilhadoComigo || !pastaId) return false;
     const pid = String(pastaId);
+    if (pid === 'compartilhados_zotero') return this.ehArtigoCompartilhadoZotero(art);
+    const pasta = this.buscarPastaCompartilhadaRecebida(pid);
+    if (pasta) {
+      if (pasta.ehSubpastaZoteroAvulsa) {
+        if (!this.ehArtigoCompartilhadoZotero(art)) return false;
+        const origIds = new Set([
+          art.pastaOriginalId,
+          art.pastaId,
+          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
+          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
+        ].map(v => String(v || '')).filter(Boolean));
+        return origIds.has(String(pasta.pastaOriginalId || ''));
+      }
+      if (pasta.pastaRaizCompartilhadaId && pasta.descendentesOriginais) {
+        const raizOk = String(art.pastaCompartilhadaId || '') === String(pasta.pastaRaizCompartilhadaId) ||
+          (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === String(pasta.pastaRaizCompartilhadaId)));
+        if (!raizOk) return false;
+        const origIds = [
+          art.pastaOriginalId,
+          art.pastaId,
+          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
+          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
+        ].map(v => String(v || '')).filter(Boolean);
+        return origIds.some(id => pasta.descendentesOriginais.has(id));
+      }
+      const pertenceRaiz = String(art.pastaCompartilhadaId || '') === pid ||
+        (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === pid));
+      if (!pertenceRaiz) return false;
+      if (pasta.ehZotero) return this.ehArtigoCompartilhadoZotero(art);
+      if (!pasta.incluiZotero && this.ehArtigoCompartilhadoZotero(art)) return false;
+      return true;
+    }
     if (String(art.pastaCompartilhadaId || '') === pid) return true;
     if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => String(id) === pid)) return true;
     return false;
   }
 
   artigosAvulsosCompartilhados() {
-    const idsPastasRecebidas = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
+    const idsPastasNormais = new Set(
+      (this.pastasCompartilhadasRecebidas || [])
+        .filter(p => p && !p.ehMacroZotero)
+        .map(p => String(p.id))
+    );
     return (this.artigosCompartilhados || []).filter(a => {
       if (!a?.compartilhadoComigo) return false;
+      if (this.ehArtigoCompartilhadoZotero(a)) return false;
       const pId = String(a.pastaCompartilhadaId || '');
-      if (pId && idsPastasRecebidas.has(pId)) return false;
-      if (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => idsPastasRecebidas.has(String(id)))) return false;
+      if (pId && idsPastasNormais.has(pId)) return false;
+      if (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => idsPastasNormais.has(String(id)))) return false;
       return true;
     });
+  }
+
+  reconstruirArvorePastasCompartilhadas(pastasDocsMap) {
+    const coletarDescendentes = (no) => {
+      const s = new Set([String(no.id || '')].filter(Boolean));
+      for (const f of (no.subpastas || [])) {
+        for (const d of coletarDescendentes(f)) s.add(d);
+      }
+      return s;
+    };
+    const montarSubpastas = (listaSub, raizDocId, proprietario, permissao, somenteZotero = false, excluirZotero = false) => {
+      const res = [];
+      for (const sub of (Array.isArray(listaSub) ? listaSub : [])) {
+        if (!sub?.id) continue;
+        const subEhZot = Boolean(sub.origemZotero || sub.zoteroKey || /^zot_col_/.test(String(sub.id)));
+        if (somenteZotero && !subEhZot) {
+          res.push(...montarSubpastas(sub.subpastas || [], raizDocId, proprietario, permissao, true, false));
+          continue;
+        }
+        if (excluirZotero && subEhZot) continue;
+        res.push({
+          id: `${raizDocId}::sub::${sub.id}`,
+          pastaOriginalId: String(sub.id),
+          pastaRaizCompartilhadaId: String(raizDocId),
+          descendentesOriginais: coletarDescendentes(sub),
+          nome: sub.nome || 'Subpasta',
+          cor: sub.cor || null,
+          tipo: 'bibliografia',
+          origem: 'compartilhada_nuvem',
+          ehZotero: subEhZot,
+          permissao: permissao || 'leitura',
+          proprietario: proprietario || null,
+          subpastas: montarSubpastas(sub.subpastas || [], raizDocId, proprietario, permissao, somenteZotero, excluirZotero)
+        });
+      }
+      return res;
+    };
+
+    const pastasNormais = [];
+    const subpastasMacroZotero = [];
+    const originaisCobertosZotero = new Set();
+    const marcarCobertos = (lista) => {
+      for (const p of (lista || [])) {
+        if (p.pastaOriginalId) originaisCobertosZotero.add(String(p.pastaOriginalId));
+        if (p.descendentesOriginais) p.descendentesOriginais.forEach(id => originaisCobertosZotero.add(String(id)));
+        marcarCobertos(p.subpastas);
+      }
+    };
+
+    for (const p of pastasDocsMap.values()) {
+      const artsDestaPasta = (this.artigosCompartilhados || []).filter(a =>
+        String(a.pastaCompartilhadaId || '') === String(p.id) ||
+        (Array.isArray(a.pastasCompartilhadasIds) && a.pastasCompartilhadasIds.some(id => String(id) === String(p.id)))
+      );
+      const artsZot = artsDestaPasta.filter(a => this.ehArtigoCompartilhadoZotero(a));
+      const artsNaoZot = artsDestaPasta.filter(a => !this.ehArtigoCompartilhadoZotero(a));
+      const pastaEhSoZotero = Boolean(p.origemZotero || p.zoteroKey || (artsZot.length > 0 && artsNaoZot.length === 0));
+
+      if (pastaEhSoZotero) {
+        const noZot = {
+          ...p,
+          ehZotero: true,
+          incluiZotero: true,
+          subpastas: montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, false, false)
+        };
+        subpastasMacroZotero.push(noZot);
+        if (p.pastaOriginalId) originaisCobertosZotero.add(String(p.pastaOriginalId));
+        marcarCobertos(noZot.subpastas);
+      } else {
+        pastasNormais.push({
+          ...p,
+          ehZotero: false,
+          incluiZotero: false,
+          subpastas: montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, false, true)
+        });
+        const subsZotDentro = montarSubpastas(p.subpastasBrutas || [], p.id, p.proprietario, p.permissao, true, false);
+        if (subsZotDentro.length) {
+          subpastasMacroZotero.push(...subsZotDentro);
+          marcarCobertos(subsZotDentro);
+        }
+      }
+    }
+
+    const todosArtsZotero = (this.artigosCompartilhados || []).filter(a => this.ehArtigoCompartilhadoZotero(a));
+    if (todosArtsZotero.length > 0 || subpastasMacroZotero.length > 0) {
+      const avulsosPorPastaOrig = new Map();
+      for (const art of todosArtsZotero) {
+        const origIds = [
+          art.pastaOriginalId,
+          art.pastaId,
+          ...(Array.isArray(art.pastasOriginaisIds) ? art.pastasOriginaisIds : []),
+          ...(Array.isArray(art.pastasIds) ? art.pastasIds : [])
+        ].map(v => String(v || '')).filter(id => id && id !== 'pasta_bib_raiz' && id !== 'todas' && id !== 'compartilhados_comigo');
+        for (const oid of origIds) {
+          if (originaisCobertosZotero.has(oid)) continue;
+          if (!avulsosPorPastaOrig.has(oid)) {
+            const nomeFallback = art.pastaOriginalNome || art.pastaCompartilhadaNome ||
+              (/^zot_col_(.+)$/.test(oid) ? `Coleção Zotero (${oid.replace(/^zot_col_/, '')})` : oid);
+            avulsosPorPastaOrig.set(oid, {
+              id: `comp_zot_sub::${oid}`,
+              pastaOriginalId: oid,
+              ehSubpastaZoteroAvulsa: true,
+              ehZotero: true,
+              nome: nomeFallback,
+              tipo: 'bibliografia',
+              origem: 'compartilhada_nuvem',
+              permissao: art.permissao || 'leitura',
+              proprietario: art.proprietario || null,
+              subpastas: []
+            });
+          }
+        }
+      }
+      subpastasMacroZotero.push(...avulsosPorPastaOrig.values());
+      pastasNormais.push({
+        id: 'compartilhados_zotero',
+        nome: 'Compartilhados do Zotero',
+        icone: 'livro',
+        tipo: 'bibliografia',
+        origem: 'compartilhada_nuvem',
+        ehMacroZotero: true,
+        ehZotero: true,
+        permissao: 'leitura',
+        subpastas: subpastasMacroZotero
+      });
+    }
+
+    return pastasNormais;
   }
 
   async carregarCompartilhados() {
@@ -358,12 +549,16 @@ export class EstudoArtigosView {
           const nomeLimpo = doc.pastaCompartilhada?.nome || String(doc.titulo || '').replace(/^\[Pasta\]\s*/i, '').replace(/\s*\(\d+\s+obras?\)\s*$/i, '').trim() || 'Pasta compartilhada';
           pastasMap.set(String(doc.id), {
             id: String(doc.id),
+            pastaOriginalId: doc.pastaCompartilhada?.pastaOriginalId || null,
             nome: nomeLimpo,
             tipo: 'bibliografia',
             origem: 'compartilhada_nuvem',
+            origemZotero: Boolean(doc.pastaCompartilhada?.origemZotero || doc.pastaCompartilhada?.zoteroKey),
+            zoteroKey: doc.pastaCompartilhada?.zoteroKey || null,
             permissao: doc.permissao || 'leitura',
             proprietario: doc.proprietario || null,
-            driveFolderId: doc.pastaCompartilhada?.driveFolderId || null
+            driveFolderId: doc.pastaCompartilhada?.driveFolderId || null,
+            subpastasBrutas: Array.isArray(doc.pastaCompartilhada?.subpastas) ? doc.pastaCompartilhada.subpastas : []
           });
           if (Array.isArray(doc.pastaCompartilhada?.artigos)) {
             for (const artPasta of doc.pastaCompartilhada.artigos) {
@@ -374,8 +569,8 @@ export class EstudoArtigosView {
           registrar(doc.artigoEstudo, doc, true, doc.artigoEstudo.pastaCompartilhadaId || null, doc.artigoEstudo.pastaCompartilhadaNome || '');
         }
       }
-      this.pastasCompartilhadasRecebidas = Array.from(pastasMap.values());
       this.artigosCompartilhados = Array.from(porChave.values());
+      this.pastasCompartilhadasRecebidas = this.reconstruirArvorePastasCompartilhadas(pastasMap);
       if (!this.artigoAberto) this.atualizarCatalogoSeLivre(false);
       this.aoMudarPastas?.();
     } catch (e) { console.warn('[Athenes] Artigos compartilhados:', e.message); }
@@ -386,20 +581,6 @@ export class EstudoArtigosView {
     const itensPasta = Array.isArray(docPasta.pastaCompartilhada?.artigos) ? docPasta.pastaCompartilhada.artigos : [];
     const nomePasta = docPasta.pastaCompartilhada?.nome || String(docPasta.titulo || '').replace(/^\[Pasta\]\s*/i, '').replace(/\s*\(\d+\s+obras?\)\s*$/i, '').trim() || 'Pasta compartilhada';
     const pastaId = String(docPasta.id || '');
-    if (pastaId && !(this.pastasCompartilhadasRecebidas || []).some(p => String(p.id) === pastaId)) {
-      this.pastasCompartilhadasRecebidas = [
-        ...(this.pastasCompartilhadasRecebidas || []),
-        {
-          id: pastaId,
-          nome: nomePasta,
-          tipo: 'bibliografia',
-          origem: 'compartilhada_nuvem',
-          permissao: docPasta.permissao || 'leitura',
-          proprietario: docPasta.proprietario || null,
-          driveFolderId: docPasta.pastaCompartilhada?.driveFolderId || null
-        }
-      ];
-    }
     if (itensPasta.length) {
       const porChave = new Map((this.artigosCompartilhados || []).map(a => [String(a.docCompartilhadoId || a.id || ''), a]));
       for (const artPasta of itensPasta) {
@@ -426,6 +607,26 @@ export class EstudoArtigosView {
         }
       }
       this.artigosCompartilhados = Array.from(porChave.values());
+    }
+    if (pastaId && !this.buscarPastaCompartilhadaRecebida(pastaId)) {
+      const mapaTemp = new Map([[pastaId, {
+        id: pastaId,
+        pastaOriginalId: docPasta.pastaCompartilhada?.pastaOriginalId || null,
+        nome: nomePasta,
+        tipo: 'bibliografia',
+        origem: 'compartilhada_nuvem',
+        origemZotero: Boolean(docPasta.pastaCompartilhada?.origemZotero || docPasta.pastaCompartilhada?.zoteroKey),
+        zoteroKey: docPasta.pastaCompartilhada?.zoteroKey || null,
+        permissao: docPasta.permissao || 'leitura',
+        proprietario: docPasta.proprietario || null,
+        driveFolderId: docPasta.pastaCompartilhada?.driveFolderId || null,
+        subpastasBrutas: Array.isArray(docPasta.pastaCompartilhada?.subpastas) ? docPasta.pastaCompartilhada.subpastas : []
+      }]]);
+      const novas = this.reconstruirArvorePastasCompartilhadas(mapaTemp);
+      this.pastasCompartilhadasRecebidas = [
+        ...(this.pastasCompartilhadasRecebidas || []).filter(p => !novas.some(n => String(n.id) === String(p.id))),
+        ...novas
+      ];
     }
     this.artigoAberto = null;
     this.filtrarPorPasta(pastaId || 'compartilhados_comigo');
@@ -1498,16 +1699,17 @@ export class EstudoArtigosView {
     }
     grid.innerHTML = '';
 
-    const idsPastasRecebidas = new Set((this.pastasCompartilhadasRecebidas || []).map(p => String(p.id)));
     const filtrados = this.ordenarArtigos(this.artigosCatalogo()).filter(art => {
       if (this.pastaFiltroId && this.pastaFiltroId !== 'todas') {
-        if (this.pastaFiltroId === 'compartilhados_comigo') {
-          if (!art.compartilhadoComigo) return false;
-          const pId = String(art.pastaCompartilhadaId || '');
-          if (pId && idsPastasRecebidas.has(pId)) return false;
-          if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => idsPastasRecebidas.has(String(id)))) return false;
-        } else if (idsPastasRecebidas.has(String(this.pastaFiltroId)) || String(this.pastaFiltroId).startsWith('pasta_bib_')) {
-          if (!this.artigoPertenceAPastaCompartilhada(art, this.pastaFiltroId)) return false;
+        const pid = String(this.pastaFiltroId);
+        if (pid === 'compartilhados_comigo') {
+          if (!art.compartilhadoComigo || this.ehArtigoCompartilhadoZotero(art)) return false;
+          const pastasNormaisIds = new Set((this.pastasCompartilhadasRecebidas || []).filter(p => !p.ehMacroZotero).map(p => String(p.id)));
+          const pIdArt = String(art.pastaCompartilhadaId || '');
+          if (pIdArt && pastasNormaisIds.has(pIdArt)) return false;
+          if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => pastasNormaisIds.has(String(id)))) return false;
+        } else if (pid === 'compartilhados_zotero' || this.buscarPastaCompartilhadaRecebida(pid) || pid.startsWith('pasta_bib_') || pid.startsWith('comp_zot_sub::')) {
+          if (!this.artigoPertenceAPastaCompartilhada(art, pid)) return false;
         } else {
           if (art.compartilhadoComigo) return false;
           if (!artigoEstaNaPasta(art, this.pastaFiltroId)) return false;
@@ -1759,9 +1961,33 @@ export class EstudoArtigosView {
     const sessao = lerSessaoSupabase();
     const idSufixo = sessao?.user_id ? `_${sessao.user_id.slice(0, 8)}` : '';
     const perfil = obterPerfilColaborador();
+    const mapaNomesPastas = new Map();
+    const indexarNomesPastas = (lista) => {
+      for (const p of (Array.isArray(lista) ? lista : [])) {
+        if (!p?.id) continue;
+        mapaNomesPastas.set(String(p.id), p.nome || 'Pasta');
+        if (Array.isArray(p.subpastas)) indexarNomesPastas(p.subpastas);
+      }
+    };
+    indexarNomesPastas(arvore);
+    const serializarSubpastas = (lista) => (Array.isArray(lista) ? lista : []).filter(p => p?.id).map(p => ({
+      id: String(p.id),
+      nome: p.nome || 'Subpasta',
+      cor: p.cor || null,
+      origemZotero: Boolean(p.origemZotero || p.zoteroKey || /^zot_col_/.test(String(p.id))),
+      zoteroKey: p.zoteroKey || null,
+      subpastas: serializarSubpastas(p.subpastas || [])
+    }));
+    const subpastasSerializadas = serializarSubpastas(pasta.subpastas || []);
     const sanitizarArtigoParaPasta = (art) => {
       const { pdfBlobUrl, pdfBlob, pdfDataUrl, ...resto } = art || {};
-      return resto;
+      const origId = resto.pastaId || null;
+      return {
+        ...resto,
+        pastaOriginalId: origId,
+        pastaOriginalNome: origId ? (mapaNomesPastas.get(String(origId)) || '') : '',
+        pastasOriginaisIds: Array.isArray(resto.pastasIds) ? [...resto.pastasIds] : (origId ? [origId] : [])
+      };
     };
     const docPasta = {
       id: `pasta_bib_${pasta.id}${idSufixo}`,
@@ -1773,7 +1999,10 @@ export class EstudoArtigosView {
       pastaCompartilhada: {
         pastaOriginalId: pasta.id,
         nome: pasta.nome || 'Bibliografia',
+        origemZotero: Boolean(pasta.origemZotero || pasta.zoteroKey || /^zot_col_/.test(String(pasta.id))),
+        zoteroKey: pasta.zoteroKey || null,
         driveFolderId: pasta.driveId || null,
+        subpastas: subpastasSerializadas,
         artigos: obras.map(sanitizarArtigoParaPasta)
       }
     };
@@ -1856,7 +2085,10 @@ export class EstudoArtigosView {
           id: docPasta.id,
           pastaOriginalId: pasta.id,
           nome: pasta.nome || 'Bibliografia',
+          origemZotero: Boolean(pasta.origemZotero || pasta.zoteroKey || /^zot_col_/.test(String(pasta.id))),
+          zoteroKey: pasta.zoteroKey || null,
           driveFolderId: pasta.driveId || null,
+          subpastas: subpastasSerializadas,
           compartilhamento: { pessoas, publico },
           artigos: artigosResumoPasta
         };
