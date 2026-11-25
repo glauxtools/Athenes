@@ -228,7 +228,7 @@
   height: auto;
   aspect-ratio: 164 / 226;
   transform-style: flat;
-  transform: none; /* em repouso sem camada própria na GPU: com dezenas de livros, cada translateZ(0) virava uma camada e o navegador chegava a pintar retângulos pretos */
+  transform: none; /* em repouso sem camada própria na GPU: com dezenas de livros, forçar uma camada por livro fazia o navegador chegar a pintar retângulos pretos */
   isolation: isolate; /* mantém o contexto de empilhamento que o transform criava */
   transform-origin: 50% 100%;
   transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.45s ease;
