@@ -674,8 +674,9 @@ describe('Cenário 4: Perspectiva 3D, Classes Canônicas e Auditoria CSS', () =>
     assert.ok(cssContent.includes('transform-style: flat'), 'CSS deve manter a estante fechada plana');
     assert.ok(cssContent.includes('transform-style: preserve-3d'), 'CSS deve declarar transform-style: preserve-3d');
 
-    // 3. Rotação canônica de repouso dos livros
-    assert.ok(cssContent.includes('rotateY(0deg) translateZ(0)'), 'CSS deve declarar rotateY(0deg) translateZ(0)');
+    // 3. Repouso dos livros: sem rotação nem camada própria na GPU (translateZ(0) em dezenas de livros causava retângulos pretos); o contexto de empilhamento vem de isolation
+    assert.ok(/\.ath-livro-3d \{[^}]*transform: none;[^}]*isolation: isolate;/.test(cssContent), 'livro em repouso deve usar transform: none com isolation: isolate');
+    assert.ok(!/\.ath-livro-3d \{[^}]*translateZ\(0\)/.test(cssContent), 'livro em repouso não deve forçar camada com translateZ(0)');
 
     // 4. Rotação canônica de abertura da capa (-140deg)
     assert.ok(cssContent.includes('rotateY(-160deg)'), 'CSS deve declarar rotateY(-160deg)');
