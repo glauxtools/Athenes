@@ -17,23 +17,59 @@
   <link rel="apple-touch-icon" href="src/ui/athenes_icon_192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="src/ui/athenes_icon_512.png">
 
+  <style>
+    .ath-inicializacao {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 16px;
+      padding: 24px;
+      background: #F7F8FB;
+      color: #314F79;
+      font: 700 14px/1.5 Nunito, system-ui, sans-serif;
+      text-align: center;
+    }
+    .ath-inicializacao p { margin: 0; }
+    .ath-inicializacao-indicador {
+      box-sizing: border-box;
+      width: 52px;
+      height: 52px;
+      border: 4px solid #DCE6F1;
+      border-top-color: #314F79;
+      border-radius: 50%;
+      animation: ath-inicializacao-girar .9s linear infinite;
+    }
+    .ath-inicializacao-saindo { pointer-events: none; animation: ath-inicializacao-sair .16s ease-out forwards; }
+    @keyframes ath-inicializacao-girar { to { transform: rotate(1turn); } }
+    @keyframes ath-inicializacao-sair { to { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .ath-inicializacao-indicador { animation-duration: 2.4s; }
+      .ath-inicializacao-saindo { animation-duration: 0s; }
+    }
+  </style>
+
   <!-- Folhas de Estilo Athenes (Soft UI + Nunito + Clux.js) -->
   <link rel="stylesheet" href="src/css/athenes_base.css">
   <link rel="stylesheet" href="src/css/athenes_dashboard.css?v=20">
   <link rel="stylesheet" href="src/css/athenes_editor.css?v=16">
   <link rel="stylesheet" href="src/css/athenes_paineis.css?v=2">
   <link rel="stylesheet" href="src/css/athenes_zotero.css">
-  <link rel="stylesheet" href="src/css/athenes_estante_3d.css?v=24">
+  <link rel="stylesheet" href="src/css/athenes_estante_3d.css?v=25">
   <link rel="stylesheet" href="src/css/athenes_traducao.css?v=9">
   <link rel="stylesheet" href="src/css/athenes_busca_artigo.css?v=1">
 </head>
 <body>
-  <div id="athenesAppRoot"></div>
+  <div id="athenesAppRoot" aria-busy="true"></div>
+  <div class="ath-inicializacao" id="athenesInicializacao" role="status">
+    <span class="ath-inicializacao-indicador" aria-hidden="true"></span>
+    <p>Carregando o Athenes…</p>
+  </div>
+  <noscript><style>#athenesInicializacao { display: none; }</style><div class="ath-inicializacao">Ative o JavaScript para abrir o Athenes.</div></noscript>
 
   <script type="module">
-    import { AthenesApp } from './src/ui/athenes_app.js';
-    import { carregarFontesImportadas } from './src/ui/athenes_fontes_ui.js';
-
     // Suporte PWA — Instalação e Service Worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -61,16 +97,36 @@
 
     window.addEventListener('error', (e) => {
       console.error('[Athenes Error]', e.error || e.message);
-      const root = document.getElementById('athenesAppRoot');
-      if (root && (!root.innerHTML || root.innerHTML.trim() === '')) {
-        root.innerHTML = '<div style="padding:32px; font-family:Nunito, sans-serif; color:#B42318;"><h3>Erro de Inicialização</h3><p>' + (e.message || 'Falha ao inicializar o Athenes') + '</p></div>';
-      }
     });
 
     const iniciarApp = async () => {
-      try { await Promise.race([carregarFontesImportadas(), new Promise(r => setTimeout(r, 2500))]); } catch (_) {}
       const root = document.getElementById('athenesAppRoot');
-      if (root) window.athenesApp = new AthenesApp(root);
+      const inicializacao = document.getElementById('athenesInicializacao');
+      try {
+        const [{ AthenesApp }, { carregarFontesImportadas }] = await Promise.all([
+          import('./src/ui/athenes_app.js'),
+          import('./src/ui/athenes_fontes_ui.js')
+        ]);
+        try { await Promise.race([carregarFontesImportadas(), new Promise(r => setTimeout(r, 2500))]); } catch (_) {}
+        window.athenesApp = new AthenesApp(root);
+        inicializacao.setAttribute('aria-hidden', 'true');
+        inicializacao.classList.add('ath-inicializacao-saindo');
+        inicializacao.addEventListener('animationend', ev => {
+          if (ev.target === inicializacao) inicializacao.remove();
+        });
+      } catch (erro) {
+        console.error('[Athenes] Falha ao iniciar:', erro);
+        const mensagem = document.createElement('p');
+        mensagem.textContent = 'Não foi possível carregar o Athenes.';
+        const tentar = document.createElement('button');
+        tentar.type = 'button';
+        tentar.textContent = 'Tentar novamente';
+        tentar.addEventListener('click', () => window.location.reload());
+        inicializacao.setAttribute('role', 'alert');
+        inicializacao.replaceChildren(mensagem, tentar);
+      } finally {
+        root.removeAttribute('aria-busy');
+      }
     };
 
     if (document.readyState === 'loading') {

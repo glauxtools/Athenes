@@ -1183,12 +1183,11 @@
   }
 }
 
-/* Apenas celulares estreitos usam a ficha isolada; tablets mantêm o livro aberto completo. */
+/* A ficha ocupa o espaço disponível no celular. */
 @media (max-width: 520px) {
   .ath-livro-3d.aberto {
     scale: 1 !important;
   }
-  .ath-livro-3d.aberto .ath-livro-capa,
   .ath-livro-3d.aberto .ath-livro-capa-tras {
     display: none !important;
   }
@@ -1399,10 +1398,20 @@
 }
 
 @media (max-width: 520px) {
-  .ath-livro-3d.ath-livro-fechando .ath-livro-capa,
   .ath-livro-3d.ath-livro-fechando .ath-livro-capa-tras { display: none; }
+  .ath-livro-3d.aberto .ath-livro-capa.ath-livro-capa-frente {
+    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px)));
+    transform: perspective(2600px) translateZ(10px) rotateY(-38deg);
+    opacity: 0;
+    pointer-events: none;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.28s ease 0.25s, opacity 0.25s ease 0.25s;
+  }
+  .ath-livro-3d.ath-livro-fechando .ath-livro-capa.ath-livro-capa-frente {
+    transition: width 0.28s ease 0.5s, height 0.28s ease 0.5s, transform 0.28s ease, opacity 0.2s ease;
+  }
   .ath-livro-3d.ath-livro-fechando .ath-livro-folha-interna {
-    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))); max-width: 380px; transform: none; transition-delay: 0s;
+    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))); max-width: 380px; transform: none; transition-delay: 0.22s;
   }
 }
 
@@ -1411,6 +1420,10 @@
   .ath-livro-3d.ath-livro-fechando > *,
   .ath-livro-3d.aberto,
   .ath-livro-3d.aberto > * { transition: none !important; animation: none !important; }
+  .ath-livro-3d.aberto > .ath-livro-folha-interna,
+  .ath-livro-3d.ath-livro-fechando > .ath-livro-folha-interna {
+    transition: opacity 0.2s ease !important;
+  }
 }
 
 /* Contracapa: mesma geometria de antes (right: -22px), agora com largura e altura explícitas */

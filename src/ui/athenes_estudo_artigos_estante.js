@@ -669,7 +669,10 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
       const fichaCompacta = globalThis.matchMedia?.('(max-width: 520px)').matches;
       const larguraAbertoEsq = fichaCompacta ? 0 : 290;
       const larguraAbertoDir = fichaCompacta ? Math.max(1, Math.min(380, larguraDisponivel)) : 295;
-      if (fichaCompacta) livroEl.style.setProperty('--ath-open-page-width', `${larguraAbertoDir}px`);
+      if (fichaCompacta) {
+        livroEl.style.setProperty('--ath-open-page-width', `${larguraAbertoDir}px`);
+        if (larguraCapaFechada > 0) livroEl.style.setProperty('--ath-capa-escala-aberta', String(larguraAbertoDir / larguraCapaFechada));
+      }
       const larguraTotalLivro = larguraAbertoEsq + larguraAbertoDir; // ~575px
 
       let escala = 1;
