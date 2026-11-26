@@ -1333,3 +1333,77 @@
 .ath-livro-3d.aberto {
   isolation: auto;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   17. O livro inteiro cresce e diminui junto (capa, contracapa e bloco de páginas)
+   Antes só a capa crescia: a contracapa e o bloco de páginas ficavam do tamanho do livro na prateleira e a capa parecia
+   "desgrudar" do livro. No fechar, as laterais encolhiam na hora e a capa ainda grande parecia inchar. Agora as três peças
+   têm tamanho explícito (para o navegador poder animar) e mudam de tamanho no mesmo tempo:
+   - abrir: tudo cresce junto (0,3 s) a partir do estado em que o livro estava (inclusive o de hover) e só então a capa gira;
+   - fechar: a capa gira de volta primeiro e depois tudo encolhe junto.
+   Transições em vez de animação por quadros-chave: a abertura parte do estado real (o livro inclinado do hover), sem salto.
+   A perspectiva da capa é mais longa (2600px): no meio do giro a borda da capa vinha muito na direção de quem olha e a capa
+   parecia aumentar de tamanho.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.ath-livro-3d.aberto .ath-livro-capa,
+.ath-livro-3d.aberto .ath-livro-capa-frente {
+  animation: none;
+  transform: perspective(2600px) translateZ(10px) rotateY(-180deg);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.7s cubic-bezier(0.45, 0.05, 0.25, 1) 0.26s, box-shadow 0.6s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ath-livro-3d:not(.aberto):hover .ath-livro-capa {
+    transform: perspective(2600px) translateZ(0px) rotateY(-9deg);
+  }
+}
+.ath-livro-3d:not(.aberto).ath-livro-previa .ath-livro-capa {
+  transform: perspective(2600px) translateZ(0px) rotateY(-9deg);
+}
+/* Fechando (classe posta pelo fecharLivro3D por 1 s): o giro de volta termina numa transformação com as mesmas funções da
+   aberta, então o navegador interpola só o ângulo. Voltar direto a "none" fazia a capa inchar no meio do giro. */
+.ath-livro-3d.ath-livro-fechando:not(.aberto) .ath-livro-capa {
+  transform: perspective(2600px) translateZ(0px) rotateY(0deg);
+}
+/* O livro fechado herda "perspective: 1000px" (é também .ath-livro-3d-wrap). Aberto ela é desligada; se voltasse na hora do
+   fechar, a capa ainda girando ganhava essa perspectiva forte e inchava até ~1,4x. Só volta quando o fechamento termina. */
+.ath-livro-3d.ath-livro-fechando:not(.aberto) {
+  perspective: none;
+}
+
+/* Contracapa: mesma geometria de antes (right: -22px), agora com largura e altura explícitas */
+.ath-livro-capa-tras {
+  right: auto;
+  bottom: auto;
+  width: calc(100% + 22px);
+  height: 100%;
+}
+.ath-livro-3d:not(.aberto) .ath-livro-capa-tras {
+  transition: transform .65s cubic-bezier(.25, 1, .5, 1), width 0.28s ease 0.5s, height 0.28s ease 0.5s;
+}
+.ath-livro-3d.aberto .ath-livro-capa-tras {
+  width: 312px;
+  height: 420px;
+  transform: translateX(-24px) translateZ(-2px); /* fica atrás da folha aberta */
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Bloco de páginas: mesma geometria de antes (right: -16px; top/bottom: 3px), agora com left e altura explícitos */
+.ath-livro-paginas-dir {
+  right: auto;
+  bottom: auto;
+  left: calc(100% - 4px);
+  height: calc(100% - 6px);
+}
+.ath-livro-3d:not(.aberto) .ath-livro-paginas-dir {
+  transition: transform .65s cubic-bezier(.25, 1, .5, 1), left 0.28s ease 0.5s, height 0.28s ease 0.5s;
+}
+.ath-livro-3d.aberto .ath-livro-paginas-dir {
+  left: 286px;
+  height: 414px;
+  width: 20px;
+  opacity: 1;
+  transform: translateX(-18px); /* rente à borda da capa, atrás da folha aberta */
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

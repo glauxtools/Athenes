@@ -636,6 +636,8 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
     }
   }
 
+  clearTimeout(livroEl._tFechando);
+  livroEl.classList?.remove?.('ath-livro-fechando');
   if (livroEl.classList) livroEl.classList.add('aberto');
   container?.classList?.add('ath-estante-com-livro-aberto');
   livroEl.closest?.('.ath-estante-prateleira')?.classList?.add('ath-prateleira-com-livro-aberto');
@@ -817,6 +819,15 @@ export function fecharLivro3D(livroEl) {
 
   if (livroEl.classList) {
     livroEl.classList.remove('aberto');
+    // Durante o fechamento a capa mantém uma transformação 3D do mesmo tipo da aberta: voltar direto para "sem transformação"
+    // fazia o navegador interpolar a perspectiva de forma errada e a capa parecia inchar no meio do giro.
+    if (typeof livroEl.classList.add === 'function') livroEl.classList.add('ath-livro-fechando');
+    clearTimeout(livroEl._tFechando);
+    livroEl._tFechando = setTimeout(() => {
+      livroEl.classList?.remove?.('ath-livro-fechando'); // em repouso volta a não ter camada própria na placa de vídeo
+      delete livroEl._tFechando;
+    }, 1000);
+    livroEl._tFechando?.unref?.();
   }
   livroEl.closest?.('.ath-estante-prateleira')?.classList?.remove('ath-prateleira-com-livro-aberto');
   (livroEl.closest?.('.ath-estante-3d') || livroEl.closest?.('.ath-estante-container'))
