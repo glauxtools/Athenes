@@ -1233,3 +1233,83 @@
     animation-delay: 0s !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   16. Coreografia da abertura do livro
+   Antes a folha branca aparecia inteira de uma vez, NA FRENTE da capa (a capa ficava atrás dela até passar de 90°) e a capa
+   trocava de tamanho sem transição: o livro "pulava" para a folha e só depois a capa surgia de trás. Agora:
+   1) a capa fica na frente da folha (translateZ acima dela) e cresce até o tamanho da folha;
+   2) com um pequeno atraso, gira até -160° como uma capa de verdade;
+   3) a folha surge por trás com um esmaecimento curto.
+   As listas de transformação da capa (repouso, prévia/hover e aberta) têm as mesmas funções, para o navegador interpolar
+   ângulo por ângulo em vez de misturar matrizes (o que deixava o giro torto).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.ath-livro-capa,
+.ath-livro-capa-frente {
+  width: 100%;
+  height: 100%;
+  transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1), width 0.24s ease 0.38s, height 0.24s ease 0.38s, box-shadow 0.6s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ath-livro-3d:not(.aberto):hover .ath-livro-capa {
+    transform: translateZ(0px) rotateY(-9deg); /* a perspectiva vem do próprio livro (perspective: 1000px) */
+  }
+}
+.ath-livro-3d:not(.aberto).ath-livro-previa .ath-livro-capa {
+  transform: translateZ(0px) rotateY(-9deg); /* a perspectiva vem do próprio livro (perspective: 1000px) */
+}
+
+.ath-livro-3d.aberto .ath-livro-capa,
+.ath-livro-3d.aberto .ath-livro-capa-frente {
+  transform: translateZ(10px) rotateY(-160deg);
+  /* em etapas: a capa (na frente da folha, z = 10px) cresce até o tamanho da folha e então gira como uma capa de verdade */
+  animation: ath-capa-abre 0.95s cubic-bezier(0.45, 0.05, 0.25, 1) both;
+}
+
+@keyframes ath-capa-abre {
+  0%   { width: 100%;  height: 100%;  transform: translateZ(10px) rotateY(0deg); }
+  28%  { width: 290px; height: 420px; transform: translateZ(10px) rotateY(0deg); }
+  100% { width: 290px; height: 420px; transform: translateZ(10px) rotateY(-160deg); }
+}
+
+.ath-livro-3d.aberto .ath-livro-folha-interna {
+  animation: ath-folha-aparece 0.3s ease 0.2s both; /* surge por trás enquanto a capa cresce */
+}
+
+@keyframes ath-folha-aparece {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* O livro fechado não guarda transformação própria (o fechamento grava uma no estilo do elemento): a prévia/hover volta a
+   deslizar e, em repouso, nenhuma camada extra fica presa na placa de vídeo. */
+.ath-livro-3d:not(.aberto) {
+  transform: none !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ath-livro-3d:not(.aberto):hover {
+    transform: translateX(-11px) !important;
+  }
+}
+.ath-livro-3d:not(.aberto):focus-visible,
+.ath-livro-3d:not(.aberto).ath-livro-previa {
+  transform: translateX(-11px) !important;
+}
+
+/* reduzir movimento: segue a escolha do Athenes (classe na raiz), como o resto da estante */
+@media (prefers-reduced-motion: reduce) {
+  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-folha-interna,
+  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-capa,
+  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-capa-frente { animation: none; }
+}
+
+/* Os textos da capa só somem quando ela fica de lado no giro (antes sumiam na hora e a capa crescia em branco) */
+.ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-header,
+.ath-livro-3d.aberto .ath-livro-capa .ath-livro-titulo,
+.ath-livro-3d.aberto .ath-livro-capa .ath-livro-autores,
+.ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-footer,
+.ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-vinco-esq {
+  transition: opacity 0.12s ease 0.42s;
+}
