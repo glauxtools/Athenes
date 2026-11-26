@@ -1050,10 +1050,18 @@ export class EstudoArtigosView {
       <div id="athBibTopoPastasWrapper"></div>
 
       <div class="ath-estudo-barra-topo">
-        <div style="display:flex; align-items:center; gap:8px; flex:1; max-width:620px;">
+        <div class="ath-bib-busca-grupo" id="athBibBuscaGrupo" style="display:flex; align-items:center; gap:8px; flex:1; max-width:620px;">
           <div class="ath-busca-box" style="flex:1;">
             ${svgIcone('busca', 16)}
             <input type="text" class="ath-input" id="athEstudoBuscaInput" value="${escapeHtml(this.filtroBusca)}" placeholder="Buscar artigo por título, autor, tag Zotero ou citação marcada...">
+          </div>
+
+          <!-- Em quais subpastas a busca também procura (só aparece quando a pasta aberta tem subpastas) -->
+          <div class="ath-menu-popover-wrap" id="athMenuSubpastasBuscaWrap" hidden>
+            <button type="button" class="ath-btn ath-btn-icone" id="athBtnSubpastasBusca" title="Subpastas incluídas na busca" aria-label="Subpastas incluídas na busca" aria-haspopup="menu" aria-expanded="false">
+              ${svgIcone('pasta', 16)}
+            </button>
+            <div class="ath-menu-popover ath-menu-subpastas-busca" id="athMenuSubpastasBuscaPopover" role="menu" hidden></div>
           </div>
 
           <!-- Botão de Definir Ordem das Referências -->
@@ -1251,10 +1259,29 @@ export class EstudoArtigosView {
     this.atualizarPopoverFiltrosVariaveis(wrap, marcarFiltroAtivo);
     marcarFiltroAtivo();
 
+    // Popover "Subpastas na busca": escolhe em quais pastas filhas a busca também procura
+    const btnSubBusca = wrap.querySelector('#athBtnSubpastasBusca');
+    const popSubBusca = wrap.querySelector('#athMenuSubpastasBuscaPopover');
+    const fecharSubBusca = () => {
+      if (!popSubBusca) return;
+      popSubBusca.hidden = true;
+      btnSubBusca?.setAttribute('aria-expanded', 'false');
+    };
+    btnSubBusca?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      fecharOrd();
+      fecharFiltroBib();
+      const abrir = popSubBusca.hidden;
+      if (abrir) this.atualizarPopoverSubpastasBusca(popSubBusca);
+      popSubBusca.hidden = !abrir;
+      btnSubBusca.setAttribute('aria-expanded', String(abrir));
+    });
+
     if (this._fecharMenuOrdemBib) document.removeEventListener('click', this._fecharMenuOrdemBib);
     this._fecharMenuOrdemBib = (ev) => {
       if (!ev.target.closest?.('#athMenuOrdenarBib')) fecharOrd();
       if (!ev.target.closest?.('#athMenuFiltrarBibWrap')) fecharFiltroBib();
+      if (!ev.target.closest?.('#athMenuSubpastasBuscaWrap')) fecharSubBusca();
     };
     document.addEventListener('click', this._fecharMenuOrdemBib);
 
@@ -1321,7 +1348,102 @@ export class EstudoArtigosView {
       this.abrirModalVincularArtigo();
     });
 
+    // Busca, ordenar e filtrar ficam no cabeçalho fixo da pasta (ao lado dos botões de ação): assim continuam à vista
+    // quando a estante rola. Os eventos já foram ligados acima; mover o elemento não os perde.
+    const grupoBusca = wrap.querySelector('#athBibBuscaGrupo');
+    const bannerPasta = containerHeaderAcoes?.closest?.('#athDashPastaBanner');
+    if (grupoBusca && bannerPasta) {
+      bannerPasta.querySelectorAll('#athBibBuscaGrupo').forEach(antigo => antigo.remove()); // de uma renderização anterior
+      grupoBusca.classList.add('ath-bib-busca-no-topo');
+      grupoBusca.removeAttribute('style');
+      bannerPasta.insertBefore(grupoBusca, containerHeaderAcoes);
+      wrap.querySelector('.ath-estudo-barra-topo')?.classList.add('ath-estudo-barra-topo-vazia');
+    }
+
     this.atualizarGridCatalogo();
+  }
+
+  /** Subpastas (de qualquer nível) da pasta aberta, na árvore local; vazio para "todas" e listas especiais. */
+  subpastasDaPastaAtual() {
+    const pid = this.pastaFiltroId;
+    if (!pid || pid === 'todas' || pid === 'compartilhados_comigo') return [];
+    const pasta = buscarPastaNaArvore(obterPastasDriveLocais(), pid);
+    const lista = [];
+    const rec = (pastas, nivel) => {
+      for (const p of pastas || []) {
+        if (!p?.id) continue;
+        lista.push({ id: p.id, nome: p.nome || 'Pasta sem nome', nivel });
+        rec(p.subpastas, nivel + 1);
+      }
+    };
+    rec(pasta?.subpastas, 0);
+    return lista;
+  }
+
+  /** IDs das subpastas em que a busca por texto também procura (todas, menos as que o usuário desmarcou). */
+  idsSubpastasNaBusca() {
+    if (!this.filtroBusca) return [];
+    const fora = this.subpastasForaDaBusca || new Set();
+    return this.subpastasDaPastaAtual().map(p => p.id).filter(id => !fora.has(id));
+  }
+
+  /** Mostra o botão de subpastas só quando a pasta aberta tem pastas filhas e o marca quando alguma foi desmarcada. */
+  atualizarBotaoSubpastasBusca() {
+    const wrapBtn = document.getElementById('athMenuSubpastasBuscaWrap');
+    if (!wrapBtn) return;
+    const subs = this.subpastasDaPastaAtual();
+    wrapBtn.hidden = subs.length === 0;
+    const fora = this.subpastasForaDaBusca || new Set();
+    const qtdFora = subs.filter(p => fora.has(p.id)).length;
+    const btn = wrapBtn.querySelector('#athBtnSubpastasBusca');
+    btn?.classList.toggle('ath-btn-filtro-ativo', qtdFora > 0);
+    if (btn) {
+      const txt = qtdFora > 0
+        ? `A busca procura em ${subs.length - qtdFora} de ${subs.length} subpastas: clique para escolher`
+        : `A busca também procura nas ${subs.length} subpastas: clique para escolher`;
+      btn.title = txt;
+      btn.setAttribute('aria-label', txt);
+    }
+  }
+
+  atualizarPopoverSubpastasBusca(pop) {
+    if (!pop) return;
+    if (!this.subpastasForaDaBusca) this.subpastasForaDaBusca = new Set();
+    const fora = this.subpastasForaDaBusca;
+    const subs = this.subpastasDaPastaAtual();
+    pop.innerHTML = `
+      <div class="ath-menu-popover-header"><strong>Buscar também nas subpastas</strong></div>
+      <small class="ath-subpastas-busca-dica">Ao digitar na busca, as obras destas pastas filhas também aparecem.</small>
+      <div class="ath-subpastas-busca-acoes">
+        <button type="button" data-subpastas-todas>Todas</button>
+        <button type="button" data-subpastas-nenhuma>Nenhuma</button>
+      </div>
+      <div class="ath-subpastas-busca-lista">
+        ${subs.map(p => `<label class="ath-subpastas-busca-item" style="padding-left:${8 + p.nivel * 14}px;">
+          <input type="checkbox" data-subpasta-busca="${escapeHtml(p.id)}" ${fora.has(p.id) ? '' : 'checked'}>
+          ${svgIcone('pasta', 13)}<span>${escapeHtml(p.nome)}</span>
+        </label>`).join('')}
+      </div>
+    `;
+    const aplicar = () => {
+      this.atualizarBotaoSubpastasBusca();
+      if (this.filtroBusca) this.atualizarGridCatalogo();
+    };
+    pop.querySelectorAll('[data-subpasta-busca]').forEach(chk => chk.addEventListener('change', () => {
+      if (chk.checked) fora.delete(chk.dataset.subpastaBusca);
+      else fora.add(chk.dataset.subpastaBusca);
+      aplicar();
+    }));
+    pop.querySelector('[data-subpastas-todas]')?.addEventListener('click', () => {
+      subs.forEach(p => fora.delete(p.id));
+      pop.querySelectorAll('[data-subpasta-busca]').forEach(chk => { chk.checked = true; });
+      aplicar();
+    });
+    pop.querySelector('[data-subpastas-nenhuma]')?.addEventListener('click', () => {
+      subs.forEach(p => fora.add(p.id));
+      pop.querySelectorAll('[data-subpasta-busca]').forEach(chk => { chk.checked = false; });
+      aplicar();
+    });
   }
 
   converterItemZoteroParaEstudo(item, pastaId = 'pasta_bib_raiz') {
@@ -1714,6 +1836,9 @@ export class EstudoArtigosView {
     }
     grid.innerHTML = '';
 
+    this.atualizarBotaoSubpastasBusca();
+    // Com texto na busca, a pasta aberta também mostra as obras das subpastas escolhidas (todas, por padrão)
+    const idsSubBusca = this.idsSubpastasNaBusca();
     const filtrados = this.ordenarArtigos(this.artigosCatalogo()).filter(art => {
       if (this.pastaFiltroId && this.pastaFiltroId !== 'todas') {
         const pid = String(this.pastaFiltroId);
@@ -1724,10 +1849,12 @@ export class EstudoArtigosView {
           if (pIdArt && pastasRecebidasIds.has(pIdArt)) return false;
           if (Array.isArray(art.pastasCompartilhadasIds) && art.pastasCompartilhadasIds.some(id => pastasRecebidasIds.has(String(id)))) return false;
         } else if (pid === 'zotero_grupos_macro' || pid.startsWith('zot_grp_') || this.buscarPastaCompartilhadaRecebida(pid) || pid.startsWith('pasta_bib_')) {
-          if (!this.artigoPertenceAPastaCompartilhada(art, pid)) return false;
+          if (!this.artigoPertenceAPastaCompartilhada(art, pid)
+            && !idsSubBusca.some(id => this.artigoPertenceAPastaCompartilhada(art, id))) return false;
         } else {
           if (art.compartilhadoComigo) return false;
-          if (!artigoEstaNaPasta(art, this.pastaFiltroId)) return false;
+          if (!artigoEstaNaPasta(art, this.pastaFiltroId)
+            && !idsSubBusca.some(id => artigoEstaNaPasta(art, id))) return false;
         }
       } else if (art.compartilhadoComigo && this.filtroStatus !== 'compartilhados') {
         return false;

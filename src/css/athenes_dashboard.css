@@ -3264,3 +3264,69 @@ button.ath-dn-pasta:hover { background: #EEF4FA; border-color: #C8D7E6; }
   }
 }
 
+
+/* Busca, ordenar e filtrar da bibliografia no cabeçalho fixo da pasta (entre o nome da pasta e os botões de ação).
+   Mesma altura dos botões de ação (38px): o cabeçalho não fica mais alto. */
+.ath-dash-pasta-banner > .ath-bib-busca-no-topo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 440px;
+  min-width: 180px;
+  margin: 0 0 0 12px;
+  height: 38px;
+}
+.ath-bib-busca-no-topo .ath-busca-box {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ath-bib-busca-no-topo .ath-busca-box input {
+  width: 100%;
+  height: 34px;
+  min-height: 0;
+  margin: 0;
+  font-size: 12.5px;
+  box-sizing: border-box;
+}
+.ath-bib-busca-no-topo .ath-btn-icone { width: 34px; height: 34px; }
+.ath-bib-busca-no-topo .ath-menu-popover-wrap,
+.ath-bib-busca-no-topo .ath-menu-ordenar-bib { position: relative; flex: 0 0 auto; }
+.ath-bib-busca-no-topo .ath-menu-popover,
+.ath-bib-busca-no-topo .ath-menu-ordenar-popover { z-index: 60; }
+.ath-estudo-barra-topo.ath-estudo-barra-topo-vazia { display: none; }
+
+/* Popover "Buscar também nas subpastas" */
+.ath-menu-subpastas-busca { width: min(300px, calc(100vw - 24px)); max-height: min(70vh, 520px); overflow-y: auto; }
+.ath-subpastas-busca-dica { display: block; color: #64748B; font-size: 11px; line-height: 1.35; margin: 0 10px 8px; }
+.ath-subpastas-busca-acoes { display: flex; gap: 6px; margin: 0 10px 6px; }
+.ath-subpastas-busca-acoes button {
+  border: 1px solid #C8D7E6; background: #EEF4FA; color: #314F79; font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+}
+.ath-subpastas-busca-lista { display: flex; flex-direction: column; gap: 1px; padding: 0 4px 6px; }
+.ath-subpastas-busca-item {
+  display: flex; align-items: center; gap: 6px; padding-top: 4px; padding-bottom: 4px; padding-right: 8px;
+  font-size: 12px; color: #1E293B; border-radius: 6px; cursor: pointer;
+}
+.ath-subpastas-busca-item:hover { background: #EEF4FA; }
+.ath-subpastas-busca-item input { margin: 0; accent-color: #314F79; flex: none; }
+.ath-subpastas-busca-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .ath-dash-pasta-banner > .ath-bib-busca-no-topo { flex-basis: 260px; min-width: 140px; }
+}
+@media (max-width: 640px) {
+  .ath-dash-pasta-banner > .ath-bib-busca-no-topo { order: 3; flex: 1 1 100%; margin-left: 0; }
+}
+
+/* Com a busca no cabeçalho, a linha de descrição da pasta não quebra (o cabeçalho manteria a altura de uma linha só) */
+.ath-dash-pasta-banner-info,
+.ath-dash-pasta-banner-info > div,
+.ath-dash-pasta-banner-info > div > div,
+.ath-dash-pasta-banner-info > div > div > div { min-width: 0; }
+.ath-dash-pasta-banner-info small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
