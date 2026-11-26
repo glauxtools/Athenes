@@ -3330,3 +3330,69 @@ button.ath-dn-pasta:hover { background: #EEF4FA; border-color: #C8D7E6; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Ordem das referências: a opção que está valendo fica bem visível */
+.ath-menu-ordenar-atual { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: #64748B; }
+.ath-menu-ordenar-atual b { color: var(--ath-primary, #314F79); font-weight: 800; }
+.ath-menu-ordenar-lista button.sel { box-shadow: inset 3px 0 0 var(--ath-primary, #314F79); }
+.ath-menu-ordenar-lista .ath-menu-ordenar-var-acoes button.sel {
+  background: var(--ath-primary, #314F79);
+  border-color: var(--ath-primary, #314F79);
+  color: #FFFFFF;
+  box-shadow: none;
+}
+.ath-menu-ordenar-lista .ath-menu-ordenar-var-acoes button.sel:hover { background: #26406A; color: #FFFFFF; }
+.ath-menu-ordenar-var-row:has(button.sel) .ath-menu-ordenar-var-nome { color: var(--ath-primary, #314F79); font-weight: 800; }
+
+/* Filtrar: a opção escolhida e os campos preenchidos ficam visíveis; o resumo "Ativos" fica preso no topo do menu */
+.ath-menu-popover-lista button.sel { box-shadow: inset 3px 0 0 var(--ath-primary, #314F79); }
+#athMenuFiltrarBibPopover > .ath-menu-popover-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #FFFFFF;
+}
+#athMenuFiltrarBibPopover input.ath-filtro-obra-preenchido {
+  border-color: var(--ath-primary, #314F79);
+  background: #EEF4FA;
+  box-shadow: 0 0 0 1px var(--ath-primary, #314F79) inset;
+}
+
+/* Ícones do cabeçalho da pasta: busca, pasta, ordenar e filtrar com o mesmo tamanho dos botões de ação (38px),
+   o mesmo espaçamento entre todos e um divisor fino separando o grupo da busca dos botões de ação */
+.ath-dash-pasta-banner > .ath-bib-busca-no-topo { gap: 8px; padding-right: 12px; border-right: 1px solid #E2E8F0; }
+.ath-bib-busca-no-topo .ath-btn-icone { width: 38px; height: 38px; }
+.ath-bib-busca-no-topo .ath-busca-box input { height: 38px; }
+.ath-dash-pasta-banner > .ath-bib-busca-no-topo + #athHeaderAcoesZotero { margin-left: 12px; gap: 8px; }
+
+/* Tablet: o grupo da busca encolhe primeiro e a descrição da pasta some, para os botões não se espremerem */
+@media (max-width: 1100px) {
+  .ath-dash-pasta-banner > .ath-bib-busca-no-topo { flex: 1 1 200px; min-width: 150px; gap: 6px; padding-right: 8px; }
+  .ath-dash-pasta-banner > .ath-bib-busca-no-topo + #athHeaderAcoesZotero { margin-left: 8px; gap: 6px; }
+  .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info small { display: none; }
+}
+
+/* Linha do nome da pasta no cabeçalho: nunca quebra; com pouco espaço, o rótulo "Pasta de bibliografia:" sai primeiro */
+.ath-dash-pasta-banner-info .ath-banner-rotulo,
+.ath-dash-pasta-banner-info .ath-badge { white-space: nowrap; flex: none; }
+.ath-dash-pasta-banner-info strong { min-width: 0; }
+.ath-menu-ordenar-atual { text-transform: none; letter-spacing: 0; }
+@media (max-width: 1400px) {
+  .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-banner-rotulo { display: none; }
+}
+
+/* Com a busca no cabeçalho: o nome da pasta ocupa só o que precisa (e encolhe com reticências); a busca fica com o resto */
+.ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info { flex: 0 1 auto; }
+.ath-dash-pasta-banner > .ath-bib-busca-no-topo { flex: 1 1 300px; max-width: 480px; margin-left: auto; }
+@media (max-width: 1100px) {
+  .ath-dash-pasta-banner > .ath-bib-busca-no-topo { flex: 1 1 240px; max-width: none; }
+}
+@media (max-width: 1100px) {
+  /* a descrição tem "display:block" escrito no próprio elemento: precisa de !important para sair no tablet */
+  .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info small { display: none !important; }
+}
+@media (max-width: 900px) {
+  /* tablet em pé: a etiqueta "Minha pasta" sai para a busca ter espaço para digitar */
+  .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info .ath-badge { display: none; }
+  .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info { max-width: 160px; }
+}

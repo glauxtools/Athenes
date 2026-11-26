@@ -413,7 +413,7 @@ export const metodosDashboardPastas = {
               ${svgIcone('pasta', 20)}
             <div style="min-width:0;">
               <div style="display:flex; align-items:center; gap:6px;">
-                <span style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">Pasta de Documentos:</span>
+                <span class="ath-banner-rotulo" style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">Pasta de Documentos:</span>
                 <strong style="font-size:13.5px; color:#314F79; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;">${escapeHtml(pastaInfo.nome)}</strong>
                 <span class="ath-badge ath-badge-info" style="font-size:10px;">${pastaInfo.origem === 'compartilhada' ? 'Compartilhada' : 'Minha Pasta'}</span>
               </div>
@@ -442,7 +442,7 @@ export const metodosDashboardPastas = {
               ${svgIcone((ehPastaCompNuvem || ehGrupoZotero) ? 'usuarios' : 'livro', 20)}
             <div style="min-width:0;">
               <div style="display:flex; align-items:center; gap:6px;">
-                <span style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">${rotuloTopo}</span>
+                <span class="ath-banner-rotulo" style="font-size:11px; font-weight:700; color:#64748B; text-transform:uppercase;">${rotuloTopo}</span>
                 <strong style="font-size:13.5px; color:#314F79; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;">${escapeHtml(pastaInfo.nome)}</strong>
                 <span class="ath-badge ath-badge-info" style="font-size:10px;">${badgeTexto}</span>
               </div>

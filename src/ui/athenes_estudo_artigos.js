@@ -1191,6 +1191,9 @@ export class EstudoArtigosView {
       this.atualizarGridCatalogo();
     });
 
+    // O grupo de busca/ordenar/filtrar é levado para o cabeçalho da pasta no fim desta função: os menus procuram nele,
+    // não no "wrap" (antes, depois da mudança, a lista de ordem não era redesenhada e a marcação ficava na opção antiga).
+    const escopoBuscaBib = wrap.querySelector('#athBibBuscaGrupo') || wrap;
     const btnOrd = wrap.querySelector('#athBtnOrdenarBib');
     const popOrd = wrap.querySelector('#athMenuOrdenarBibPopover');
     const fecharOrd = () => {
@@ -1202,12 +1205,12 @@ export class EstudoArtigosView {
       ev.stopPropagation();
       fecharFiltroBib();
       const abrir = popOrd.hidden;
-      if (abrir) this.atualizarPopoverOrdem(wrap);
+      if (abrir) this.atualizarPopoverOrdem(escopoBuscaBib);
       popOrd.hidden = !abrir;
       btnOrd.setAttribute('aria-expanded', String(abrir));
       if (abrir) popOrd.querySelector('button')?.focus();
     });
-    this.atualizarPopoverOrdem(wrap);
+    this.atualizarPopoverOrdem(escopoBuscaBib);
     // Popover Filtrar Referências
     const btnFiltroBib = wrap.querySelector('#athBtnFiltrarBib');
     const popFiltroBib = wrap.querySelector('#athMenuFiltrarBibPopover');
@@ -1216,17 +1219,29 @@ export class EstudoArtigosView {
       popFiltroBib.hidden = true;
       btnFiltroBib?.setAttribute('aria-expanded', 'false');
     };
-    const marcarFiltroAtivo = () => btnFiltroBib?.classList.toggle(
-      'ath-btn-filtro-ativo',
-      this.filtroStatus !== 'todos'
-        || Object.values(this.filtrosObra).some(Boolean)
-        || Object.keys(this.filtrosVariaveis || {}).length > 0
-    );
+    const marcarFiltroAtivo = () => {
+      btnFiltroBib?.classList.toggle(
+        'ath-btn-filtro-ativo',
+        this.filtroStatus !== 'todos'
+          || Object.values(this.filtrosObra).some(Boolean)
+          || Object.keys(this.filtrosVariaveis || {}).length > 0
+      );
+      // Resumo do que está filtrando, no topo do menu (o menu rola e a opção marcada podia ficar fora da vista)
+      const resumo = this.resumoFiltrosAtivos();
+      const cab = popFiltroBib?.querySelector('.ath-menu-popover-header');
+      if (cab) cab.innerHTML = `<strong>Filtrar Referências</strong><small class="ath-menu-ordenar-atual">${resumo.length ? `Ativos: <b>${escapeHtml(resumo.join(' · '))}</b>` : 'Mostrando todos os artigos'}</small>`;
+      popFiltroBib?.querySelectorAll('[data-filtro-obra]').forEach(inp => inp.classList.toggle('ath-filtro-obra-preenchido', Boolean(String(inp.value || '').trim())));
+      if (btnFiltroBib) {
+        const dica = resumo.length ? `Filtros ativos: ${resumo.join(' · ')}` : 'Filtrar referências e artigos';
+        btnFiltroBib.title = dica;
+        btnFiltroBib.setAttribute('aria-label', dica);
+      }
+    };
     btnFiltroBib?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       fecharOrd();
       const abrir = popFiltroBib.hidden;
-      if (abrir) this.atualizarPopoverFiltrosVariaveis(wrap, marcarFiltroAtivo);
+      if (abrir) this.atualizarPopoverFiltrosVariaveis(escopoBuscaBib, marcarFiltroAtivo);
       popFiltroBib.hidden = !abrir;
       btnFiltroBib.setAttribute('aria-expanded', String(abrir));
     });
@@ -1256,7 +1271,7 @@ export class EstudoArtigosView {
       marcarFiltroAtivo();
       this.atualizarGridCatalogo();
     });
-    this.atualizarPopoverFiltrosVariaveis(wrap, marcarFiltroAtivo);
+    this.atualizarPopoverFiltrosVariaveis(escopoBuscaBib, marcarFiltroAtivo);
     marcarFiltroAtivo();
 
     // Popover "Subpastas na busca": escolhe em quais pastas filhas a busca também procura
@@ -1361,6 +1376,27 @@ export class EstudoArtigosView {
     }
 
     this.atualizarGridCatalogo();
+  }
+
+  /** Textos curtos dos filtros que estão valendo (status, dados da obra e variáveis), para mostrar ao usuário. */
+  resumoFiltrosAtivos() {
+    const rotulosStatus = {
+      com_pdf: 'Com arquivo PDF', sem_pdf: 'Sem arquivo PDF', com_notas: 'Com notas ou fichamento',
+      com_riscos: 'Com riscos à mão livre', com_citacoes: 'Com citações marcadas', compartilhados: 'Compartilhados comigo'
+    };
+    const itens = [];
+    if (this.filtroStatus && this.filtroStatus !== 'todos') itens.push(rotulosStatus[this.filtroStatus] || this.filtroStatus);
+    const f = this.filtrosObra || {};
+    if (f.anoDe || f.anoAte) itens.push(`Ano ${f.anoDe || '…'}–${f.anoAte || '…'}`);
+    if (f.autor) itens.push(`Autor: ${f.autor}`);
+    if (f.editora) itens.push(`Publicação: ${f.editora}`);
+    if (f.palavra) itens.push(`Palavra-chave: ${f.palavra}`);
+    for (const regra of Object.values(this.filtrosVariaveis || {})) {
+      const vals = (Array.isArray(regra?.valores) ? regra.valores : (regra?.valor ? [regra.valor] : []))
+        .map(v => v === '__preenchida__' ? 'Preenchida' : (v === '__vazia__' ? 'Vazia' : v));
+      if (vals.length) itens.push(`${regra?.nome || 'Variável'}: ${vals.join(', ')}`);
+    }
+    return itens;
   }
 
   /** Subpastas (de qualquer nível) da pasta aberta, na árvore local; vazio para "todas" e listas especiais. */
@@ -1544,6 +1580,25 @@ export class EstudoArtigosView {
       }).join('')
       : '';
     lista.innerHTML = htmlPadrao + htmlVariaveis;
+
+    // Deixa claro qual ordem está valendo: no topo do menu e no próprio botão (destacado quando não é a padrão)
+    let rotuloAtual = opcoes.find(op => op.id === ordemAtual)?.rotulo || '';
+    if (!rotuloAtual && /^var_(asc|desc):/.test(ordemAtual)) {
+      const nomeVar = ordemAtual.slice(ordemAtual.indexOf(':') + 1);
+      rotuloAtual = `${nomeVar} (${ordemAtual.startsWith('var_desc:') ? 'Z → A' : 'A → Z'})`;
+    }
+    const cabecalho = escopo.querySelector('#athMenuOrdenarBibPopover .ath-menu-ordenar-header');
+    if (cabecalho) {
+      cabecalho.innerHTML = `<strong>Ordem das Referências</strong>${rotuloAtual ? `<small class="ath-menu-ordenar-atual">Atual: <b>${escapeHtml(rotuloAtual)}</b></small>` : ''}`;
+    }
+    const btnOrdem = escopo.querySelector('#athBtnOrdenarBib');
+    if (btnOrdem) {
+      const naoPadrao = ordemAtual !== 'recente_desc';
+      btnOrdem.classList.toggle('ath-btn-filtro-ativo', naoPadrao);
+      const dica = naoPadrao ? `Ordem das referências: ${rotuloAtual}` : 'Definir ordem das referências';
+      btnOrdem.title = dica;
+      btnOrdem.setAttribute('aria-label', dica);
+    }
     lista.querySelectorAll('[data-ordem-bib]').forEach(item => {
       item.addEventListener('click', () => {
         this.ordemReferencias = item.dataset.ordemBib;
@@ -1966,7 +2021,8 @@ export class EstudoArtigosView {
     }
 
     // Com obras das subpastas na estante, ela é dividida por pasta: primeiro as da própria pasta, depois cada subpasta
-    // (na ordem da árvore), cada grupo com um letreiro. Uma obra em várias pastas aparece só no primeiro grupo.
+    // (na ordem da árvore), cada grupo com um letreiro. Uma obra que está em várias pastas aparece em cada uma delas: a
+    // prateleira de cada pasta bate com o número mostrado na árvore (antes ficava só no primeiro grupo e faltavam obras).
     let secoes = null;
     if (idsSubBusca.length) {
       const pidAtual = String(this.pastaFiltroId);
@@ -1975,12 +2031,7 @@ export class EstudoArtigosView {
       const incluidas = new Set(idsSubBusca);
       const grupos = [{ id: pidAtual, titulo: nomeAtual, caminho: '', principal: true },
         ...this.subpastasDaPastaAtual().filter(p => incluidas.has(p.id)).map(p => ({ id: p.id, titulo: p.nome, caminho: p.caminho }))];
-      const usados = new Set();
-      secoes = grupos.map(g => {
-        const livros = filtrados.filter(art => !usados.has(art) && naPasta(art, g.id));
-        livros.forEach(art => usados.add(art));
-        return { ...g, livros };
-      });
+      secoes = grupos.map(g => ({ ...g, livros: filtrados.filter(art => naPasta(art, g.id)) }));
     }
 
     const estanteEl = renderizarEstante3D(filtrados, {
