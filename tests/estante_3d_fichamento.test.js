@@ -470,6 +470,29 @@ describe('Grupo 3: Cinemática 3D de Abertura, Fechamento e Teclado (R4 / F7)', 
     assert.ok(!livroA.classList.contains('aberto'), 'Livro A deve ter sido fechado automaticamente');
   });
 
+  it('espera o fechamento e abre somente o último livro escolhido', async () => {
+    const itens = ['a', 'b', 'c'].map(id => criarBookReferenceItem({ id }));
+    const estante = renderizarEstante3D(itens);
+    const [primeiro, segundo, terceiro] = estante.querySelectorAll('.ath-livro-3d');
+    let terminarTransicao;
+    const finished = new Promise(resolve => { terminarTransicao = resolve; });
+    abrirLivro3D(primeiro, itens[0]);
+    primeiro.getAnimations = () => [{ transitionProperty: 'transform', finished }];
+
+    abrirLivro3D(segundo, itens[1]);
+    abrirLivro3D(terceiro, itens[2]);
+    assert.ok(primeiro.classList.contains('ath-livro-fechando'));
+    assert.ok(estante.classList.contains('ath-estante-com-livro-aberto'));
+    assert.ok(!segundo.classList.contains('aberto') && !terceiro.classList.contains('aberto'));
+
+    terminarTransicao();
+    await finished;
+    await Promise.resolve();
+    assert.ok(!primeiro.classList.contains('ath-livro-fechando'));
+    assert.ok(!segundo.classList.contains('aberto'));
+    assert.ok(terceiro.classList.contains('aberto'));
+  });
+
   it('3.7a: Efeito 3D fica ativo apenas na prateleira com livro aberto', () => {
     const ref = criarBookReferenceItem({ id: 'liv_foco' });
     const estante = renderizarEstante3D([ref]);
@@ -865,9 +888,9 @@ describe('Grupo 7: CSS e Acessibilidade de Movimento (WCAG 2.3.3 / Iteração 2)
   const cssPath = join(__dirname, '..', 'src', 'css', 'athenes_estante_3d.css');
   const cssContent = readFileSync(cssPath, 'utf8');
 
-  it('7.1: Folha fechada possui regra CSS de ocultação estrita com !important (.ath-livro-3d:not(.aberto) .ath-livro-folha-interna)', () => {
+  it('7.1: a folha fica oculta no repouso e disponível durante o fechamento', () => {
     assert.ok(
-      cssContent.includes('.ath-livro-3d:not(.aberto) .ath-livro-folha-interna'),
+      cssContent.includes('.ath-livro-3d:not(.aberto):not(.ath-livro-fechando) .ath-livro-folha-interna'),
       'CSS deve conter seletor de ocultação para folha de livro fechado'
     );
     assert.ok(

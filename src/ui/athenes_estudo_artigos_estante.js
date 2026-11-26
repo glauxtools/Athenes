@@ -602,6 +602,12 @@ export function renderizarLivro3D(ref = {}, { callbacks = {} } = {}) {
 // 4. Cinemática de Abertura e Fechamento 3D (R4 / F7)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const sequenciasEstante = new WeakMap();
+
+function containerDoLivro(livro) {
+  return livro.closest?.('.ath-estante-3d') || livro.closest?.('.ath-estante-container') || livro.parentNode || livro;
+}
+
 /**
  * Abre o livro na prateleira com elevação no eixo Z e rotação da capa frontal.
  * Fecha automaticamente qualquer outro exemplar aberto na estante.
@@ -612,32 +618,19 @@ export function renderizarLivro3D(ref = {}, { callbacks = {} } = {}) {
  */
 export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   if (!livroEl) return;
-
-  // Fecha qualquer outro livro aberto na mesma estante
-  let container = null;
-  if (typeof livroEl.closest === 'function') {
-    container = livroEl.closest('.ath-estante-3d') || livroEl.closest('.ath-estante-container') || livroEl.parentNode;
+  const container = containerDoLivro(livroEl);
+  const atual = sequenciasEstante.get(container);
+  if (atual) {
+    if (atual.livro === livroEl && !atual.fechando) return;
+    atual.proximo = { livroEl, ref, callbacks };
+    if (!atual.fechando) fecharLivro3D(atual.livro);
+    return;
   }
-  if (!container && typeof document !== 'undefined') container = document;
-
-  if (container && typeof container.querySelectorAll === 'function') {
-    const abertos = container.querySelectorAll('.ath-livro-3d.aberto');
-    if (abertos && abertos.length > 0) {
-      for (const outro of abertos) {
-        if (outro !== livroEl) fecharLivro3D(outro);
-      }
-    } else {
-      const todos = container.querySelectorAll('.ath-livro-3d');
-      for (const outro of todos) {
-        if (outro !== livroEl && outro.classList && (outro.classList.contains('aberto') || outro.classList.has?.('aberto'))) {
-          fecharLivro3D(outro);
-        }
-      }
-    }
-  }
-
-  clearTimeout(livroEl._tFechando);
-  livroEl.classList?.remove?.('ath-livro-fechando');
+  const scrim = globalThis.document?.getElementById?.('athEstanteScrim');
+  sequenciasEstante.set(container, { livro: livroEl, scrim });
+  livroEl.scrollIntoView?.({ behavior: 'instant', block: 'center', inline: 'nearest' });
+  const rectLivro = livroEl.getBoundingClientRect?.();
+  livroEl.classList?.remove?.('ath-livro-previa');
   if (livroEl.classList) livroEl.classList.add('aberto');
   container?.classList?.add('ath-estante-com-livro-aberto');
   livroEl.closest?.('.ath-estante-prateleira')?.classList?.add('ath-prateleira-com-livro-aberto');
@@ -647,9 +640,11 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   if (livroEl.style.removeProperty) {
     livroEl.style.removeProperty('--ath-open-shift-x');
     livroEl.style.removeProperty('--ath-open-scale');
+    livroEl.style.removeProperty('--ath-open-page-width');
   } else if (livroEl.style) {
     delete livroEl.style['--ath-open-shift-x'];
     delete livroEl.style['--ath-open-scale'];
+    delete livroEl.style['--ath-open-page-width'];
   }
 
   // Ajuste lateral e de escala dinâmico: impede que a capa (à esquerda) ou folha (à direita) sejam cortadas ou sobrepostas
@@ -657,8 +652,7 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
     ? (livroEl.closest('.ath-estante-container') || livroEl.closest('.ath-estante-3d') || livroEl.closest('.ath-estante-prateleira') || livroEl.parentElement)
     : null;
 
-  if (typeof livroEl.getBoundingClientRect === 'function' && typeof containerRef?.getBoundingClientRect === 'function') {
-    const rectLivro = livroEl.getBoundingClientRect();
+  if (rectLivro && typeof containerRef?.getBoundingClientRect === 'function') {
     const rectCont = containerRef.getBoundingClientRect();
 
     if (rectLivro && rectCont && (rectCont.width > 0 || (typeof window !== 'undefined' && window.innerWidth > 0))) {
@@ -667,11 +661,13 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
       const viewportDir = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 99999;
       const limiteDir = Math.min(viewportDir, (rectCont.right || viewportDir)) - margemSeguranca;
 
-      const larguraAbertoEsq = 280; // Projeção da capa aberta em 3D à esquerda (~290px * cos(20deg))
-      const larguraAbertoDir = 295; // Projeção da folha interna à direita com folga
+      const larguraDisponivel = limiteDir - limiteEsq;
+      const fichaCompacta = globalThis.matchMedia?.('(max-width: 520px)').matches;
+      const larguraAbertoEsq = fichaCompacta ? 0 : 290;
+      const larguraAbertoDir = fichaCompacta ? Math.max(1, Math.min(380, larguraDisponivel)) : 295;
+      if (fichaCompacta) livroEl.style.setProperty('--ath-open-page-width', `${larguraAbertoDir}px`);
       const larguraTotalLivro = larguraAbertoEsq + larguraAbertoDir; // ~575px
 
-      const larguraDisponivel = limiteDir - limiteEsq;
       let escala = 1;
 
       // Em telas tipo tablet onde o espaço livre para a estante é menor que a envergadura completa (575px),
@@ -732,10 +728,7 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   }
 
   // Backdrop / Scrim de Foco
-  if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
-    const scrim = document.getElementById('athEstanteScrim');
-    if (scrim?.classList) scrim.classList.add('ativo');
-  }
+  scrim?.classList.add('ativo');
 
   if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !livroEl._fecharAoClicarFora) {
     livroEl._pointerDownDentro = false;
@@ -761,7 +754,7 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
       const dentro = typeof livroEl.contains === 'function'
         ? livroEl.contains(ev.target)
         : ev.target?.closest?.('.ath-livro-3d') === livroEl;
-      if (!dentro) fecharLivro3D(livroEl);
+      if (!dentro && !ev.target?.closest?.('.ath-livro-3d')) fecharLivro3D(livroEl);
     };
     document.addEventListener('pointerdown', livroEl._marcarPointerDown, true);
     document.addEventListener('click', livroEl._fecharAoClicarFora, true);
@@ -776,6 +769,7 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
     if (folha.style) folha.style.display = 'flex';
   }
   if (folha && typeof folha.setAttribute === 'function') {
+    folha.inert = false;
     folha.setAttribute('aria-hidden', 'false');
   }
 
@@ -788,13 +782,10 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   const alvoFoco = tituloFolha || (folha && typeof folha.querySelector === 'function' ? folha.querySelector('.ath-status-btn.ativo, .ath-status-btn, .ath-btn-abrir-leitor') : null) || folha;
 
   setTimeout(() => {
-    if (!livroEl.classList?.contains?.('aberto') && !livroEl.classList?.has?.('aberto')) return;
+    if (livroEl.isConnected === false || (!livroEl.classList?.contains?.('aberto') && !livroEl.classList?.has?.('aberto'))) return;
     // O foco no controle não deve antecipar a rolagem para a folha.
     if (alvoFoco && typeof alvoFoco.focus === 'function') {
       try { alvoFoco.focus({ preventScroll: true }); } catch (_) {}
-    }
-    if (typeof livroEl.scrollIntoView === 'function') {
-      livroEl.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
     }
   }, 50);
 }
@@ -806,6 +797,11 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
  */
 export function fecharLivro3D(livroEl) {
   if (!livroEl) return;
+  const container = containerDoLivro(livroEl);
+  const atual = sequenciasEstante.get(container);
+  const estado = atual?.livro === livroEl ? atual : null;
+  if (estado?.fechando || (!estado && !livroEl.classList?.contains?.('aberto'))) return;
+  if (estado) estado.fechando = true;
 
   if (livroEl._marcarPointerDown && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
     document.removeEventListener('pointerdown', livroEl._marcarPointerDown, true);
@@ -817,21 +813,8 @@ export function fecharLivro3D(livroEl) {
     delete livroEl._fecharAoClicarFora;
   }
 
-  if (livroEl.classList) {
-    livroEl.classList.remove('aberto');
-    // Durante o fechamento a capa mantém uma transformação 3D do mesmo tipo da aberta: voltar direto para "sem transformação"
-    // fazia o navegador interpolar a perspectiva de forma errada e a capa parecia inchar no meio do giro.
-    if (typeof livroEl.classList.add === 'function') livroEl.classList.add('ath-livro-fechando');
-    clearTimeout(livroEl._tFechando);
-    livroEl._tFechando = setTimeout(() => {
-      livroEl.classList?.remove?.('ath-livro-fechando'); // em repouso volta a não ter camada própria na placa de vídeo
-      delete livroEl._tFechando;
-    }, 1000);
-    livroEl._tFechando?.unref?.();
-  }
-  livroEl.closest?.('.ath-estante-prateleira')?.classList?.remove('ath-prateleira-com-livro-aberto');
-  (livroEl.closest?.('.ath-estante-3d') || livroEl.closest?.('.ath-estante-container'))
-    ?.classList?.remove('ath-estante-com-livro-aberto');
+  livroEl.classList?.add('ath-livro-fechando');
+  livroEl.classList?.remove('aberto');
   if (!livroEl.style) livroEl.style = {};
   if (livroEl.style.removeProperty) {
     livroEl.style.removeProperty('--ath-open-shift-x');
@@ -848,32 +831,36 @@ export function fecharLivro3D(livroEl) {
     livroEl.setAttribute('tabindex', '0');
   }
 
-  // Oculta estritamente a folha interna para não vazar sobre os livros vizinhos
   const folha = (typeof livroEl.querySelector === 'function') ? livroEl.querySelector('.ath-livro-folha-interna') : null;
   if (folha) {
-    if (folha.style) folha.style.display = 'none';
+    folha.inert = true;
     if (typeof folha.setAttribute === 'function') folha.setAttribute('aria-hidden', 'true');
   }
 
-  // Desativa scrim se não houver mais livros abertos
-  if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
-    const scrim = document.getElementById('athEstanteScrim');
-    if (scrim?.classList) scrim.classList.remove('ativo');
-  }
-
-  // Restaura foco para o disparador original
-  if (livroEl._focoAnterior && typeof livroEl._focoAnterior.focus === 'function') {
-    try { livroEl._focoAnterior.focus(); } catch (_) {}
-    delete livroEl._focoAnterior;
-  } else if (typeof livroEl.focus === 'function') {
-    try { livroEl.focus(); } catch (_) {}
-  }
-
-  try {
-    if (typeof CustomEvent === 'function' && typeof livroEl.dispatchEvent === 'function') {
-      livroEl.dispatchEvent(new CustomEvent('athenes:livro-3d-fechado', { bubbles: true }));
+  const concluir = () => {
+    livroEl.classList?.remove('ath-livro-fechando');
+    if (folha?.style) folha.style.display = 'none';
+    if (estado) {
+      livroEl.closest?.('.ath-estante-prateleira')?.classList?.remove('ath-prateleira-com-livro-aberto');
+      container.classList?.remove('ath-estante-com-livro-aberto');
+      sequenciasEstante.delete(container);
     }
-  } catch (_) {}
+    const proximo = estado?.proximo;
+    if (proximo && proximo.livroEl.isConnected !== false) {
+      abrirLivro3D(proximo.livroEl, proximo.ref, { callbacks: proximo.callbacks });
+    } else {
+      estado?.scrim?.classList.remove('ativo');
+      if (livroEl.isConnected !== false) (livroEl._focoAnterior || livroEl).focus?.({ preventScroll: true });
+    }
+    delete livroEl._focoAnterior;
+    if (typeof CustomEvent === 'function') livroEl.dispatchEvent?.(new CustomEvent('athenes:livro-3d-fechado', { bubbles: true }));
+  };
+  // O fechamento termina quando as peças voltam ao lugar, inclusive se a transição for cancelada.
+  const pecas = [livroEl, folha, ...Array.from(livroEl.children || []).filter(el =>
+    el.matches?.('.ath-livro-capa, .ath-livro-capa-tras, .ath-livro-paginas-dir'))];
+  const transicoes = pecas.flatMap(el => el?.getAnimations?.() || []).filter(animacao => 'transitionProperty' in animacao);
+  if (transicoes.length) Promise.allSettled(transicoes.map(animacao => animacao.finished)).then(concluir);
+  else concluir();
 }
 
 /**
@@ -883,8 +870,10 @@ export function fecharLivro3D(livroEl) {
  */
 export function fecharTodosLivros3D(container) {
   if (!container || typeof container.querySelectorAll !== 'function') return;
-  const abertos = container.querySelectorAll('.ath-livro-3d.aberto');
+  const abertos = [...container.querySelectorAll('.ath-livro-3d.aberto'), ...container.querySelectorAll('.ath-livro-fechando')];
   for (const el of abertos) {
+    const estado = sequenciasEstante.get(containerDoLivro(el));
+    if (estado) estado.proximo = null;
     fecharLivro3D(el);
   }
 }

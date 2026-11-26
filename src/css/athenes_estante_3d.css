@@ -794,7 +794,7 @@
 }
 
 /* Ocultação total e estrita da folha interna quando o livro estiver fechado */
-.ath-livro-3d:not(.aberto) .ath-livro-folha-interna {
+.ath-livro-3d:not(.aberto):not(.ath-livro-fechando) .ath-livro-folha-interna {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1186,9 +1186,6 @@
 /* Apenas celulares estreitos usam a ficha isolada; tablets mantêm o livro aberto completo. */
 @media (max-width: 520px) {
   .ath-livro-3d.aberto {
-    width: min(100%, 380px);
-    flex-basis: min(100%, 380px);
-    translate: 0 0 !important;
     scale: 1 !important;
   }
   .ath-livro-3d.aberto .ath-livro-capa,
@@ -1196,7 +1193,7 @@
     display: none !important;
   }
   .ath-livro-3d.aberto .ath-livro-folha-interna {
-    width: 100% !important;
+    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))) !important;
     max-width: 380px !important;
     left: 0 !important;
     transform: none !important;
@@ -1276,12 +1273,11 @@
 }
 
 .ath-livro-3d.aberto .ath-livro-folha-interna {
-  animation: ath-folha-aparece 0.18s ease 0.28s both; /* só aparece quando a capa (já grande) começa a girar: antes a folha ficava visível em volta da capa */
+  transition: opacity 0.18s ease 0.28s;
 }
 
-@keyframes ath-folha-aparece {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@starting-style {
+  .ath-livro-3d.aberto .ath-livro-folha-interna { opacity: 0; }
 }
 
 /* O livro fechado não guarda transformação própria (o fechamento grava uma no estilo do elemento): a prévia/hover volta a
@@ -1322,16 +1318,15 @@
 }
 .ath-livro-3d:not(.aberto) {
   z-index: 1;
-  /* z-index só cai quando o fechamento termina: antes o livro ainda grande era coberto pelos vizinhos */
-  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, scale 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, box-shadow 0.45s ease 0.4s, z-index 0s linear 0.9s;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, scale 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, box-shadow 0.45s ease 0.4s;
 }
 .ath-estante-prateleira { z-index: 1; }
-.ath-estante-prateleira:not(.ath-prateleira-com-livro-aberto) { transition: z-index 0s linear 0.9s; }
 
 /* "isolation: isolate" (usado no livro fechado) é uma propriedade de agrupamento: ela ACHATA o 3D. Com o livro aberto,
    a folha era sempre pintada por cima da capa e a capa parecia "vir de trás". Aberto, o livro volta a ter 3D de verdade. */
 .ath-livro-3d.aberto {
   isolation: auto;
+  transform-style: flat; /* A capa gira em seu próprio plano 3D, acima da folha. */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1349,6 +1344,7 @@
 .ath-livro-3d.aberto .ath-livro-capa,
 .ath-livro-3d.aberto .ath-livro-capa-frente {
   animation: none;
+  z-index: 12;
   transform: perspective(2600px) translateZ(10px) rotateY(-180deg);
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     transform 0.7s cubic-bezier(0.45, 0.05, 0.25, 1) 0.26s, box-shadow 0.6s ease;
@@ -1361,15 +1357,42 @@
 .ath-livro-3d:not(.aberto).ath-livro-previa .ath-livro-capa {
   transform: perspective(2600px) translateZ(0px) rotateY(-9deg);
 }
-/* Fechando (classe posta pelo fecharLivro3D por 1 s): o giro de volta termina numa transformação com as mesmas funções da
-   aberta, então o navegador interpola só o ângulo. Voltar direto a "none" fazia a capa inchar no meio do giro. */
+/* O giro termina antes de as peças encolherem. A capa continua acima da folha e dos vizinhos. */
 .ath-livro-3d.ath-livro-fechando:not(.aberto) .ath-livro-capa {
+  z-index: 12;
+  transform-style: preserve-3d;
   transform: perspective(2600px) translateZ(0px) rotateY(0deg);
 }
 /* O livro fechado herda "perspective: 1000px" (é também .ath-livro-3d-wrap). Aberto ela é desligada; se voltasse na hora do
    fechar, a capa ainda girando ganhava essa perspectiva forte e inchava até ~1,4x. Só volta quando o fechamento termina. */
 .ath-livro-3d.ath-livro-fechando:not(.aberto) {
   perspective: none;
+  z-index: 100;
+  transform: none !important;
+  transform-origin: 0% 50%;
+  transition: translate 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, scale 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s;
+}
+
+.ath-livro-3d.ath-livro-fechando .ath-livro-folha-interna {
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease 0.32s;
+}
+
+@media (max-width: 520px) {
+  .ath-livro-3d.ath-livro-fechando .ath-livro-capa,
+  .ath-livro-3d.ath-livro-fechando .ath-livro-capa-tras { display: none; }
+  .ath-livro-3d.ath-livro-fechando .ath-livro-folha-interna {
+    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))); max-width: 380px; transform: none; transition-delay: 0s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ath-livro-3d.ath-livro-fechando,
+  .ath-livro-3d.ath-livro-fechando > *,
+  .ath-livro-3d.aberto,
+  .ath-livro-3d.aberto > * { transition: none !important; animation: none !important; }
 }
 
 /* Contracapa: mesma geometria de antes (right: -22px), agora com largura e altura explícitas */

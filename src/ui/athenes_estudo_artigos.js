@@ -271,7 +271,7 @@ export class EstudoArtigosView {
   }
 
   temLivrinhoAberto() {
-    return Boolean(this.container?.querySelector?.('.ath-livro-3d.aberto'));
+    return Boolean(this.container?.querySelector?.('.ath-livro-3d.aberto, .ath-livro-fechando'));
   }
 
   atualizarCatalogoSeLivre(reconstruirTela = false) {
@@ -1167,6 +1167,7 @@ export class EstudoArtigosView {
         if (ev.key === 'Escape' || ev.keyCode === 27) {
           const aberto = this.container?.querySelector?.('.ath-livro-3d.aberto');
           if (aberto) tratarTecladoLivro3D(ev, aberto);
+          else fecharTodosLivros3D(this.container);
         }
       });
     }

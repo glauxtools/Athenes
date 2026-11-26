@@ -102,10 +102,10 @@ describe('Empirical Adversarial Challenge — Iteração 2 (Milestone 3)', () =>
   });
 
   describe('Desafio 2: Ocultação Total e Estrita da Folha Interna Fechada', () => {
-    it('2.1: CSS deve impor display: none !important na folha quando o livro não tem classe .aberto', () => {
+    it('2.1: CSS deve impor display: none !important na folha em repouso', () => {
       // Procura a regra CSS
-      const regraOcultacao = cssContent.match(/\.ath-livro-3d:not\(\.aberto\)\s+\.ath-livro-folha-interna\s*\{([^}]+)\}/);
-      assert.ok(regraOcultacao, 'Regra .ath-livro-3d:not(.aberto) .ath-livro-folha-interna deve existir');
+      const regraOcultacao = cssContent.match(/\.ath-livro-3d:not\(\.aberto\):not\(\.ath-livro-fechando\)\s+\.ath-livro-folha-interna\s*\{([^}]+)\}/);
+      assert.ok(regraOcultacao, 'A regra de ocultação em repouso deve existir');
 
       const corpo = regraOcultacao[1];
       assert.ok(corpo.includes('display: none !important;'), 'Deve conter display: none !important;');
