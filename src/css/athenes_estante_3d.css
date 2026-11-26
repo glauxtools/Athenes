@@ -1265,7 +1265,7 @@
 .ath-livro-3d.aberto .ath-livro-capa-frente {
   transform: translateZ(10px) rotateY(-160deg);
   /* em etapas: a capa (na frente da folha, z = 10px) cresce até o tamanho da folha e então gira como uma capa de verdade */
-  animation: ath-capa-abre 0.95s cubic-bezier(0.45, 0.05, 0.25, 1) both;
+  animation: ath-capa-abre 0.95s cubic-bezier(0.45, 0.05, 0.25, 1) backwards; /* ao terminar vale a regra (mesmos valores finais): assim o fechar parte dela com transição */
 }
 
 @keyframes ath-capa-abre {
@@ -1312,4 +1312,13 @@
 .ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-footer,
 .ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-vinco-esq {
   transition: opacity 0.12s ease 0.42s;
+}
+
+/* Fechar na ordem inversa da abertura: primeiro a capa gira de volta e cobre a folha; só depois o livro diminui e volta ao lugar */
+.ath-livro-capa,
+.ath-livro-capa-frente {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s ease 0.5s, height 0.28s ease 0.5s, box-shadow 0.6s ease;
+}
+.ath-livro-3d:not(.aberto) {
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, scale 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.45s, box-shadow 0.45s ease 0.4s;
 }
