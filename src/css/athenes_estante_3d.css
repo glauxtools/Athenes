@@ -1419,3 +1419,81 @@
   .ath-folha-interna .ath-status-btn { padding-inline: 4px; }
   .ath-folha-interna .ath-folha-pag-btn { padding-inline: 4px; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   18. Estante dividida por pasta (pasta aberta + subpastas)
+   Cada prateleira leva, na madeira da frente, uma plaquinha de latão (como o porta-etiqueta das estantes de biblioteca)
+   com o nome da pasta; nas subpastas de subpastas, o caminho vem antes em letra menor. A primeira prateleira de cada
+   seção mostra também quantas obras a pasta tem. Entre uma pasta e outra fica um respiro maior.
+   ───────────────────────────────────────────────────────────────────────────── */
+.ath-estante-prateleira.ath-prateleira-inicio-secao {
+  margin-top: 22px;
+}
+.ath-prateleira-etiqueta {
+  position: absolute;
+  left: 50%;
+  top: 5px; /* presa no meio da tábua da frente, descendo um pouco abaixo dela */
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(58%, 520px);
+  height: 19px;
+  padding: 0 11px;
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 50%),
+    linear-gradient(90deg, #B8913F 0%, #E2C374 28%, #F3DD9A 50%, #DDBB66 72%, #B08636 100%);
+  border: 1px solid #8C6A22;
+  box-shadow: 0 1px 0 rgba(255, 246, 214, 0.6) inset, 0 2px 4px rgba(35, 18, 8, 0.35);
+  color: #3D2A06;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255, 244, 205, 0.7); /* letras gravadas no latão */
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: default;
+  box-sizing: border-box;
+}
+.ath-prateleira-etiqueta::before,
+.ath-prateleira-etiqueta::after {
+  /* parafusinhos nas pontas */
+  content: '';
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #FFF8DA 0%, #A88430 60%, #5E4612 100%);
+  box-shadow: 0 0 0 0.5px rgba(61, 42, 6, 0.5);
+}
+.ath-prateleira-etiqueta--principal {
+  height: 21px;
+  font-size: 10.5px;
+}
+.ath-prateleira-etiqueta-caminho {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 8.5px;
+  font-weight: 700;
+  opacity: 0.7;
+}
+.ath-prateleira-etiqueta-caminho::after { content: ' ›'; }
+.ath-prateleira-etiqueta-nome {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ath-prateleira-etiqueta-qtd {
+  flex: none;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(61, 42, 6, 0.16);
+  font-size: 8.5px;
+  letter-spacing: 0;
+}

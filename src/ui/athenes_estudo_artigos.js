@@ -1369,14 +1369,15 @@ export class EstudoArtigosView {
     if (!pid || pid === 'todas' || pid === 'compartilhados_comigo') return [];
     const pasta = buscarPastaNaArvore(obterPastasDriveLocais(), pid);
     const lista = [];
-    const rec = (pastas, nivel) => {
+    const rec = (pastas, nivel, trilha) => {
       for (const p of pastas || []) {
         if (!p?.id) continue;
-        lista.push({ id: p.id, nome: p.nome || 'Pasta sem nome', nivel });
-        rec(p.subpastas, nivel + 1);
+        const nome = p.nome || 'Pasta sem nome';
+        lista.push({ id: p.id, nome, nivel, caminho: trilha.join(' › ') });
+        rec(p.subpastas, nivel + 1, [...trilha, nome]);
       }
     };
-    rec(pasta?.subpastas, 0);
+    rec(pasta?.subpastas, 0, []);
     return lista;
   }
 
@@ -1964,8 +1965,27 @@ export class EstudoArtigosView {
       return;
     }
 
+    // Com obras das subpastas na estante, ela é dividida por pasta: primeiro as da própria pasta, depois cada subpasta
+    // (na ordem da árvore), cada grupo com um letreiro. Uma obra em várias pastas aparece só no primeiro grupo.
+    let secoes = null;
+    if (idsSubBusca.length) {
+      const pidAtual = String(this.pastaFiltroId);
+      const naPasta = (art, id) => artigoEstaNaPasta(art, id) || this.artigoPertenceAPastaCompartilhada(art, id);
+      const nomeAtual = buscarPastaNaArvore(obterPastasDriveLocais(), pidAtual)?.nome || 'Esta pasta';
+      const incluidas = new Set(idsSubBusca);
+      const grupos = [{ id: pidAtual, titulo: nomeAtual, caminho: '', principal: true },
+        ...this.subpastasDaPastaAtual().filter(p => incluidas.has(p.id)).map(p => ({ id: p.id, titulo: p.nome, caminho: p.caminho }))];
+      const usados = new Set();
+      secoes = grupos.map(g => {
+        const livros = filtrados.filter(art => !usados.has(art) && naPasta(art, g.id));
+        livros.forEach(art => usados.add(art));
+        return { ...g, livros };
+      });
+    }
+
     const estanteEl = renderizarEstante3D(filtrados, {
       maxPorPrateleira,
+      secoes,
       callbacks: {
         onAbrirLeitor: (art) => {
           if (art.compartilhadoComigo && !this.artigos.includes(art)) {

@@ -350,11 +350,48 @@ export function moverLivroParaPasta(livroId, pastaDestinoId, livros = [], pastas
  * @param {object} [opcoes={}] - Configurações { maxPorPrateleira, callbacks }
  * @returns {HTMLElement} Elemento .ath-estante-3d
  */
-export function renderizarEstante3D(livros = [], { maxPorPrateleira = 6, callbacks = {} } = {}) {
+export function renderizarEstante3D(livros = [], { maxPorPrateleira = 6, callbacks = {}, secoes = null } = {}) {
   const estanteEl = criarElemento('div', 'ath-estante-3d ath-estante-container');
   if (!estanteEl.style) estanteEl.style = {};
 
   const listaLivros = Array.isArray(livros) ? livros : [];
+
+  // Estante dividida por pasta: cada seção tem as suas próprias prateleiras e cada prateleira leva, na madeira da frente,
+  // uma plaquinha (porta-etiqueta) com o nome da pasta.
+  const listaSecoes = Array.isArray(secoes) ? secoes.filter(s => Array.isArray(s?.livros) && s.livros.length) : [];
+  if (listaSecoes.length) {
+    const limiteSec = (!maxPorPrateleira || maxPorPrateleira <= 0) ? 6 : Math.max(1, Math.floor(maxPorPrateleira));
+    estanteEl.style?.setProperty?.('--ath-livros-por-prateleira', String(limiteSec));
+    estanteEl.classList?.add?.('ath-estante-com-secoes');
+    listaSecoes.forEach((secao, idx) => {
+      const sub = renderizarEstante3D(secao.livros, { maxPorPrateleira: limiteSec, callbacks });
+      const prateleiras = Array.from(sub.children || []);
+      prateleiras.forEach((prat, i) => {
+        prat.classList?.add?.('ath-prateleira-de-secao');
+        if (i === 0 && idx > 0) prat.classList?.add?.('ath-prateleira-inicio-secao');
+        prat.setAttribute?.('data-secao-pasta', secao.id || '');
+        const placa = criarElemento('span', `ath-prateleira-etiqueta${secao.principal ? ' ath-prateleira-etiqueta--principal' : ''}`);
+        placa.setAttribute?.('title', `${secao.caminho ? secao.caminho + ' › ' : ''}${secao.titulo || 'Pasta'} · ${secao.livros.length} obra(s)`);
+        if (secao.caminho) {
+          const cam = criarElemento('span', 'ath-prateleira-etiqueta-caminho');
+          cam.textContent = secao.caminho;
+          placa.appendChild(cam);
+        }
+        const nome = criarElemento('span', 'ath-prateleira-etiqueta-nome');
+        nome.textContent = secao.titulo || 'Pasta';
+        placa.appendChild(nome);
+        if (i === 0) {
+          const qtd = criarElemento('span', 'ath-prateleira-etiqueta-qtd');
+          qtd.textContent = String(secao.livros.length);
+          placa.appendChild(qtd);
+        }
+        const base = prat.querySelector?.('.ath-prateleira-base');
+        (base || prat).appendChild(placa);
+      });
+      while (sub.firstChild) estanteEl.appendChild(sub.firstChild);
+    });
+    return estanteEl;
+  }
 
   // Estado Vazio: Prateleira com card explicativo e base chanfrada
   if (listaLivros.length === 0) {
