@@ -6,7 +6,7 @@
  * Agente: m3_it2_challenger_1 (empirical_challenger / critic / specialist)
  *
  * Foco de Auditoria Adversarial:
- * 1. Presença e sintaxe estrita de @media (prefers-reduced-motion: reduce) cobrindo todos os seletores de livro, folha e botões.
+ * 1. Redução de movimento nas interações secundárias da estante.
  * 2. Ocultação total e estrita da folha quando fechada (display: none !important, aria-hidden="true").
  * 3. Efeito :hover funcional com !important sobrepondo estilos inline de repouso.
  * 4. Presença de .ath-livro-capa-verso e cinemática tridimensional da face interna a -140°.
@@ -71,25 +71,18 @@ describe('Empirical Adversarial Challenge — Iteração 2 (Milestone 3)', () =>
       );
     });
 
-    it('1.2: prefers-reduced-motion deve abranger exaustivamente todos os seletores interativos e 3D', () => {
+    it('1.2: movimento reduzido preserva a animação de abrir e fechar o livro', () => {
       const mediaMatch = cssContent.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}/);
       const blocoMedia = mediaMatch ? mediaMatch[1] : '';
 
       const seletoresObrigatorios = [
-        '.ath-livro-3d',
-        '.ath-livro-3d.aberto',
-        '.ath-livro-capa',
-        '.ath-livro-capa-frente',
-        '.ath-livro-folha-interna',
         '.ath-estante-scrim',
         '.ath-livro-sombra-base',
         '.ath-btn-abrir-leitor',
         '.ath-status-btn',
         '.ath-btn-copiar-citacao',
         '.ath-btn-soft',
-        '.ath-livro-3d:not(.aberto):hover',
-        '.ath-livro-3d-wrap:hover.ath-livro-3d:not(.aberto)',
-        '.ath-livro-3d-wrap:hover .ath-livro-3d:not(.aberto)'
+        '.ath-livro-3d:not(.aberto):not(.ath-livro-fechando):hover'
       ];
 
       for (const sel of seletoresObrigatorios) {
@@ -98,6 +91,7 @@ describe('Empirical Adversarial Challenge — Iteração 2 (Milestone 3)', () =>
           `O bloco prefers-reduced-motion DEVE cobrir expressamente o seletor: ${sel}`
         );
       }
+      assert.doesNotMatch(blocoMedia, /\.ath-livro-(?:3d\.aberto|capa|folha-interna)/);
     });
   });
 

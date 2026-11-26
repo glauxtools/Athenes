@@ -660,15 +660,16 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
     const rectCont = containerRef.getBoundingClientRect();
 
     if (rectLivro && rectCont && (rectCont.width > 0 || (typeof window !== 'undefined' && window.innerWidth > 0))) {
-      const margemSeguranca = 20;
+      const fichaCompacta = globalThis.matchMedia?.('(max-width: 520px)').matches;
+      const margemSeguranca = fichaCompacta ? 12 : 20;
       const limiteEsq = Math.max(0, rectCont.left || 0) + margemSeguranca;
       const viewportDir = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 99999;
       const limiteDir = Math.min(viewportDir, (rectCont.right || viewportDir)) - margemSeguranca;
 
       const larguraDisponivel = limiteDir - limiteEsq;
-      const fichaCompacta = globalThis.matchMedia?.('(max-width: 520px)').matches;
-      const larguraAbertoEsq = fichaCompacta ? 0 : 290;
-      const larguraAbertoDir = fichaCompacta ? Math.max(1, Math.min(380, larguraDisponivel)) : 295;
+      const larguraFaceCompacta = Math.max(1, Math.floor(larguraDisponivel / 2));
+      const larguraAbertoEsq = fichaCompacta ? larguraFaceCompacta : 290;
+      const larguraAbertoDir = fichaCompacta ? larguraFaceCompacta : 295;
       if (fichaCompacta) {
         livroEl.style.setProperty('--ath-open-page-width', `${larguraAbertoDir}px`);
         if (larguraCapaFechada > 0) livroEl.style.setProperty('--ath-capa-escala-aberta', String(larguraAbertoDir / larguraCapaFechada));

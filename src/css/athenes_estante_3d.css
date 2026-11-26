@@ -1183,36 +1183,11 @@
   }
 }
 
-/* A ficha ocupa o espaço disponível no celular. */
-@media (max-width: 520px) {
-  .ath-livro-3d.aberto {
-    scale: 1 !important;
-  }
-  .ath-livro-3d.aberto .ath-livro-capa-tras {
-    display: none !important;
-  }
-  .ath-livro-3d.aberto .ath-livro-folha-interna {
-    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))) !important;
-    max-width: 380px !important;
-    left: 0 !important;
-    transform: none !important;
-    margin: 0 auto;
-    box-shadow: 0 24px 56px rgba(15, 23, 42, 0.38), 0 4px 12px rgba(15, 23, 42, 0.15) !important;
-  }
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
-   15. Acessibilidade: Suporte a Redução de Movimento (WCAG 2.3.3)
+   15. Redução de movimento nas interações secundárias
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
-  :root.ath-reduzir-movimento .ath-livro-3d,
-  :root.ath-reduzir-movimento .ath-livro-3d.aberto,
-  :root.ath-reduzir-movimento .ath-livro-capa,
-  :root.ath-reduzir-movimento .ath-livro-capa-frente,
-  :root.ath-reduzir-movimento .ath-livro-paginas-dir,
-  :root.ath-reduzir-movimento .ath-livro-capa-tras,
-  :root.ath-reduzir-movimento .ath-livro-folha-interna,
   :root.ath-reduzir-movimento .ath-estante-scrim,
   :root.ath-reduzir-movimento .ath-livro-sombra-base,
   :root.ath-reduzir-movimento .ath-btn-abrir-leitor,
@@ -1220,9 +1195,7 @@
   :root.ath-reduzir-movimento .ath-btn-copiar-citacao,
   :root.ath-reduzir-movimento .ath-btn-soft,
   :root.ath-reduzir-movimento .ath-folha-pagina.ativa,
-  :root.ath-reduzir-movimento .ath-livro-3d:not(.aberto):hover,
-  :root.ath-reduzir-movimento .ath-livro-3d-wrap:hover.ath-livro-3d:not(.aberto),
-  :root.ath-reduzir-movimento .ath-livro-3d-wrap:hover .ath-livro-3d:not(.aberto) {
+  :root.ath-reduzir-movimento .ath-livro-3d:not(.aberto):not(.ath-livro-fechando):hover {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     transition-delay: 0s !important;
@@ -1294,13 +1267,6 @@
   transform: translateX(-11px) !important;
 }
 
-/* reduzir movimento: segue a escolha do Athenes (classe na raiz), como o resto da estante */
-@media (prefers-reduced-motion: reduce) {
-  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-folha-interna,
-  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-capa,
-  :root.ath-reduzir-movimento .ath-livro-3d.aberto .ath-livro-capa-frente { animation: none; }
-}
-
 /* Os textos da capa só somem quando ela fica de lado no giro (antes sumiam na hora e a capa crescia em branco) */
 .ath-livro-3d.aberto .ath-livro-capa .ath-livro-capa-header,
 .ath-livro-3d.aberto .ath-livro-capa .ath-livro-titulo,
@@ -1320,12 +1286,6 @@
 
 .ath-livro-3d.aberto .ath-livro-capa :is(.ath-livro-titulo, .ath-livro-autores, .ath-livro-badge-tipo, .ath-livro-badge-citacoes, .ath-livro-status-pill, .ath-livro-pdf-pill) {
   transition: font-size 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.12s ease 0.42s;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ath-livro-capa :is(.ath-livro-titulo, .ath-livro-autores, .ath-livro-badge-tipo, .ath-livro-badge-citacoes, .ath-livro-status-pill, .ath-livro-pdf-pill) {
-    transition: none !important;
-  }
 }
 
 /* Fechar na ordem inversa da abertura: primeiro a capa gira de volta e cobre a folha; só depois o livro diminui e volta ao lugar */
@@ -1397,35 +1357,6 @@
   transition: opacity 0.14s ease 0.32s;
 }
 
-@media (max-width: 520px) {
-  .ath-livro-3d.ath-livro-fechando .ath-livro-capa-tras { display: none; }
-  .ath-livro-3d.aberto .ath-livro-capa.ath-livro-capa-frente {
-    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px)));
-    transform: perspective(2600px) translateZ(10px) rotateY(-38deg);
-    opacity: 0;
-    pointer-events: none;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.28s ease 0.25s, opacity 0.25s ease 0.25s;
-  }
-  .ath-livro-3d.ath-livro-fechando .ath-livro-capa.ath-livro-capa-frente {
-    transition: width 0.28s ease 0.5s, height 0.28s ease 0.5s, transform 0.28s ease, opacity 0.2s ease;
-  }
-  .ath-livro-3d.ath-livro-fechando .ath-livro-folha-interna {
-    width: var(--ath-open-page-width, min(380px, calc(100vw - 40px))); max-width: 380px; transform: none; transition-delay: 0.22s;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ath-livro-3d.ath-livro-fechando,
-  .ath-livro-3d.ath-livro-fechando > *,
-  .ath-livro-3d.aberto,
-  .ath-livro-3d.aberto > * { transition: none !important; animation: none !important; }
-  .ath-livro-3d.aberto > .ath-livro-folha-interna,
-  .ath-livro-3d.ath-livro-fechando > .ath-livro-folha-interna {
-    transition: opacity 0.2s ease !important;
-  }
-}
-
 /* Contracapa: mesma geometria de antes (right: -22px), agora com largura e altura explícitas */
 .ath-livro-capa-tras {
   right: auto;
@@ -1460,4 +1391,31 @@
   opacity: 1;
   transform: translateX(-18px); /* rente à borda da capa, atrás da folha aberta */
   transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* No celular, cada lado ocupa metade da largura disponível e pode rolar por dentro. */
+@media (max-width: 520px) {
+  .ath-livro-3d.aberto { scale: 1; }
+  .ath-livro-3d.aberto .ath-livro-capa,
+  .ath-livro-3d:is(.aberto, .ath-livro-fechando) .ath-livro-folha-interna {
+    width: var(--ath-open-page-width, calc((100vw - 24px) / 2));
+  }
+  .ath-livro-3d.aberto .ath-livro-capa-tras { width: calc(var(--ath-open-page-width, (100vw - 24px) / 2) + 22px); }
+  .ath-livro-3d.aberto .ath-livro-paginas-dir { left: calc(var(--ath-open-page-width, (100vw - 24px) / 2) - 4px); }
+  .ath-livro-3d:is(.aberto, .ath-livro-fechando) .ath-livro-folha-interna { padding: 10px 8px 8px; }
+  .ath-livro-capa-verso {
+    padding: 14px 12px;
+    gap: 7px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .ath-livro-capa-verso > * { flex-shrink: 0; }
+  .ath-livro-verso-resumo { display: block; overflow: visible; }
+  .ath-livro-3d.aberto .ath-livro-capa-verso { pointer-events: auto; }
+  .ath-folha-interna :is(.ath-folha-top-row, .ath-folha-cores-capa, .ath-citation-head, .ath-folha-subtit, .ath-folha-acoes-secundarias, .ath-folha-paginacao) {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .ath-folha-interna .ath-status-btn { padding-inline: 4px; }
+  .ath-folha-interna .ath-folha-pag-btn { padding-inline: 4px; }
 }
