@@ -484,6 +484,15 @@ export const metodosEstudoPainelDireito = {
     const temPdfPainel = artigoTemPdf(art);
     const zoteroOk = this.temZoteroConectado();
     const idDriveReal = String(art.driveFileId || '').trim() && !/^drive_pdf_/.test(String(art.driveFileId));
+    // Link para abrir o arquivo no Google Drive em outra aba (o campo aceita só o ID ou o link inteiro do Drive)
+    const idParaLinkDrive = (() => {
+      if (!idDriveReal) return '';
+      const bruto = String(art.driveFileId).trim();
+      const doLink = bruto.match(/\/d\/([A-Za-z0-9_-]{10,})/) || bruto.match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+      if (doLink) return doLink[1];
+      return /^[A-Za-z0-9_-]{10,}$/.test(bruto) ? bruto : '';
+    })();
+    const urlArquivoNoDrive = idParaLinkDrive ? `https://drive.google.com/file/d/${encodeURIComponent(idParaLinkDrive)}/view` : '';
     const anexoZ = art.anexoPdfZotero;
     const situacaoPdfTexto = art.pdfBlobUrl
       ? (idDriveReal ? 'Sincronizado no Google Drive' : 'Aberto na sessão local')
@@ -567,6 +576,12 @@ export const metodosEstudoPainelDireito = {
                 ${svgIcone('lixeira', 12)} Desvincular
               </button>
             ` : '<span></span>'}
+
+            ${urlArquivoNoDrive ? `
+              <a class="ath-zd-btn-sub abrir-drive" id="athLinkAbrirPdfNoDrive" href="${escapeHtml(urlArquivoNoDrive)}" target="_blank" rel="noopener noreferrer" title="Abrir este PDF no Google Drive, em outra aba">
+                ${svgGoogleDrive(12)} Abrir no Drive <span aria-hidden="true">↗</span>
+              </a>
+            ` : ''}
 
             ${art.pdfBlobUrl && (!idDriveReal) ? `
               <button type="button" class="ath-zd-btn-sub guardar" id="athBtnSalvarPdfNoDriveDireto" title="Salvar este arquivo na pasta Bibliografia_PDFs do seu Drive">

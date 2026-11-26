@@ -3396,3 +3396,9 @@ button.ath-dn-pasta:hover { background: #EEF4FA; border-color: #C8D7E6; }
   .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info .ath-badge { display: none; }
   .ath-dash-pasta-banner:has(.ath-bib-busca-no-topo) .ath-dash-pasta-banner-info { max-width: 160px; }
 }
+
+/* "Abrir no Drive": abre o PDF vinculado no Google Drive, em outra aba */
+.ath-zd-btn-sub.abrir-drive { color: #1D4ED8; background: #EFF6FF; border: 1px solid #BFDBFE; text-decoration: none; }
+.ath-zd-btn-sub.abrir-drive:hover { background: #DBEAFE; }
+.ath-zd-btn-sub.abrir-drive:focus-visible { outline: 2px solid var(--ath-primary, #314F79); outline-offset: 2px; }
+.ath-zd-acoes-secundarias { flex-wrap: wrap; }
