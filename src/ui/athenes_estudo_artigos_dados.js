@@ -4,7 +4,7 @@
  * citação ABNT e utilidades do desenho à mão livre. Separado da tela (athenes_estudo_artigos.js) para o arquivo não crescer sem fim.
  */
 import * as bib from '../core/athenes_biblioteca_artigos.js';
-import { obterTokenDrive, marcarSessaoDriveExpirada, obterPastaRaizDrive, buscarOuCriarPasta, obterOuCriarPastaDoArtigoNoDrive, moverArquivoNoDrive, reconciliarArtigosComDrive } from '../core/athenes_drive_sync.js';
+import { obterTokenDrive, marcarSessaoDriveExpirada, obterPastaRaizDrive, buscarOuCriarPasta, obterOuCriarPastaDoArtigoNoDrive, moverArquivoNoDrive, reconciliarArtigosComDrive, nomePdfDoArtigo, renomearArquivoNoDrive } from '../core/athenes_drive_sync.js';
 import { mostrarAviso } from './athenes_aviso.js';
 import { salvarArquivoNoGoogleDrive } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
@@ -518,6 +518,13 @@ export async function enviarPdfDoArtigoAoDrive(art, blob) {
     }
     throw e;
   }
+  // Ao substituir um arquivo que já existia no Drive, o nome antigo fica: garante o nome do artigo
+  const nomeDesejado = podeRenomearPdfDoArtigo(art) ? nomePdfDoArtigo(art) : '';
+  if (salvo?.id && nomeDesejado && salvo.name !== nomeDesejado) {
+    const renomeado = await renomearArquivoNoDrive(salvo.id, nomeDesejado, token).catch(() => null);
+    if (renomeado?.name) salvo.name = renomeado.name;
+  }
+  if (salvo?.name) art.driveFileName = salvo.name;
   art.driveFileId = salvo.id;
   art.driveFolderId = pastaId;
   art.pdfVerificadoInvalido = false;
@@ -533,6 +540,78 @@ export async function enviarPdfDoArtigoAoDrive(art, blob) {
   return true;
 }
 
+/** Só o dono renomeia: PDFs de artigos compartilhados com você ou de grupos do Zotero ficam com o nome que têm. */
+function podeRenomearPdfDoArtigo(art) {
+  return Boolean(art) && !art.compartilhadoComigo && !art.proprietarioExterno && !art.origemZoteroGrupo && !ehArtigoExemploFicticio(art);
+}
+
+const _renomeacaoFalhou = new Set(); // arquivos que o Drive recusou nesta sessão: não insiste até recarregar
+
+/**
+ * PDFs vinculados ANTES desta função existir ganham o nome do artigo, aos poucos (até `limite` por vez). Renomear não muda o ID do
+ * arquivo no Drive: o vínculo do artigo (driveFileId), o link "Abrir no Drive" e o compartilhamento continuam valendo.
+ * Pula arquivos na lixeira, de outras pessoas e os que já têm o nome certo. Devolve quantos renomeou.
+ */
+export async function renomearPdfsJaVinculados(token, { limite = 40, fetchImpl = globalThis.fetch } = {}) {
+  if (!token) return 0;
+  const artigos = carregarArtigosEstudo();
+  let renomeados = 0;
+  let tentativas = 0;
+  for (const art of artigos) {
+    if (tentativas >= limite) break;
+    if (!podeRenomearPdfDoArtigo(art)) continue;
+    const id = String(art.driveFileId || '').trim();
+    const nome = nomePdfDoArtigo(art);
+    if (!id || /^drive_pdf_/.test(id) || !nome || art.driveFileName === nome || _renomeacaoFalhou.has(id)) continue;
+    tentativas++;
+    try {
+      // confere antes: o arquivo existe, não está na lixeira e o Athenes pode alterá-lo
+      const r = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,trashed,capabilities/canRename&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.status === 401) { marcarSessaoDriveExpirada(token); break; }
+      if (!r.ok) { _renomeacaoFalhou.add(id); continue; }
+      const meta = await r.json();
+      if (meta.trashed || meta.capabilities?.canRename === false) { _renomeacaoFalhou.add(id); continue; }
+      if (meta.name === nome) { art.driveFileName = nome; renomeados++; continue; }
+      const feito = await renomearArquivoNoDrive(id, nome, token, { fetchImpl });
+      if (feito?.id === id && feito.name) { art.driveFileName = feito.name; renomeados++; }
+      else _renomeacaoFalhou.add(id);
+    } catch (e) {
+      if (e?.status === 401) { marcarSessaoDriveExpirada(token); break; }
+      _renomeacaoFalhou.add(id);
+    }
+  }
+  if (renomeados > 0) {
+    salvarArtigosEstudo(artigos);
+    sincronizarBibliotecaArtigosAgora();
+  }
+  return renomeados;
+}
+
+/**
+ * Dá ao PDF já vinculado no Drive o nome do artigo (ex.: ao escolher um arquivo do Drive). Atualiza `art.driveFileName` e devolve
+ * true se renomeou. Sem Drive conectado, sem título ou com o nome já certo, não faz nada.
+ */
+export async function renomearPdfDoArtigoNoDrive(art) {
+  if (!podeRenomearPdfDoArtigo(art)) return false;
+  const id = String(art?.driveFileId || '').trim();
+  const nome = nomePdfDoArtigo(art);
+  if (!id || /^drive_pdf_/.test(id) || !nome || art.driveFileName === nome) return false;
+  const token = await obterTokenDrive();
+  if (!token) return false;
+  try {
+    const r = await renomearArquivoNoDrive(id, nome, token);
+    if (!r?.name) return false;
+    art.driveFileName = r.name;
+    salvarArtigosEstudo(carregarArtigosEstudo(), art);
+    sincronizarBibliotecaArtigosAgora();
+    return true;
+  } catch (e) {
+    if (e?.status === 401) marcarSessaoDriveExpirada(token);
+    console.warn('[Athenes] Renomear o PDF no Drive:', e?.message || e);
+    return false;
+  }
+}
+
 /** Registra um arquivo PDF escolhido no computador: abre na sessão, guarda no cache local (IndexedDB) e sobe para o Drive. */
 export async function registrarPdfLocalNoArtigo(art, file) {
   if (!await blobEhPdf(file)) {
@@ -541,7 +620,7 @@ export async function registrarPdfLocalNoArtigo(art, file) {
   }
   if (art.pdfVerificadoInvalido) art.driveFileId = '';
   art.pdfVerificadoInvalido = false;
-  art.driveFileName = file.name;
+  art.driveFileName = nomePdfDoArtigo(art) || file.name; // o PDF vinculado ganha o nome do artigo (o arquivo no computador não muda)
   art.driveStatus = 'Enviando o PDF ao Google Drive…';
   art.pdfBlobUrl = URL.createObjectURL(file);
   art.temPdfLocal = true;
@@ -801,6 +880,7 @@ export async function migrarPdfsLocaisParaODrive() {
       } catch (_) {}
     }
     if (movidos > 0) sincronizarBibliotecaArtigosAgora();
+    await renomearPdfsJaVinculados(token).catch(e => console.warn('[Athenes] Nome dos PDFs no Drive:', e?.message || e));
     return movidos;
   };
   _migracaoDriveEmCurso = executar().finally(() => { _migracaoDriveEmCurso = null; });

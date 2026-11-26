@@ -16,7 +16,7 @@ import { ZoteroClient } from '../core/athenes_zotero.js';
 import { obterConfigGoogleDrive, salvarConfigGoogleDrive, autenticarGoogleDrive, salvarArquivoNoGoogleDrive, obterPastasDriveLocais } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
 import { svgIcone } from './athenes_icones.js';
-import { ehArtigoExemploFicticio, registrarPdfLocalNoArtigo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, formatarCitacaoAbntDoArtigo } from './athenes_estudo_artigos_dados.js';
+import { ehArtigoExemploFicticio, registrarPdfLocalNoArtigo, renomearPdfDoArtigoNoDrive, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, formatarCitacaoAbntDoArtigo } from './athenes_estudo_artigos_dados.js';
 import { baixarBibliografiaCsv, construirMapaCaminhosPastas } from '../core/athenes_export_bibliografia_csv.js';
 import { artigoEstaNasPastas } from '../core/athenes_zotero_pastas.js';
 import { coletarPastasBibliografia } from './athenes_estudo_artigos_pastas.js';
@@ -717,7 +717,10 @@ export const metodosEstudoModais = {
         salvarArtigosEstudo(this.artigos);
         return;
       }
-      if (driveFileIdSelecionado) sincronizarBibliotecaArtigosAgora();
+      if (driveFileIdSelecionado) {
+        sincronizarBibliotecaArtigosAgora();
+        renomearPdfDoArtigoNoDrive(novoArt).catch(() => {}); // o PDF escolhido no Drive ganha o nome do artigo
+      }
       this.registrarSnapshotCatalogo?.();
       fechar();
       this.abrirArtigoNoEstudio(novoArt);

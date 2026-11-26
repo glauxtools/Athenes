@@ -242,6 +242,44 @@ export async function moverArquivoNoDrive(fileId, novaPastaDriveId, token, { fet
 }
 
 /**
+ * Nome do arquivo PDF a partir do título do artigo (ex.: "Optimal design of a cavity.pdf"): sem marcação HTML do Zotero, sem os
+ * caracteres que o Windows/Drive não aceitam e com no máximo 120 caracteres (cortando numa palavra). Sem título, devolve ''.
+ */
+export function nomePdfDoArtigo(art, { maxCaracteres = 120 } = {}) {
+  let t = String(art?.titulo || '')
+    .replace(/<[^>]*>/g, ' ')                       // <i>, <sub>… que o Zotero guarda no título
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t || /^artigo sem t[ií]tulo$/i.test(t)) return '';
+  if (t.length > maxCaracteres) {
+    const corte = t.slice(0, maxCaracteres);
+    const ultimoEspaco = corte.lastIndexOf(' ');
+    t = (ultimoEspaco > maxCaracteres * 0.6 ? corte.slice(0, ultimoEspaco) : corte).trim();
+  }
+  t = t.replace(/[.\s]+$/, ''); // o Windows não aceita nome terminado em ponto ou espaço
+  return t ? `${t}.pdf` : '';
+}
+
+/** Renomeia um arquivo no Google Drive (só o nome; o conteúdo e a pasta não mudam). Devolve { id, name } ou null. */
+export async function renomearArquivoNoDrive(fileId, novoNome, token, { fetchImpl = globalThis.fetch } = {}) {
+  const idStr = String(fileId || '').trim();
+  const nome = String(novoNome || '').trim();
+  if (!idStr || !nome || !token || idStr.startsWith('drive_pdf_')) return null;
+  try {
+    return await chamar(fetchImpl, `${API}/${encodeURIComponent(idStr)}?supportsAllDrives=true&fields=id,name`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nome })
+    }, token);
+  } catch (e) {
+    if (e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
  * Obtém ou cria a pasta correspondente a uma coleção/categoria de bibliografia no Google Drive.
  * Se o artigo pertence a uma pasta específica (ou coleção do Zotero), localiza sua pasta correspondente
  * dentro da árvore "Bibliografia & Leituras" (pasta_bib_raiz).

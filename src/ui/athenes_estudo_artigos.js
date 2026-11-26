@@ -46,7 +46,7 @@ import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
 import { listarCompartilhadosComigo, carregarDocumentoCompartilhado, salvarCompartilhamento } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
-import { removerPdfLocal, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { removerPdfLocal, renomearPdfDoArtigoNoDrive, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
 import { baixarBibliografiaCsv, construirMapaCaminhosPastas } from '../core/athenes_export_bibliografia_csv.js';
 import { metodosEstudoTela } from './athenes_estudo_artigos_tela.js';
 import { metodosEstudoPainelDireito } from './athenes_estudo_artigos_painel_direito.js';
@@ -3537,6 +3537,8 @@ export class EstudoArtigosView {
       sincronizarBibliotecaArtigosAgora();
       this.renderizar();
       garantirPdfDoArtigo(art).then(ok => { if (ok) this.renderizar(); });
+      // o arquivo (a cópia na pasta do Athenes) ganha o nome do artigo; o ID não muda, então o vínculo continua
+      renomearPdfDoArtigoNoDrive(art).then(ok => { if (ok && this.artigoAberto === art) this.renderizar(); });
     });
   }
 
