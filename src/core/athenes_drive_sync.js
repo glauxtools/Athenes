@@ -526,6 +526,10 @@ export async function importarPastasDoDrive(token, { fetchImpl = globalThis.fetc
     if (x.driveId) { excluidas.add(x.driveId); excluidas.add('drive_' + x.driveId); }
   }
   let total = 0;
+  // Com o Zotero espelhado, o ramo "Bibliografia & Leituras" tem só as coleções do Zotero: uma pasta que sobrou no Drive de uma
+  // coleção apagada no Zotero não volta a aparecer (o arquivo no Drive não é mexido).
+  const espelhoZotero = Boolean(pastas.find(p => p?.id === 'pasta_bib_raiz')?.zoteroEspelho);
+  const ramoDoZotero = (p) => Boolean(espelhoZotero && p && (p.id === 'pasta_bib_raiz' || p.zoteroKey));
   const visitar = async (lista, paiDriveId, paiLocal, nivel) => {
     if (nivel > 6 || total > 300) return;
     for (const f of await listarSubpastasDoDrive(token, paiDriveId, fetchImpl)) {
@@ -535,6 +539,8 @@ export async function importarPastasDoDrive(token, { fetchImpl = globalThis.fetc
       let local = lista.find(p => p.driveId === f.id) || lista.find(p => !p.driveId && p.nome === f.name && p.origem !== 'compartilhada');
       if (local) {
         if (!local.driveId) { local.driveId = f.id; r.vinculadas++; }
+      } else if (ramoDoZotero(paiLocal)) {
+        continue;
       } else {
         local = { id: `drive_${f.id}`, nome: f.name, tipo: paiLocal?.tipo || 'relatorios', origem: 'minhas', ...(paiLocal ? { parentId: paiLocal.id } : {}), driveId: f.id, subpastas: [] };
         lista.push(local);

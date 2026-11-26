@@ -302,9 +302,12 @@ export function descartarColecoesQueSairamDoZotero(pastas, artigos = []) {
     const ids = Array.isArray(a?.pastasIds) && a.pastasIds.length ? a.pastasIds : [a?.pastaId];
     for (const id of ids) if (id) usadas.add(String(id));
   }
-  const descartavel = p => Boolean(p?.zoteroKey) && !usadas.has(String(p.id)) && (p.subpastas || []).every(descartavel);
+  // Coleção do Zotero (zoteroKey) ou pasta que veio de uma pasta do Drive (drive_…) sem nenhuma obra, nem nas filhas
+  const veioDeFora = p => Boolean(p?.zoteroKey) || String(p?.id || '').startsWith('drive_');
+  const descartavel = p => veioDeFora(p) && !usadas.has(String(p.id)) && (p.subpastas || []).every(descartavel);
   const removidas = [];
-  const coletar = p => { removidas.push({ id: p.id, driveId: p.driveId || '', nome: p.nome || '' }); (p.subpastas || []).forEach(coletar); };
+  // a coleção apagada no Zotero pode ir à lixeira do Drive se estiver vazia; a pasta que só existe no Drive fica lá, só some daqui
+  const coletar = p => { removidas.push({ id: p.id, driveId: p.driveId || '', nome: p.nome || '', ...(p.zoteroKey ? {} : { lixeira: true }) }); (p.subpastas || []).forEach(coletar); };
   const limpar = lista => lista.filter(p => {
     if (descartavel(p)) { coletar(p); return false; }
     p.subpastas = limpar(p.subpastas || []);

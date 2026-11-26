@@ -66,3 +66,48 @@ test('coleção que saiu do Zotero e ficou vazia some; com obra ou criada no Ath
   const local = raiz.subpastas.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL);
   assert.deepEqual(local.subpastas.map(p => p.id).sort(), ['pasta_minha', 'zot_col_VELHA']);
 });
+
+test('pasta vazia que veio do Drive (coleção antiga) some daqui sem ir para a lixeira do Drive', () => {
+  const pastas = [{
+    id: RAIZ_BIBLIOGRAFIA, nome: 'Bibliografia & Leituras', subpastas: [
+      { id: 'zot_col_BIB', nome: 'BIBLIOGRAFIA', zoteroKey: 'BIB', subpastas: [] },
+      { id: PASTA_BIBLIOGRAFIA_LOCAL, nome: 'Só no Athenes', subpastas: [
+        { id: 'drive_D1', nome: 'bibliografia-fase4-texto', driveId: 'D1', subpastas: [] },
+        { id: 'drive_D2', nome: 'pasta do Drive com obra', driveId: 'D2', subpastas: [] }
+      ] }
+    ]
+  }];
+  const { removidas, pastas: limpas } = descartarColecoesQueSairamDoZotero(pastas, [{ id: 'x', pastasIds: ['drive_D2'] }]);
+  assert.deepEqual(removidas, [{ id: 'drive_D1', driveId: 'D1', nome: 'bibliografia-fase4-texto', lixeira: true }]);
+  const local = limpas[0].subpastas.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL);
+  assert.deepEqual(local.subpastas.map(p => p.id), ['drive_D2']);
+});
+
+test('com o Zotero espelhado, pasta que sobrou no Drive não volta para "Bibliografia & Leituras"', async () => {
+  const m = new Map();
+  globalThis.localStorage = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), key: i => [...m.keys()][i], get length() { return m.size; } };
+  const { importarPastasDoDrive } = await import('../src/core/athenes_drive_sync.js');
+  const resp = corpo => ({ ok: true, status: 200, json: async () => corpo, text: async () => JSON.stringify(corpo) });
+  const filhos = {
+    RAIZ: [{ id: 'FB', name: 'Bibliografia & Leituras' }, { id: 'FR', name: 'Relatórios & Artigos' }],
+    FB: [{ id: 'FBIB', name: 'BIBLIOGRAFIA' }, { id: 'FVELHA', name: 'bibliografia-fase4-texto' }],
+    FR: [{ id: 'FTESE', name: 'Tese' }], FBIB: [], FVELHA: [], FTESE: []
+  };
+  const fetchImpl = async url => {
+    const q = decodeURIComponent(new URL(url).searchParams.get('q') || '');
+    if (/name = 'Athenes'/.test(q)) return resp({ files: [{ id: 'RAIZ', name: 'Athenes' }] });
+    const pai = /'([^']+)' in parents/.exec(q)?.[1];
+    return resp({ files: filhos[pai] || [] });
+  };
+  const pastas = [
+    { id: RAIZ_BIBLIOGRAFIA, nome: 'Bibliografia & Leituras', tipo: 'bibliografia', origem: 'minhas', zoteroEspelho: { biblioteca: 'u1', colecoes: [] }, subpastas: [
+      { id: 'zot_col_BIB', nome: 'BIBLIOGRAFIA', zoteroKey: 'BIB', subpastas: [] }
+    ] },
+    { id: 'pasta_rel_raiz', nome: 'Relatórios & Artigos', tipo: 'relatorios', origem: 'minhas', subpastas: [] }
+  ];
+  await importarPastasDoDrive('T', { fetchImpl, pastas });
+  const bib = pastas.find(p => p.id === RAIZ_BIBLIOGRAFIA);
+  assert.deepEqual(bib.subpastas.map(p => p.nome), ['BIBLIOGRAFIA'], 'a coleção apagada no Zotero não volta pelo Drive');
+  assert.equal(bib.subpastas[0].driveId, 'FBIB', 'a coleção que existe continua ligada à pasta do Drive');
+  assert.ok(pastas.find(p => p.id === 'pasta_rel_raiz').subpastas.some(p => p.nome === 'Tese'), 'fora da bibliografia nada muda');
+});
