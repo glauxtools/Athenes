@@ -10,6 +10,31 @@ import { blobEhPdf } from './athenes_pdf_identificadores.js';
 
 const ZOTERO_API_BASE = 'https://api.zotero.org';
 
+/**
+ * Separa as coleções que estão na Lixeira do Zotero ("deleted" na API, desde o Zotero 7) e todas as filhas delas. O Zotero Desktop
+ * as esconde; sem este filtro elas apareciam no Athenes como pastas que "não existem" no Zotero.
+ */
+export function separarColecoesDaLixeira(colecoesBrutas) {
+  const lista = Array.isArray(colecoesBrutas) ? colecoesBrutas : [];
+  const naLixeira = new Set(lista.filter(c => c?.key && c.data?.deleted).map(c => c.key));
+  let achouMais = naLixeira.size > 0;
+  while (achouMais) {
+    achouMais = false;
+    for (const c of lista) {
+      const pai = c?.data?.parentCollection;
+      if (c?.key && pai && naLixeira.has(pai) && !naLixeira.has(c.key)) { naLixeira.add(c.key); achouMais = true; }
+    }
+  }
+  return { ativas: lista.filter(c => c?.key && !naLixeira.has(c.key)), naLixeira };
+}
+
+/** A obra continua na biblioteca; só deixa de pertencer às coleções que estão na Lixeira do Zotero. */
+export function tirarColecoesDaLixeira(item, naLixeira) {
+  if (!item || !naLixeira?.size || !Array.isArray(item.colecoes)) return item;
+  const colecoes = item.colecoes.filter(key => !naLixeira.has(key));
+  return colecoes.length === item.colecoes.length ? item : { ...item, colecoes };
+}
+
 export class ZoteroClient {
   constructor(config = {}) {
     this.userId = config.userId ? String(config.userId).trim() : '';
@@ -157,9 +182,12 @@ export class ZoteroClient {
     };
     const colecoesBrutas = await ler('collections');
     if (!colecoesBrutas) return null;
-    const colecoes = colecoesBrutas.map(item => ({ key: item.key, nome: item.data?.name || 'Coleção sem nome', parentCollection: item.data?.parentCollection || false }));
-    const itens = (await ler('items/top')).filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem)
-      .map(item => this.normalizarItemZotero(item)).filter(Boolean);
+    // Coleções na Lixeira do Zotero (e as filhas delas) não viram pastas: o Zotero Desktop também as esconde
+    const { ativas, naLixeira } = separarColecoesDaLixeira(colecoesBrutas);
+    const colecoes = ativas.map(item => ({ key: item.key, nome: item.data?.name || 'Coleção sem nome', parentCollection: item.data?.parentCollection || false }));
+    const itens = (await ler('items/top')).filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem && !item.data?.deleted)
+      .map(item => this.normalizarItemZotero(item)).filter(Boolean)
+      .map(item => tirarColecoesDaLixeira(item, naLixeira));
     const chaves = new Set(colecoes.map(c => c.key));
     if (colecoes.some(c => c.parentCollection && !chaves.has(c.parentCollection)) || itens.some(item => item.colecoes?.some(key => !chaves.has(key)))) {
       throw new Error('O Zotero retornou coleções incompletas. Sincronize novamente.');
@@ -212,18 +240,19 @@ export class ZoteroClient {
           lerPaginado(baseUrl, 'collections'),
           lerPaginado(baseUrl, 'items/top')
         ]);
-        const colecoes = colecoesBrutas.map(c => ({
+        const { ativas: colecoesAtivas, naLixeira } = separarColecoesDaLixeira(colecoesBrutas);
+        const colecoes = colecoesAtivas.map(c => ({
           key: c.key,
           nome: c.data?.name || 'Coleção sem nome',
           parentCollection: c.data?.parentCollection || false
         }));
         const itens = itensBrutos
-          .filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem)
+          .filter(item => !['note', 'annotation'].includes(item.data?.itemType) && !item.data?.parentItem && !item.data?.deleted)
           .map(item => {
             const norm = this.normalizarItemZotero(item);
             if (!norm) return null;
             return {
-              ...norm,
+              ...tirarColecoesDaLixeira(norm, naLixeira),
               zoteroGroupId: groupId,
               zoteroGroupNome: nomeGrupo,
               zoteroBiblioteca: baseUrl

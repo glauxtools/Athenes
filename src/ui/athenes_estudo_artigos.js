@@ -21,7 +21,7 @@ import {podeEditarRelacoes as podeEditarRelacoesDestino} from '../core/athenes_r
 import * as bib from '../core/athenes_biblioteca_artigos.js';
 import { gravarConfigZotero, lerConfigZotero } from '../core/athenes_zotero_config.js';
 import { lerConta, gravarConta, obterContaAtiva } from '../core/athenes_conta.js';
-import { obterTokenOuConectar, obterTokenDrive, driveConectado, sincronizarZoteroComDrive, obterOuCriarPastaDoArtigoNoDrive, moverArquivosDoArtigoNoDrive, reconciliarArtigosComDrive, moverArquivoNoDrive, removerPastaExcluida } from '../core/athenes_drive_sync.js';
+import { obterTokenOuConectar, obterTokenDrive, driveConectado, sincronizarZoteroComDrive, obterOuCriarPastaDoArtigoNoDrive, moverArquivosDoArtigoNoDrive, reconciliarArtigosComDrive, moverArquivoNoDrive, removerPastaExcluida, registrarPastasExcluidas } from '../core/athenes_drive_sync.js';
 import { ZoteroClient } from '../core/athenes_zotero.js';
 import { obterPerfilColaborador, obterConfigGoogleDrive, salvarArquivoNoGoogleDrive, autenticarGoogleDrive, listarPdfsDoGoogleDrive, salvarDocumentoNoSupabase, obterPastasDriveLocais, salvarPastasDriveLocais, buscarPastaNaArvore } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
@@ -37,7 +37,7 @@ import { svgIcone } from './athenes_icones.js';
 import {PainelConexoes,construirListaPastasRelacoes} from './athenes_painel_conexoes.js';
 import {registrosReferencias,CAMPOS_RELACOES,camposRelacoesComVariaveis,inserirFiguraRelacoes} from '../core/athenes_relacoes.js';
 import * as documentosRelacoes from '../core/athenes_repositorio.js';
-import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, escolherEspelhoZotero, artigoEstaNaPasta, artigoEstaNasPastas, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
+import { aplicarEspelhoZotero, aplicarColecoesZoteroAosArtigos, descartarColecoesQueSairamDoZotero, escolherEspelhoZotero, artigoEstaNaPasta, artigoEstaNasPastas, remapearPastasDosArtigos, resolverAliasPasta } from '../core/athenes_zotero_pastas.js';
 import { obterCatalogoVariaveis, registrarVariavelNoCatalogo, definirVariavelNoArtigo, removerVariavelDoArtigo, normalizarMapaVariaveis, slugVariavel } from '../core/athenes_variaveis_referencia.js';
 import { aplicarFilhosZoteroAoArtigo } from '../core/athenes_zotero_anexos_notas.js';
 import { tokenPodeLerTodoODrive, listarConteudoDoDrive, copiarPdfDoDriveParaAthenes, ESCOPOS_COM_LEITURA } from '../core/athenes_drive_navegar.js';
@@ -3507,7 +3507,14 @@ export class EstudoArtigosView {
       novos++;
     });
     const { removidos } = aplicarColecoesZoteroAosArtigos(this.artigos, itens, esp.mapa, vigente);
-    const houveMudancaCatalogo = novos > 0 || (removidos?.length || 0) > 0 || (esp.criadas?.length || 0) > 0;
+    // Coleções apagadas no Zotero (ou na Lixeira dele) que ficaram sem obra nenhuma somem também daqui; com obras, ficam em "Só no Athenes"
+    const limpeza = descartarColecoesQueSairamDoZotero(obterPastasDriveLocais(), this.artigos);
+    if (limpeza.removidas.length) {
+      salvarPastasDriveLocais(limpeza.pastas);
+      registrarPastasExcluidas(limpeza.removidas); // outro aparelho não as recria; a pasta no Drive só vai à lixeira se estiver vazia
+      if (limpeza.removidas.some(r => r.id === this.pastaFiltroId)) this.pastaFiltroId = 'todas';
+    }
+    const houveMudancaCatalogo = novos > 0 || (removidos?.length || 0) > 0 || (esp.criadas?.length || 0) > 0 || limpeza.removidas.length > 0;
     salvarArtigosEstudo(this.artigos);
     if (automatico && !this.artigoAberto && houveMudancaCatalogo) this.atualizarCatalogoSeLivre(true);
     if (automatico) this.aoMudarPastas?.({ pastasNovas: esp.criadas });

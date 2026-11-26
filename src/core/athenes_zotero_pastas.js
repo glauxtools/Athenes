@@ -286,3 +286,30 @@ export function artigoEstaNasPastas(art, pastaIds = [], { pastas = [], incluirSu
   const idsArt = Array.isArray(art?.pastasIds) && art.pastasIds.length ? art.pastasIds : [art?.pastaId || RAIZ_BIBLIOGRAFIA];
   return idsArt.some(id => permitidas.has(String(id)));
 }
+
+/**
+ * Coleções que vieram do Zotero e saíram de lá (apagadas ou na Lixeira do Zotero) vão para "Só no Athenes" pelo espelho. Aqui as
+ * que ficaram SEM nenhuma obra (nem nas subpastas) somem de vez, como no Zotero. Pastas criadas só no Athenes, ou com obras,
+ * continuam em "Só no Athenes" (nada que o usuário guardou se perde). Devolve { pastas, removidas: [{ id, driveId, nome }] }.
+ */
+export function descartarColecoesQueSairamDoZotero(pastas, artigos = []) {
+  const arvore = copiar(pastas || []);
+  const raiz = arvore.find(p => p.id === RAIZ_BIBLIOGRAFIA);
+  const local = raiz?.subpastas?.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL);
+  if (!local?.subpastas?.length) return { pastas: arvore, removidas: [] };
+  const usadas = new Set();
+  for (const a of artigos || []) {
+    const ids = Array.isArray(a?.pastasIds) && a.pastasIds.length ? a.pastasIds : [a?.pastaId];
+    for (const id of ids) if (id) usadas.add(String(id));
+  }
+  const descartavel = p => Boolean(p?.zoteroKey) && !usadas.has(String(p.id)) && (p.subpastas || []).every(descartavel);
+  const removidas = [];
+  const coletar = p => { removidas.push({ id: p.id, driveId: p.driveId || '', nome: p.nome || '' }); (p.subpastas || []).forEach(coletar); };
+  const limpar = lista => lista.filter(p => {
+    if (descartavel(p)) { coletar(p); return false; }
+    p.subpastas = limpar(p.subpastas || []);
+    return true;
+  });
+  local.subpastas = limpar(local.subpastas);
+  return { pastas: arvore, removidas };
+}
