@@ -92,11 +92,10 @@ describe('Athenes — Colaboração, Modos Google Docs, Supabase e Google Drive'
     const mockFetch = async (url, init) => {
       chamadas.push({ url, init });
       if (init.method === 'POST') {
-        const body = JSON.parse(init.body);
         return {
           ok: true,
           status: 201,
-          json: async () => [body]
+          json: async () => { throw new Error('O salvamento não precisa baixar o documento de volta'); }
         };
       }
       if (url.includes('id=eq.')) {
@@ -116,6 +115,7 @@ describe('Athenes — Colaboração, Modos Google Docs, Supabase e Google Drive'
     const salvo = await salvarDocumentoNoSupabase(doc, { nome: 'Prof. Orientador' }, mockFetch);
     assert.equal(salvo.id, doc.id);
     assert.equal(salvo.atualizado_por, 'Prof. Orientador');
+    assert.match(chamadas[0].init.headers.Prefer, /return=minimal/);
     assert.ok(chamadas[0].url.startsWith(SUPABASE_CONFIG_PADRAO.url));
 
     const lista = await listarDocumentosDoSupabase(mockFetch, { conta: 'g:orientador@exemplo.com' });

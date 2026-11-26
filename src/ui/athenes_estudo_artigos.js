@@ -511,7 +511,7 @@ export class EstudoArtigosView {
     }
   }
 
-  async carregarCompartilhados() {
+  async carregarCompartilhados(compartilhados) {
     const conta = obterContaAtiva();
     if (!lerSessaoSupabase()?.email) {
       this.artigosCompartilhados = [];
@@ -521,7 +521,7 @@ export class EstudoArtigosView {
       return;
     }
     try {
-      const lista = (await listarCompartilhadosComigo()).filter(x => x.norma === 'zotero_pdf');
+      const lista = (compartilhados ?? await listarCompartilhadosComigo()).filter(x => x.norma === 'zotero_pdf');
       const resultados = await Promise.allSettled(lista.map(x => carregarDocumentoCompartilhado(x.id)));
       if (obterContaAtiva() !== conta || !this.container?.isConnected) return;
       const porChave = new Map();

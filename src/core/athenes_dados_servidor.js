@@ -15,6 +15,41 @@ export const idDoDado = (userId, chave) => `${PREFIXO_ID_DADOS}${userId}:${chave
 export const ehRegistroDeDados = (id) => String(id || '').startsWith(PREFIXO_ID_DADOS);
 
 const tabela = (cfg, consulta) => `${cfg.url}/rest/v1/${cfg.tabela}?${consulta}`;
+const leiturasPorCliente = new WeakMap();
+
+/** Revalida a versão no servidor antes de reutilizar o conteúdo desta sessão. */
+export async function lerConteudoVersionado(cfg, id, fetchImpl, mensagemErro) {
+  const usuario = lerSessaoSupabase()?.user_id;
+  if (!usuario) throw new Error('Sem sessão da nuvem protegida.');
+  const escopo = JSON.stringify([cfg.url, cfg.tabela, usuario]);
+  let cache = leiturasPorCliente.get(fetchImpl);
+  if (cache?.escopo !== escopo) {
+    cache = { escopo, linhas: new Map() };
+    leiturasPorCliente.set(fetchImpl, cache);
+  }
+  const headers = await cabecalhosSupabase(cfg, { fetchImpl });
+  const filtro = `id=eq.${encodeURIComponent(id)}&limit=1`;
+  const ler = async (campos) => {
+    if (lerSessaoSupabase()?.user_id !== usuario) throw new Error('A conta mudou durante a sincronização.');
+    const resp = await fetchImpl(tabela(cfg, `${filtro}&select=${campos}`), { headers, cache: 'no-store' });
+    if (!resp.ok) throw new Error(mensagemErro(resp.status));
+    const linha = (await resp.json())?.[0] ?? null;
+    if (lerSessaoSupabase()?.user_id !== usuario) throw new Error('A conta mudou durante a sincronização.');
+    return linha;
+  };
+  const anterior = cache.linhas.get(id);
+  if (anterior?.atualizado_em) {
+    const versao = await ler('atualizado_em');
+    if (!versao) { cache.linhas.delete(id); return null; }
+    if (versao.atualizado_em === anterior.atualizado_em) return structuredClone(anterior);
+  }
+  const linha = await ler('conteudo_json,atualizado_em');
+  if (linha?.atualizado_em) {
+    if (cache.linhas.size >= 8 && !cache.linhas.has(id)) cache.linhas.delete(cache.linhas.keys().next().value);
+    cache.linhas.set(id, structuredClone(linha));
+  } else cache.linhas.delete(id);
+  return linha;
+}
 
 function idAtual(chave) {
   const s = lerSessaoSupabase();
@@ -25,9 +60,7 @@ function idAtual(chave) {
 /** { valor, versaoLinha } ou null (ainda não existe). Lança sem sessão/erro de rede. */
 export async function lerDado(chave, fetchImpl = globalThis.fetch) {
   const cfg = obterConfigSupabase();
-  const resp = await fetchImpl(tabela(cfg, `id=eq.${encodeURIComponent(idAtual(chave))}&select=conteudo_json,atualizado_em&limit=1`), { headers: await cabecalhosSupabase(cfg, { fetchImpl }) });
-  if (!resp.ok) throw new Error(`Não foi possível ler "${chave}" do servidor (${resp.status}).`);
-  const linha = (await resp.json())?.[0];
+  const linha = await lerConteudoVersionado(cfg, idAtual(chave), fetchImpl, status => `Não foi possível ler "${chave}" do servidor (${status}).`);
   return linha ? { valor: linha.conteudo_json?.valor ?? null, versaoLinha: linha.atualizado_em } : null;
 }
 
@@ -44,7 +77,7 @@ export async function gravarDado(chave, valor, versaoLinha, fetchImpl = globalTh
     if (!resp.ok) throw new Error(`Não foi possível criar "${chave}" no servidor (${resp.status}).`);
     return true;
   }
-  const resp = await fetchImpl(tabela(cfg, `id=eq.${encodeURIComponent(id)}&atualizado_em=eq.${encodeURIComponent(versaoLinha)}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation', ...cab }, body: JSON.stringify(corpo) });
+  const resp = await fetchImpl(tabela(cfg, `id=eq.${encodeURIComponent(id)}&atualizado_em=eq.${encodeURIComponent(versaoLinha)}&select=id`), { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation', ...cab }, body: JSON.stringify(corpo) });
   if (!resp.ok) throw new Error(`Não foi possível gravar "${chave}" no servidor (${resp.status}).`);
   return ((await resp.json()) || []).length > 0;
 }

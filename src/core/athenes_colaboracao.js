@@ -390,7 +390,7 @@ export async function salvarDocumentoNoSupabase(doc, perfil = null, fetchImpl = 
     headers: {
       'Content-Type': 'application/json',
       ...(await cabecalhosSupabase(cfg, { fetchImpl })), // JWT do usuário (as regras do banco só aceitam o dono)
-      'Prefer': 'resolution=merge-duplicates,return=representation'
+      'Prefer': 'resolution=merge-duplicates,return=minimal'
     },
     body: JSON.stringify(payload)
   });
@@ -401,8 +401,7 @@ export async function salvarDocumentoNoSupabase(doc, perfil = null, fetchImpl = 
     throw new Error(`Falha ao salvar no Supabase (${resp.status}): ${erroTxt}`);
   }
 
-  const dados = await resp.json().catch(() => [payload]);
-  return Array.isArray(dados) ? dados[0] : dados;
+  return payload;
 }
 
 /** Endereço (autorizado no Google Cloud) para onde o Google devolve o login; a página só repassa o resultado ao app. */
@@ -510,7 +509,7 @@ export async function listarDocumentosDoSupabase(fetchImpl = globalThis.fetch, {
 export async function carregarDocumentoDoSupabase(docId, fetchImpl = globalThis.fetch) {
   if (!docId || typeof fetchImpl !== 'function') return null;
   const cfg = obterConfigSupabase();
-  const endpoint = `${cfg.url}/rest/v1/${cfg.tabela}?id=eq.${encodeURIComponent(docId)}&select=*&limit=1`;
+  const endpoint = `${cfg.url}/rest/v1/${cfg.tabela}?id=eq.${encodeURIComponent(docId)}&select=conteudo_json,sugestoes_json&limit=1`;
 
   const resp = await fetchImpl(endpoint, {
     method: 'GET',

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { _reiniciarContaEmMemoria, gravarConta, lerConta } from '../src/core/athenes_conta.js';
 import { gravarSessaoSupabase } from '../src/core/athenes_supabase_auth.js';
+import { lerDado } from '../src/core/athenes_dados_servidor.js';
 import * as bib from '../src/core/athenes_biblioteca_artigos.js';
 
 const art = (id, extra = {}) => ({ id, titulo: `Artigo ${id}`, notas: [], ...extra });
@@ -28,6 +29,25 @@ function servidorFalso() {
   };
   return s;
 }
+
+test('download completo só ocorre quando a versão remota muda', async () => {
+  ambiente();
+  let linha = { conteudo_json: { valor: ['original'] }, atualizado_em: 'V1' };
+  const consultas = [];
+  const fetch = async url => {
+    const campos = new URL(url).searchParams.get('select');
+    consultas.push(campos);
+    return { ok: true, json: async () => linha ? [campos === 'atualizado_em' ? { atualizado_em: linha.atualizado_em } : structuredClone(linha)] : [] };
+  };
+  const primeira = await lerDado('biblioteca_artigos', fetch);
+  primeira.valor.push('edição local');
+  assert.deepEqual((await lerDado('biblioteca_artigos', fetch)).valor, ['original']);
+  linha = { conteudo_json: { valor: ['outro aparelho'] }, atualizado_em: 'V2' };
+  assert.deepEqual((await lerDado('biblioteca_artigos', fetch)).valor, ['outro aparelho']);
+  linha = null;
+  assert.equal(await lerDado('biblioteca_artigos', fetch), null);
+  assert.deepEqual(consultas, ['conteudo_json,atualizado_em', 'atualizado_em', 'atualizado_em', 'conteudo_json,atualizado_em', 'atualizado_em']);
+});
 
 test('mesclar: o mais recente vence por artigo; exclusão vale em todos, salvo edição posterior', () => {
   const srv = { artigos: [art('a', { atualizadoEm: '2026-11-03T10:00:00Z', titulo: 'Do servidor' }), art('b', { atualizadoEm: '2026-11-03T10:00:00Z' }), art('c', { atualizadoEm: '2026-11-03T10:00:00Z' })], excluidos: { b: '2026-11-03T11:00:00Z' } };

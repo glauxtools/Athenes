@@ -12,6 +12,7 @@
  */
 import {aplicarEspelhoZotero,escolherEspelhoZotero,espelharColecoesNasPastas,colecoesMaisRecentes,resolverAliasPasta} from './athenes_zotero_pastas.js';
 import { obterConfigSupabase } from './athenes_colaboracao.js';
+import { lerConteudoVersionado } from './athenes_dados_servidor.js';
 import { decidirConfigZotero } from './athenes_zotero_config.js';
 import { cabecalhosSupabase, lerSessaoSupabase } from './athenes_supabase_auth.js';
 
@@ -263,9 +264,7 @@ export async function lerPerfilDoServidor(fetchImpl = globalThis.fetch) {
   const sessao = lerSessaoSupabase();
   if (!sessao?.user_id) throw new Error('Sem sessão da nuvem protegida.');
   const cfg = obterConfigSupabase();
-  const resp = await fetchImpl(urlTabela(cfg, `id=eq.${encodeURIComponent(idDoRegistroDoPerfil(sessao.user_id))}&select=conteudo_json,atualizado_em&limit=1`), { headers: await cabecalhosSupabase(cfg, { fetchImpl }) });
-  if (!resp.ok) throw new Error(`Não foi possível ler o índice do perfil (${resp.status}).`);
-  const linha = (await resp.json())?.[0];
+  const linha = await lerConteudoVersionado(cfg, idDoRegistroDoPerfil(sessao.user_id), fetchImpl, status => `Não foi possível ler o índice do perfil (${status}).`);
   return linha ? { indice: linha.conteudo_json || {}, versaoLinha: linha.atualizado_em } : null;
 }
 
@@ -287,7 +286,7 @@ export async function gravarPerfilNoServidor(indice, versaoLinha, fetchImpl = gl
     if (!resp.ok) throw new Error(`Não foi possível criar o índice do perfil (${resp.status}).`);
     return true;
   }
-  const resp = await fetchImpl(urlTabela(cfg, `id=eq.${encodeURIComponent(id)}&atualizado_em=eq.${encodeURIComponent(versaoLinha)}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation', ...cab }, body: JSON.stringify(corpo) });
+  const resp = await fetchImpl(urlTabela(cfg, `id=eq.${encodeURIComponent(id)}&atualizado_em=eq.${encodeURIComponent(versaoLinha)}&select=id`), { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation', ...cab }, body: JSON.stringify(corpo) });
   if (!resp.ok) throw new Error(`Não foi possível gravar o índice do perfil (${resp.status}).`);
   return ((await resp.json()) || []).length > 0;
 }

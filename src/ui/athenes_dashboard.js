@@ -1084,7 +1084,7 @@ export class DashboardView {
       const antes = this.documentos.length;
       this.documentos = this.documentos.filter(d => !d.compartilhadoComigo || (ids.has(String(d.id)) && !excluidos.has(String(d.id))));
       if (this.documentos.length !== antes || novos) { this.salvarDocumentosLocais(); this.atualizarGrid(); this.renderizarPastasLateral(); }
-      if (this.estudoView?.container?.isConnected) await this.estudoView.carregarCompartilhados();
+      if (this.estudoView?.container?.isConnected) await this.estudoView.carregarCompartilhados(compartilhados);
     } catch (e) { console.warn('[Athenes] Compartilhados comigo:', e.message); }
     return novos;
   }
