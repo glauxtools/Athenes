@@ -630,6 +630,10 @@ export function abrirLivro3D(livroEl, ref, { callbacks = {} } = {}) {
   sequenciasEstante.set(container, { livro: livroEl, scrim });
   livroEl.scrollIntoView?.({ behavior: 'instant', block: 'center', inline: 'nearest' });
   const rectLivro = livroEl.getBoundingClientRect?.();
+  const larguraCapaFechada = livroEl.offsetWidth || rectLivro?.width;
+  if (larguraCapaFechada > 0) {
+    livroEl.style?.setProperty?.('--ath-capa-escala-aberta', String(290 / larguraCapaFechada));
+  }
   livroEl.classList?.remove?.('ath-livro-previa');
   if (livroEl.classList) livroEl.classList.add('aberto');
   container?.classList?.add('ath-estante-com-livro-aberto');
