@@ -396,6 +396,7 @@ export const metodosEstudoTela = {
       salvarArtigosEstudo(this.artigos);
       definirArtigoAbertoAtivo(null);
       this.artigoAberto = null;
+      this.encerrarRestauracaoDeSessao?.(); // fechou o artigo: nada o reabre sozinho depois
       this.renderizar();
     };
     root.querySelector('#athBrandVoltarCatalogo').addEventListener('click', voltarParaCatalogo);

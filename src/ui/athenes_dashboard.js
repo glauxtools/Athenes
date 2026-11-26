@@ -659,9 +659,12 @@ export class DashboardView {
         boxEstudo.style.minHeight = '100%';
       }
       this.estudoView?.destruir?.();
+      // o artigo pedido ao abrir esta tela vale uma vez só: redesenhar a página não pode reabri-lo depois
+      const artigoInicialId = this.artigoInicialId;
+      this.artigoInicialId = null;
       this.estudoView = new EstudoArtigosView(boxEstudo, {
         pastaFiltroId: this.pastaAtivaId,
-        artigoInicialId: this.artigoInicialId,
+        artigoInicialId,
         // coleções do Zotero chegaram como pastas: atualiza a lateral e espelha a estrutura no Drive
         aoMudarPastas: ({ pastasNovas = 0 } = {}) => {
           this.pastasDrive = obterPastasDriveLocais();

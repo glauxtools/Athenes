@@ -85,6 +85,11 @@ export class EstudoArtigosView {
     });
     this._bibliotecaInicial = bib.sincronizarBiblioteca()
       .catch(e => console.warn('[Athenes] Biblioteca no servidor:', e.message))
+      .then(() => {
+        // última chance de retomar o artigo da sessão (a lista chegou do servidor); depois disso, nada abre sozinho
+        if (!this.artigoAberto) this.restaurarArtigoAbertoSessao();
+        this.encerrarRestauracaoDeSessao();
+      })
       .finally(() => { migrarPdfsLocaisParaODrive().catch(() => {}); }); // PDFs que ficaram só neste computador vão para o Drive assim que a biblioteca carrega
     if (typeof window !== 'undefined' && !window.__athenesOuvinteDrivePdfs) {
       window.__athenesOuvinteDrivePdfs = true;
@@ -664,9 +669,19 @@ export class EstudoArtigosView {
     } catch (_) {}
   }
 
+  /** Depois disto o Athenes não reabre mais nenhum artigo sozinho (só quando o usuário clica). */
+  encerrarRestauracaoDeSessao() {
+    this._restauracaoEncerrada = true;
+    if (this.opcoes) this.opcoes.artigoInicialId = null;
+  }
+
+  /**
+   * Reabre o artigo que estava aberto quando a página foi recarregada (ou o pedido ao abrir a tela). Vale SÓ no carregamento:
+   * antes, a cada mudança da biblioteca vinda do servidor, com nenhum artigo aberto, ele reabria o artigo inicial "do nada".
+   */
   restaurarArtigoAbertoSessao() {
     try {
-      if (typeof sessionStorage === 'undefined' || this.artigoAberto) return false;
+      if (typeof sessionStorage === 'undefined' || this.artigoAberto || this._restauracaoEncerrada) return false;
       const idSalvo = this.opcoes?.artigoInicialId || sessionStorage.getItem('athenes_estudio_artigo_id');
       if (!idSalvo) return false;
       let achado = (this.artigos || []).find(a => String(a.id) === String(idSalvo) || (a.chaveZotero && String(a.chaveZotero) === String(idSalvo)));
@@ -683,6 +698,7 @@ export class EstudoArtigosView {
       }
       if (!achado) return false;
       const pagSalva = parseInt(sessionStorage.getItem('athenes_estudio_pag') || '1', 10) || 1;
+      this.encerrarRestauracaoDeSessao();
       this.abrirArtigoNoEstudio(achado, pagSalva);
       return true;
     } catch (_) {
