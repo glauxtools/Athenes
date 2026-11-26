@@ -1380,11 +1380,31 @@ export class EstudoArtigosView {
     return lista;
   }
 
-  /** IDs das subpastas em que a busca por texto também procura (todas, menos as que o usuário desmarcou). */
+  /** "Mostrar sempre as obras das subpastas" (como a opção de subcoleções do Zotero), lembrado neste aparelho. */
+  get mostrarSubpastasSempre() {
+    try { return localStorage.getItem('athenes_bib_subpastas_sempre') === '1'; } catch (_) { return false; }
+  }
+  set mostrarSubpastasSempre(v) {
+    try { localStorage.setItem('athenes_bib_subpastas_sempre', v ? '1' : '0'); } catch (_) {}
+  }
+
+  /** A pasta aberta não tem obra própria (só subpastas, como uma pasta "PESQUISAS" que só organiza as filhas). */
+  pastaAtualSemObrasProprias() {
+    const pid = String(this.pastaFiltroId || '');
+    if (!pid || pid === 'todas' || pid === 'compartilhados_comigo') return false;
+    return !this.artigosCatalogo().some(art => artigoEstaNaPasta(art, pid) || this.artigoPertenceAPastaCompartilhada(art, pid));
+  }
+
+  /**
+   * IDs das subpastas (de qualquer nível) cujas obras também aparecem na pasta aberta, menos as desmarcadas pelo usuário.
+   * Valem quando há texto na busca, quando a opção "sempre" está ligada ou quando a pasta aberta não tem obra própria.
+   */
   idsSubpastasNaBusca() {
-    if (!this.filtroBusca) return [];
+    const subs = this.subpastasDaPastaAtual();
+    if (!subs.length) return [];
+    if (!this.filtroBusca && !this.mostrarSubpastasSempre && !this.pastaAtualSemObrasProprias()) return [];
     const fora = this.subpastasForaDaBusca || new Set();
-    return this.subpastasDaPastaAtual().map(p => p.id).filter(id => !fora.has(id));
+    return subs.map(p => p.id).filter(id => !fora.has(id));
   }
 
   /** Mostra o botão de subpastas só quando a pasta aberta tem pastas filhas e o marca quando alguma foi desmarcada. */
@@ -1412,8 +1432,12 @@ export class EstudoArtigosView {
     const fora = this.subpastasForaDaBusca;
     const subs = this.subpastasDaPastaAtual();
     pop.innerHTML = `
-      <div class="ath-menu-popover-header"><strong>Buscar também nas subpastas</strong></div>
-      <small class="ath-subpastas-busca-dica">Ao digitar na busca, as obras destas pastas filhas também aparecem.</small>
+      <div class="ath-menu-popover-header"><strong>Obras das subpastas</strong></div>
+      <small class="ath-subpastas-busca-dica">Aparecem ao buscar e quando esta pasta não tem obra própria. Marque abaixo para mostrar sempre.</small>
+      <label class="ath-subpastas-busca-item ath-subpastas-sempre">
+        <input type="checkbox" data-subpastas-sempre ${this.mostrarSubpastasSempre ? 'checked' : ''}>
+        <span>Mostrar sempre as obras das subpastas</span>
+      </label>
       <div class="ath-subpastas-busca-acoes">
         <button type="button" data-subpastas-todas>Todas</button>
         <button type="button" data-subpastas-nenhuma>Nenhuma</button>
@@ -1427,8 +1451,12 @@ export class EstudoArtigosView {
     `;
     const aplicar = () => {
       this.atualizarBotaoSubpastasBusca();
-      if (this.filtroBusca) this.atualizarGridCatalogo();
+      this.atualizarGridCatalogo();
     };
+    pop.querySelector('[data-subpastas-sempre]')?.addEventListener('change', (ev) => {
+      this.mostrarSubpastasSempre = ev.target.checked;
+      aplicar();
+    });
     pop.querySelectorAll('[data-subpasta-busca]').forEach(chk => chk.addEventListener('change', () => {
       if (chk.checked) fora.delete(chk.dataset.subpastaBusca);
       else fora.add(chk.dataset.subpastaBusca);
