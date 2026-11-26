@@ -46,7 +46,7 @@ import { ModalCompartilhar } from './athenes_compartilhar_modal.js';
 import { listarCompartilhadosComigo, carregarDocumentoCompartilhado, salvarCompartilhamento } from '../core/athenes_compartilhamento.js';
 import { lerSessaoSupabase } from '../core/athenes_supabase_auth.js';
 import { paginaEditorialDoPdf } from '../core/athenes_pdf_identificadores.js';
-import { removerPdfLocal, renomearPdfDoArtigoNoDrive, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
+import { removerPdfLocal, esquecerPdfGuardadoDoArtigo, renomearPdfDoArtigoNoDrive, PASTA_PDFS_DRIVE, artigoTemPdf, ehArtigoExemploFicticio, carregarPdfJs, obterPdfLocal, obterPdfComoDataUrl, garantirPdfDoArtigo, enviarPdfDoArtigoAoDrive, migrarPdfsLocaisParaODrive, carregarArtigosEstudo, salvarArtigosEstudo, sincronizarBibliotecaArtigosAgora, guardarSnapshotArtigosIdb, gerarHtmlNotaZoteroDoArtigo, formatarCitacaoAbntDoArtigo, definirArtigoAbertoAtivo, lerSnapshotArtigosIdb, mesclarFichamentoPreservandoDados, compartilharPdfNoDrive } from './athenes_estudo_artigos_dados.js';
 import { baixarBibliografiaCsv, construirMapaCaminhosPastas } from '../core/athenes_export_bibliografia_csv.js';
 import { metodosEstudoTela } from './athenes_estudo_artigos_tela.js';
 import { metodosEstudoPainelDireito } from './athenes_estudo_artigos_painel_direito.js';
@@ -3564,10 +3564,16 @@ export class EstudoArtigosView {
     this._pdfDocs?.delete(url);
     if (url) { try { URL.revokeObjectURL(url); } catch (_) {} }
     this._pdfFalhou?.clear();
+    // o arquivo desvinculado fica "recusado" para este artigo: nem a nota do Zotero, nem outro computador, nem a busca automática o religam
+    const idAntigo = String(art.driveFileId || '').trim();
+    if (idAntigo && !/^drive_pdf_/.test(idAntigo)) {
+      art.pdfsRecusados = [...new Set([...(art.pdfsRecusados || []), idAntigo])].slice(-20);
+    }
+    art.pdfDesvinculadoEm = new Date().toISOString();
     art.pdfBlobUrl = null; art.temPdfLocal = false; art.pdfBlob = null;
     art.driveFileId = ''; art.driveFileName = ''; art.driveStatus = 'Sem PDF vinculado';
     art.conteudoPaginasPdf = []; art.totalPaginas = 0; // as páginas vinham do arquivo antigo
-    try { await removerPdfLocal(art.id); } catch (_) {} // sobra de versões antigas: sem isso o arquivo voltaria sozinho
+    await esquecerPdfGuardadoDoArtigo(art); // todas as cópias deste aparelho (pelo artigo e pela chave do Zotero): sem isso o arquivo voltava
     salvarArtigosEstudo(this.artigos, art);
     sincronizarBibliotecaArtigosAgora();
     this.paginaAtual = 1;
@@ -3578,11 +3584,18 @@ export class EstudoArtigosView {
 
   /** Escolhe um PDF no Drive e o liga ao artigo (a cópia já está na pasta do Athenes): abre na folha e guarda o vínculo. */
   escolherPdfNoDrive(art) {
-    this.abrirModalEscolherPdfDoGoogleDrive((arq) => {
+    this.abrirModalEscolherPdfDoGoogleDrive(async (arq) => {
+      const urlAntiga = art.pdfBlobUrl;
+      if (urlAntiga) { this._pdfDocs?.delete(urlAntiga); try { URL.revokeObjectURL(urlAntiga); } catch (_) {} }
       art.driveFileName = arq.name;
       art.driveFileId = arq.id;
       art.driveStatus = 'PDF no Google Drive';
       art.pdfBlobUrl = null;
+      art.conteudoPaginasPdf = []; art.totalPaginas = 0;
+      // escolheu este arquivo: deixa de ser recusado; e a cópia de um PDF anterior guardada aqui não pode abrir no lugar dele
+      if (Array.isArray(art.pdfsRecusados)) art.pdfsRecusados = art.pdfsRecusados.filter(id => id !== String(arq.id));
+      delete art.pdfDesvinculadoEm;
+      await esquecerPdfGuardadoDoArtigo(art);
       if (this._pdfFalhou) this._pdfFalhou.clear();
       salvarArtigosEstudo(this.artigos, art);
       sincronizarBibliotecaArtigosAgora();

@@ -612,6 +612,18 @@ export async function renomearPdfDoArtigoNoDrive(art) {
   }
 }
 
+/**
+ * Apaga TODAS as cópias do PDF guardadas neste aparelho para o artigo (pelo id do artigo e pela chave do Zotero) e a cópia em texto
+ * (pdfDataUrl). Sem isso, ao desvincular ou trocar o PDF, a cópia antiga tinha prioridade e o arquivo errado voltava.
+ */
+export async function esquecerPdfGuardadoDoArtigo(art) {
+  if (!art) return;
+  const chaves = [art.id, art.chaveZotero && `zot_${art.chaveZotero}`, art.chaveZotero].filter(Boolean);
+  for (const k of chaves) { try { await removerPdfLocal(k); } catch (_) {} }
+  art.pdfDataUrl = null;
+  art.pdfBlob = null;
+}
+
 /** Registra um arquivo PDF escolhido no computador: abre na sessão, guarda no cache local (IndexedDB) e sobe para o Drive. */
 export async function registrarPdfLocalNoArtigo(art, file) {
   if (!await blobEhPdf(file)) {
@@ -620,6 +632,8 @@ export async function registrarPdfLocalNoArtigo(art, file) {
   }
   if (art.pdfVerificadoInvalido) art.driveFileId = '';
   art.pdfVerificadoInvalido = false;
+  art.pdfDataUrl = null; // a cópia em texto de um PDF anterior não pode ganhar deste
+  delete art.pdfDesvinculadoEm;
   art.driveFileName = nomePdfDoArtigo(art) || file.name; // o PDF vinculado ganha o nome do artigo (o arquivo no computador não muda)
   art.driveStatus = 'Enviando o PDF ao Google Drive…';
   art.pdfBlobUrl = URL.createObjectURL(file);
@@ -706,6 +720,7 @@ export async function obterPdfComoDataUrl(artId) {
 
 async function buscarPdfPublicoParaArtigo(art, forcar = false) {
   if (art.compartilhadoComigo || art.proprietarioExterno || (!forcar && buscasPdfPublico.has(art))) return false;
+  if (!forcar && art.pdfDesvinculadoEm) return false; // o usuário desvinculou o PDF: não liga outro sozinho (só se ele pedir a busca)
   const doi = normalizarDoi(art.doi || art.camposZotero?.DOI);
   const isbn = normalizarIsbn(art.isbn || art.camposZotero?.ISBN);
   if (!doi && !isbn) return false;
@@ -724,6 +739,8 @@ async function buscarPdfPublicoParaArtigo(art, forcar = false) {
       art.pdfVerificadoInvalido = false;
       art.driveFileName = arquivo.name;
       art.driveStatus = 'PDF público encontrado; enviando ao Google Drive…';
+      delete art.pdfDesvinculadoEm; // o usuário pediu a busca e um PDF foi encontrado
+      art.pdfDataUrl = null;
       await salvarPdfLocal(art.id, arquivo);
       if (art.chaveZotero) await salvarPdfLocal(`zot_${art.chaveZotero}`, arquivo);
       try {

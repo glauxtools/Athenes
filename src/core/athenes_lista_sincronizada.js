@@ -24,6 +24,12 @@ function fichamentoTemDados(f) {
   return false;
 }
 
+/** IDs de arquivos que o usuário desvinculou deste artigo ("vinculei o PDF errado"): nada os religa sozinho. */
+export function pdfFoiRecusado(art, idArquivo) {
+  const id = String(idArquivo || '').trim();
+  return Boolean(id) && Array.isArray(art?.pdfsRecusados) && art.pdfsRecusados.includes(id);
+}
+
 function enriquecerItemMesclado(vencedor, outro) {
   if (!vencedor || !outro) return vencedor;
   const fVenc = vencedor.fichamento;
@@ -40,7 +46,11 @@ function enriquecerItemMesclado(vencedor, outro) {
   } else if (fVenc && fOut && (fOut.atualizadoEm || '') > (fVenc.atualizadoEm || '')) {
     clonar().fichamento = fOut;
   }
-  if ((!copia.driveFileId || /^drive_pdf_/.test(String(copia.driveFileId))) && outro.driveFileId && !/^drive_pdf_/.test(String(outro.driveFileId))) {
+  // PDFs desvinculados valem nos dois lados (um computador desvinculou: o outro não religa)
+  const recusados = [...new Set([...(vencedor.pdfsRecusados || []), ...(outro.pdfsRecusados || [])])];
+  if (recusados.length && recusados.length !== (vencedor.pdfsRecusados || []).length) clonar().pdfsRecusados = recusados.slice(-20);
+  if ((!copia.driveFileId || /^drive_pdf_/.test(String(copia.driveFileId))) && outro.driveFileId && !/^drive_pdf_/.test(String(outro.driveFileId))
+    && !recusados.includes(String(outro.driveFileId)) && !((copia.pdfDesvinculadoEm || '') > (outro.atualizadoEm || ''))) {
     clonar().driveFileId = outro.driveFileId;
     if (outro.driveFileName) clonar().driveFileName = outro.driveFileName;
     if (outro.driveStatus) clonar().driveStatus = outro.driveStatus;

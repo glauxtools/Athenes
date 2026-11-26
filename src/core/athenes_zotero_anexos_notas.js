@@ -128,7 +128,8 @@ export function aplicarFilhosZoteroAoArtigo(art, chavePai, { anexos, notas, anot
       if (!art.notaZoteroKey) art.notaZoteroKey = n.chave;
       const meta = decodificarMetadadosNotaZotero(html);
       if (meta && typeof meta === 'object') {
-        if ((!art.driveFileId || /^drive_pdf_/.test(String(art.driveFileId))) && meta.driveFileId && !/^drive_pdf_/.test(String(meta.driveFileId))) {
+        const recusado = Array.isArray(art.pdfsRecusados) && art.pdfsRecusados.includes(String(meta.driveFileId || ''));
+        if ((!art.driveFileId || /^drive_pdf_/.test(String(art.driveFileId))) && meta.driveFileId && !/^drive_pdf_/.test(String(meta.driveFileId)) && !recusado) {
           art.driveFileId = meta.driveFileId;
           if (meta.driveFileName) art.driveFileName = meta.driveFileName;
           art.driveStatus = 'PDF no Google Drive';
