@@ -111,3 +111,26 @@ test('com o Zotero espelhado, pasta que sobrou no Drive não volta para "Bibliog
   assert.equal(bib.subpastas[0].driveId, 'FBIB', 'a coleção que existe continua ligada à pasta do Drive');
   assert.ok(pastas.find(p => p.id === 'pasta_rel_raiz').subpastas.some(p => p.nome === 'Tese'), 'fora da bibliografia nada muda');
 });
+
+test('mesma versão do Zotero: vale a leitura mais recente (a foto antiga com as coleções da Lixeira perde)', async () => {
+  const { escolherEspelhoZotero } = await import('../src/core/athenes_zotero_pastas.js');
+  const antigo = { biblioteca: 'u1', versao: '7', sincronizadoEm: '2026-11-25T10:00:00Z', colecoes: [{ key: 'BIB' }, { key: 'FASE4' }] };
+  const novo = { biblioteca: 'u1', versao: '7', sincronizadoEm: '2026-11-26T09:00:00Z', colecoes: [{ key: 'BIB' }] };
+  const arv = e => [{ id: RAIZ_BIBLIOGRAFIA, zoteroEspelho: e }];
+  assert.equal(escolherEspelhoZotero(arv(antigo), arv(novo)), novo);
+  assert.equal(escolherEspelhoZotero(arv(novo), arv(antigo)), novo, 'a ordem (servidor/local) não importa');
+  const maisNova = { ...antigo, versao: '8' };
+  assert.equal(escolherEspelhoZotero(arv(maisNova), arv(novo)), maisNova, 'versão maior do Zotero continua vencendo');
+
+  // e o espelho aplicado com a leitura nova tira a coleção da Lixeira de "Bibliografia & Leituras"
+  const pastas = [{ id: RAIZ_BIBLIOGRAFIA, nome: 'Bibliografia & Leituras', zoteroEspelho: antigo, subpastas: [
+    { id: 'zot_col_BIB', nome: 'BIBLIOGRAFIA', zoteroKey: 'BIB', subpastas: [] },
+    { id: 'zot_col_FASE4', nome: 'bibliografia-fase4-texto', zoteroKey: 'FASE4', subpastas: [] }
+  ] }];
+  const vigente = escolherEspelhoZotero(pastas, arv(novo));
+  const esp = aplicarEspelhoZotero(pastas, vigente);
+  const { pastas: limpas } = descartarColecoesQueSairamDoZotero(esp.pastas, []);
+  const raiz = limpas.find(p => p.id === RAIZ_BIBLIOGRAFIA);
+  assert.deepEqual(raiz.subpastas.map(p => p.id), ['zot_col_BIB', PASTA_BIBLIOGRAFIA_LOCAL]);
+  assert.deepEqual(raiz.subpastas.find(p => p.id === PASTA_BIBLIOGRAFIA_LOCAL).subpastas, []);
+});

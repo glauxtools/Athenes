@@ -124,7 +124,10 @@ export function escolherEspelhoZotero(...arvores) {
     .reduce((atual, espelho) => {
       if (!atual) return espelho;
       if (atual.biblioteca === espelho.biblioteca && atual.versao && espelho.versao) {
-        return Number(espelho.versao) > Number(atual.versao) ? espelho : atual;
+        if (Number(espelho.versao) !== Number(atual.versao)) return Number(espelho.versao) > Number(atual.versao) ? espelho : atual;
+        // mesma versão do Zotero: vale a leitura mais recente (o Athenes pode ter passado a ler a mesma versão de outro jeito,
+        // ex.: sem as coleções da Lixeira; antes ficava a foto antiga e as pastas apagadas voltavam)
+        return (espelho.sincronizadoEm || '') > (atual.sincronizadoEm || '') ? espelho : atual;
       }
       return espelho.sincronizadoEm > atual.sincronizadoEm ? espelho : atual;
     }, null);
