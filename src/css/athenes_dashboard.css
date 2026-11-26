@@ -3402,3 +3402,25 @@ button.ath-dn-pasta:hover { background: #EEF4FA; border-color: #C8D7E6; }
 .ath-zd-btn-sub.abrir-drive:hover { background: #DBEAFE; }
 .ath-zd-btn-sub.abrir-drive:focus-visible { outline: 2px solid var(--ath-primary, #314F79); outline-offset: 2px; }
 .ath-zd-acoes-secundarias { flex-wrap: wrap; }
+
+/* Zotero no topo da página, ao lado de "Pasta no Drive": mesmo formato, com um ponto de status (verde = conectado) */
+.ath-dash-btn-zotero { cursor: pointer; position: relative; padding: 0 14px; }
+.ath-dash-btn-zotero svg { flex: none; }
+.ath-dash-btn-zotero-ponto {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #CBD5E1; box-shadow: 0 0 0 2px #FFFFFF;
+}
+.ath-dash-btn-zotero--ok .ath-dash-btn-zotero-ponto { background: #16A34A; }
+.ath-dash-btn-zotero:not(.ath-dash-btn-zotero--ok) { color: #64748B; }
+
+/* Menu único de importar/exportar referências */
+.ath-menu-importar-subtitulo {
+  padding: 6px 10px 3px; font-size: 10px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: #64748B;
+}
+.ath-menu-importar-subtitulo:not(:first-child) { margin-top: 4px; border-top: 1px solid #E3EAF2; padding-top: 8px; }
+@media (max-width: 1180px) {
+  /* como o Drive: em telas menores só o símbolo (o ponto de status continua) */
+  .ath-dash-btn-zotero .ath-dash-btn-texto-drive { display: none !important; }
+  .ath-dash-btn-zotero { padding: 0 10px !important; gap: 4px; }
+}

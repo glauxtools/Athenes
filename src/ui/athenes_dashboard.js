@@ -668,6 +668,12 @@ export class DashboardView {
           this.renderizarPastasLateral();
           this.renderizarBannerPasta();
           if (pastasNovas) this.sincronizarComDrive({ aviso: false, docs: false }).then(() => { this.pastasDrive = obterPastasDriveLocais(); this.renderizarPastasLateral(); }).catch(() => {});
+        },
+        // botão "Sincronizar" da bibliografia: leva também as pastas e os documentos ao Drive
+        aoSincronizarDrive: async () => {
+          await this.sincronizarComDrive({ aviso: false });
+          this.pastasDrive = obterPastasDriveLocais();
+          this.renderizarPastasLateral();
         }
       });
     }

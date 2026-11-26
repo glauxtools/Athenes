@@ -21,7 +21,7 @@ import {podeEditarRelacoes as podeEditarRelacoesDestino} from '../core/athenes_r
 import * as bib from '../core/athenes_biblioteca_artigos.js';
 import { gravarConfigZotero, lerConfigZotero } from '../core/athenes_zotero_config.js';
 import { lerConta, gravarConta, obterContaAtiva } from '../core/athenes_conta.js';
-import { obterTokenOuConectar, obterTokenDrive, sincronizarZoteroComDrive, obterOuCriarPastaDoArtigoNoDrive, moverArquivosDoArtigoNoDrive, reconciliarArtigosComDrive, moverArquivoNoDrive, removerPastaExcluida } from '../core/athenes_drive_sync.js';
+import { obterTokenOuConectar, obterTokenDrive, driveConectado, sincronizarZoteroComDrive, obterOuCriarPastaDoArtigoNoDrive, moverArquivosDoArtigoNoDrive, reconciliarArtigosComDrive, moverArquivoNoDrive, removerPastaExcluida } from '../core/athenes_drive_sync.js';
 import { ZoteroClient } from '../core/athenes_zotero.js';
 import { obterPerfilColaborador, obterConfigGoogleDrive, salvarArquivoNoGoogleDrive, autenticarGoogleDrive, listarPdfsDoGoogleDrive, salvarDocumentoNoSupabase, obterPastasDriveLocais, salvarPastasDriveLocais, buscarPastaNaArvore } from '../core/athenes_colaboracao.js';
 import { escapeHtml } from '../core/athenes_seguranca.js';
@@ -135,7 +135,8 @@ export class EstudoArtigosView {
       pastas: coletarPastasBibliografia(),
       storage: typeof sessionStorage !== 'undefined' ? sessionStorage : null
     }) || 'todas';
-    this.aoMudarPastas = opcoes.aoMudarPastas || null; // a página inicial refaz a lista de pastas quando as coleções do Zotero chegam
+    this.aoMudarPastas = opcoes.aoMudarPastas || null;
+    this.aoSincronizarDrive = opcoes.aoSincronizarDrive || null; // a página inicial envia pastas e documentos ao Drive // a página inicial refaz a lista de pastas quando as coleções do Zotero chegam
     this.zoteroClient = new ZoteroClient();
     this.carregarConfigZotero();
     this._historicosArtigo = new Map();
@@ -1010,31 +1011,43 @@ export class EstudoArtigosView {
       ? `Zotero · ${this.zoteroClient.userId ? '#' + this.zoteroClient.userId : 'conectado'}`
       : 'Conectar Zotero';
 
+    // O botão do Zotero fica no topo da página, ao lado de "Pasta no Drive" (sobra espaço para a busca no cabeçalho da pasta)
+    const perfilTopo = document.getElementById('athBtnPerfilLoginDash');
+    const tituloZotero = conectado
+      ? `Zotero conectado (${this.zoteroClient.userId ? '#' + this.zoteroClient.userId : 'ativo'}): clique para ver ou trocar as credenciais`
+      : 'Conectar o Zotero: inserir sua API Key e User ID';
+    const htmlBotaoZotero = perfilTopo
+      ? `<button type="button" class="ath-dash-btn-topo ath-dash-btn-zotero ${conectado ? 'ath-dash-btn-zotero--ok' : ''}" id="athBtnConfigurarChaveZotero" title="${escapeHtml(tituloZotero)}" aria-label="${escapeHtml(tituloZotero)}">
+          ${svgIcone('zotero', 15)}<span class="ath-dash-btn-texto-drive">Zotero</span><span class="ath-dash-btn-zotero-ponto" aria-hidden="true"></span>
+        </button>`
+      : `<button type="button" class="ath-btn ath-btn-icone ${conectado ? 'ath-btn-zotero-ok' : ''}" id="athBtnConfigurarChaveZotero" title="${escapeHtml(tituloZotero)}" aria-label="Zotero">${svgIcone('zotero', 20)}</button>`;
+    if (perfilTopo) {
+      document.querySelectorAll('#athBtnConfigurarChaveZotero').forEach(b => b.remove()); // de uma renderização anterior
+      perfilTopo.insertAdjacentHTML('beforebegin', htmlBotaoZotero);
+    }
+
     const htmlBotoesAcao = `
       <button type="button" class="ath-btn ath-btn-icone" id="athBtnAnalisarRelacoes" title="Analisar relações e termos" aria-label="Analisar relações e termos">${svgIcone('grafico',18)}</button>
-      <button type="button" class="ath-btn ath-btn-icone ${conectado ? 'ath-btn-zotero-ok' : ''}" id="athBtnConfigurarChaveZotero" title="${conectado ? 'Zotero conectado (' + (this.zoteroClient.userId ? '#' + this.zoteroClient.userId : 'ativo') + '): clique para ver ou trocar credenciais' : 'Inserir sua API Key e User ID do Zotero'}" aria-label="Zotero">
-        ${svgIcone('zotero', 20)}
-      </button>
+      ${perfilTopo ? '' : htmlBotaoZotero}
 
-      <button type="button" class="ath-btn ath-btn-icone" id="athBtnSincronizarZoteroHub" title="Sincronizar: busca na sua biblioteca do Zotero os artigos novos" aria-label="Sincronizar biblioteca do Zotero">
+      <button type="button" class="ath-btn ath-btn-icone" id="athBtnSincronizarZoteroHub" title="Sincronizar tudo: busca os artigos novos do Zotero e envia ao Google Drive os PDFs, as pastas e as anotações" aria-label="Sincronizar Zotero e Google Drive">
         ${svgIcone('sincronizar', 17)}
       </button>
 
       <div class="ath-menu-importar" id="athMenuImportarBib">
-        <button type="button" class="ath-btn ath-btn-icone ath-btn-importar-coluna" id="athBtnImportarBib" aria-haspopup="menu" aria-expanded="false" title="Importar referências (.bib, .txt)" aria-label="Importar referências">
+        <button type="button" class="ath-btn ath-btn-icone ath-btn-importar-coluna" id="athBtnImportarBib" aria-haspopup="menu" aria-expanded="false" title="Importar ou exportar referências" aria-label="Importar ou exportar referências">
           ${svgIcone('importar', 14)}
           ${svgIcone('baixo', 8)}
         </button>
         <ul class="ath-menu-importar-lista" id="athMenuImportarBibLista" role="menu" hidden>
+          <li class="ath-menu-importar-subtitulo" role="presentation">Importar</li>
           <li><button type="button" role="menuitem" data-importar-bib=".bib">${svgIcone('documento', 14)}<span><strong>BibTeX (.bib)</strong><small>Coleção exportada do Zotero</small></span></button></li>
           <li><button type="button" role="menuitem" data-importar-bib=".txt">${svgIcone('documento', 14)}<span><strong>Texto (.txt)</strong><small>Referências em formato BibTeX, em texto</small></span></button></li>
+          <li class="ath-menu-importar-subtitulo" role="presentation">Exportar</li>
+          <li><button type="button" role="menuitem" id="athBtnExportarBibCsv">${svgIcone('exportar_csv', 14)}<span><strong>Planilha (.csv)</strong><small>Conjunto bibliográfico da pasta</small></span></button></li>
         </ul>
         <input type="file" accept=".bib,.txt" id="athInputImportarBibEstudo" style="display:none;">
       </div>
-
-      <button type="button" class="ath-btn ath-btn-icone" id="athBtnExportarBibCsv" title="Exportar conjunto bibliográfico (CSV)" aria-label="Exportar conjunto bibliográfico (CSV)">
-        ${svgIcone('exportar_csv', 16)}
-      </button>
 
       <button type="button" class="ath-btn ath-btn-primary ath-btn-icone" id="athBtnNovoArtigoDrive" title="Vincular Artigo & PDF" aria-label="Vincular Artigo & PDF">
         ${svgIcone('mais', 16)}
@@ -1303,14 +1316,15 @@ export class EstudoArtigosView {
     const escopoBotoes = containerHeaderAcoes || wrap;
     escopoBotoes.querySelector('#athBtnAnalisarRelacoes')?.addEventListener('click',()=>this.abrirAnaliseRelacoes());
 
-    escopoBotoes.querySelector('#athBtnConfigurarChaveZotero')?.addEventListener('click', () => {
+    // fica no topo da página (fora do cabeçalho da pasta): procura no documento
+    (document.getElementById('athBtnConfigurarChaveZotero') || escopoBotoes.querySelector('#athBtnConfigurarChaveZotero'))?.addEventListener('click', () => {
       this.abrirModalCredenciaisZotero();
     });
 
     escopoBotoes.querySelector('#athBtnSincronizarZoteroHub')?.addEventListener('click', async (ev) => {
       const btn = ev.currentTarget;
       btn.classList.add('ath-girando'); btn.disabled = true;
-      try { await this.sincronizarComZoteroApi(); } finally { btn.classList.remove('ath-girando'); btn.disabled = false; }
+      try { await this.sincronizarTudo(); } finally { btn.classList.remove('ath-girando'); btn.disabled = false; }
     });
 
     // "Importar" como lista (mesmo padrão da página inicial)
@@ -1336,6 +1350,7 @@ export class EstudoArtigosView {
     escopoBotoes.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && listaImp && !listaImp.hidden) { fecharImp(); btnImp?.focus(); } });
 
     escopoBotoes.querySelector('#athBtnExportarBibCsv')?.addEventListener('click', () => {
+      fecharImp();
       this.abrirModalExportarBibliografiaCsv();
     });
 
@@ -3394,6 +3409,35 @@ export class EstudoArtigosView {
     this._ultimaConsultaAutomaticaZotero = Date.now();
     try { await this.sincronizarComZoteroApi({ silencioso: true, automatico: true }); }
     catch (e) { console.warn('[Athenes] Sincronização automática do Zotero:', e.message); }
+  }
+
+  /**
+   * Botão "Sincronizar": faz as duas coisas de uma vez. Primeiro busca no Zotero os artigos novos (com as coleções, anexos e
+   * notas); depois leva ao Google Drive as pastas, os documentos, os PDFs que só estão neste aparelho e os nomes dos PDFs.
+   * Sem nenhum dos dois conectados, abre a conexão do Zotero.
+   */
+  async sincronizarTudo() {
+    const temZotero = this.temZoteroConectado();
+    const temDrive = driveConectado();
+    if (!temZotero && !temDrive) {
+      this.abrirModalCredenciaisZotero();
+      return;
+    }
+    if (temZotero) {
+      try { await this.sincronizarComZoteroApi(); } catch (e) { console.warn('[Athenes] Zotero:', e?.message || e); }
+    }
+    if (!temDrive) {
+      mostrarAviso('Zotero sincronizado. Conecte o Google Drive para guardar também os PDFs e as anotações na nuvem.', { tipo: 'info', ms: 5000 });
+      return;
+    }
+    try {
+      await this.aoSincronizarDrive?.(); // pastas e documentos (página inicial)
+      const pdfs = await migrarPdfsLocaisParaODrive(); // PDFs deste aparelho, organização nas pastas e nomes dos PDFs
+      await sincronizarBibliotecaArtigosAgora();
+      mostrarAviso(`${temZotero ? 'Zotero e ' : ''}Google Drive sincronizados${pdfs ? ` · ${pdfs} PDF(s) conferido(s) no Drive` : ''}.`, { tipo: 'ok', ms: 4000 });
+    } catch (e) {
+      mostrarAviso(`Google Drive: ${e?.message || e}`, { tipo: 'aviso', ms: 6000 });
+    }
   }
 
   sincronizarComZoteroApi(opcoes) {
